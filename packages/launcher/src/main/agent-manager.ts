@@ -62,7 +62,7 @@ export interface OnboardingAgent {
 /**
  * Launcher-side auth overrides for agents that authenticate with an API key /
  * base URL. These agents ship in the shared registry with an interactive
- * terminal login (`claude login`, `gemini`, `codex login`), but the launcher
+ * terminal login (`claude login`, `gemini`), but the launcher
  * prefers to collect the key/base-URL directly in onboarding and inject it into
  * the agent's env — no external terminal. We apply this purely in launcher code
  * so the bundled registry.json (and its source SDK YAML) stays untouched.
@@ -119,29 +119,6 @@ const LAUNCHER_AUTH_OVERRIDES: Record<
       required: true,
       default: "gemini-2.5-pro",
       placeholder: "gemini-2.5-pro",
-    },
-  ],
-  codex: [
-    {
-      name: "OPENAI_API_KEY",
-      description: "OpenAI API key",
-      required: true,
-      password: true,
-    },
-    {
-      name: "OPENAI_BASE_URL",
-      description: "OpenAI-compatible base URL (the default works for the OpenAI API; change it for a proxy or relay)",
-      required: true,
-      default: "https://api.openai.com/v1",
-      placeholder: "https://api.openai.com/v1",
-    },
-    {
-      name: "CODEX_MODEL",
-      description:
-        "Model name (change it when using a relay/proxy — its channels rarely match the default)",
-      required: true,
-      default: "gpt-5-codex",
-      placeholder: "gpt-5-codex",
     },
   ],
   kimi: [
@@ -266,6 +243,21 @@ const HOSTED_LOGIN_AGENTS: Record<string, HostedLoginSpec> = {
     loggedOutPattern: /not logged in|logged out|signed out/i,
     apiKeyEnv: "CURSOR_API_KEY",
     loginClearsEnv: ["CURSOR_API_KEY", "CURSOR_MODEL"],
+  },
+  codex: {
+    loginCommand: "codex login",
+    statusArgs: ["login", "status"],
+    loggedOutPattern: /not logged in|logged out|signed out/i,
+    loginClearsEnv: [
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "OPENAI_MODEL",
+      "CODEX_MODEL",
+      "OPENCLAW_MODEL",
+      "LLM_API_KEY",
+      "LLM_BASE_URL",
+      "LLM_MODEL",
+    ],
   },
   hermes: {
     // `hermes setup` is the interactive wizard; `hermes status` prints a rich
@@ -582,6 +574,12 @@ function isOfficialAnthropicBase(base: string): boolean {
   }
 }
 
+function isEmptyEnvValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  const text = String(value).trim()
+  return !text || /^(null|undefined)$/i.test(text)
+}
+
 /**
  * Normalize provider base URLs before they're persisted to env, so what we
  * SAVE matches what we TEST (testLLMConnection). The mismatch this guards
@@ -600,6 +598,9 @@ function normalizeEnvForSave(
   env: Record<string, string>,
 ): Record<string, string> {
   const out = { ...env }
+  for (const [k, v] of Object.entries(out)) {
+    if (isEmptyEnvValue(v)) out[k] = ""
+  }
   const anthropicBase = out.ANTHROPIC_BASE_URL
   if (typeof anthropicBase === "string" && anthropicBase.trim()) {
     out.ANTHROPIC_BASE_URL = anthropicBase
@@ -1327,7 +1328,7 @@ export class AgentManager extends EventEmitter {
       const hasApiKey =
         !!(
           hostedLogin.apiKeyEnv &&
-          (instanceEnv?.[hostedLogin.apiKeyEnv] || "").trim()
+          !isEmptyEnvValue(instanceEnv?.[hostedLogin.apiKeyEnv])
         ) || this._hasConfiguredCredentials(type)
       if (this._isInstalled(type) && hasApiKey) {
         return {
@@ -1508,6 +1509,7 @@ export class AgentManager extends EventEmitter {
     const BINARY_TO_TYPE: Record<string, string> = {
       "cursor-agent": "cursor",
       agent: "cursor",
+      codex: "codex",
       hermes: "hermes",
     }
     const type = base ? BINARY_TO_TYPE[base] : undefined
@@ -1666,7 +1668,7 @@ export class AgentManager extends EventEmitter {
   private _envHasApiKey(env: Record<string, string> | undefined): boolean {
     if (!env || typeof env !== "object") return false
     return Object.entries(env).some(
-      ([k, v]) => /API_KEY$/.test(k) && !!(v || "").trim(),
+      ([k, v]) => /API_KEY$/.test(k) && !isEmptyEnvValue(v),
     )
   }
 

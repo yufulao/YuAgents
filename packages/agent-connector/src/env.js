@@ -3,6 +3,12 @@
 const fs = require('fs');
 const path = require('path');
 
+function isEmptyEnvValue(value) {
+  if (value === null || value === undefined) return true;
+  const text = String(value).trim();
+  return !text || /^(null|undefined)$/i.test(text);
+}
+
 /**
  * Manages ~/.openagents/env/<type>.env files and resolve_env rules.
  *
@@ -30,6 +36,7 @@ class EnvManager {
         const idx = trimmed.indexOf('=');
         const key = trimmed.slice(0, idx).trim();
         const val = trimmed.slice(idx + 1).trim();
+        if (isEmptyEnvValue(val)) continue;
         if (key) env[key] = val;
       }
     } catch {}
@@ -46,7 +53,7 @@ class EnvManager {
     const existing = this.load(agentType);
     const merged = { ...existing, ...env };
     const lines = Object.entries(merged)
-      .filter(([, v]) => v !== null && v !== undefined && v !== '')
+      .filter(([, v]) => !isEmptyEnvValue(v))
       .map(([k, v]) => `${k}=${v}`);
     fs.writeFileSync(envFile, lines.join('\n') + '\n', 'utf-8');
   }

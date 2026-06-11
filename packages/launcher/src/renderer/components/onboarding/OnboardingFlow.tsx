@@ -187,9 +187,11 @@ export function OnboardingFlow({
     if (selectedEntry.authMode === "login") {
       setCheckingLogin(true)
       window.api
-        .healthCheck(selectedEntry.name)
+        .refreshLogin(selectedEntry.name)
         .then((h) => {
-          if (!cancelled) setLoggedIn(!!h?.ready)
+          const ok = !!h?.ready
+          if (!cancelled) setLoggedIn(ok)
+          if (ok) window.api.clearLoginKey(selectedEntry.name).catch(() => {})
         })
         .catch(() => {})
         .finally(() => {
@@ -302,8 +304,9 @@ export function OnboardingFlow({
       for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2000))
         try {
-          const h = await window.api.healthCheck(selectedEntry.name)
+          const h = await window.api.refreshLogin(selectedEntry.name)
           if (h?.ready) {
+            await window.api.clearLoginKey(selectedEntry.name).catch(() => {})
             setLoggedIn(true)
             setCheckingLogin(false)
             return

@@ -25,6 +25,21 @@ const { buildOpenclawSystemPrompt } = require('./workspace-prompt');
 const IS_WINDOWS = process.platform === 'win32';
 const MAX_HISTORY_ENTRIES = 50;
 
+function cleanEnvValue(value) {
+  if (value === null || value === undefined) return '';
+  const text = String(value).trim();
+  if (!text || /^(null|undefined)$/i.test(text)) return '';
+  return text;
+}
+
+function dropEmptyCodexEnv(env) {
+  for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'CODEX_MODEL', 'OPENCLAW_MODEL']) {
+    if (Object.prototype.hasOwnProperty.call(env, key) && !cleanEnvValue(env[key])) {
+      delete env[key];
+    }
+  }
+}
+
 class CodexAdapter extends BaseAdapter {
   /**
    * @param {object} opts - BaseAdapter opts plus:
@@ -35,9 +50,9 @@ class CodexAdapter extends BaseAdapter {
     this.disabledModules = opts.disabledModules || new Set();
 
     const env = this.agentEnv || process.env;
-    this._directApiKey = env.OPENAI_API_KEY || '';
-    this._directBaseUrl = (env.OPENAI_BASE_URL || '').replace(/\/+$/, '');
-    this._directModel = env.CODEX_MODEL || env.OPENCLAW_MODEL || '';
+    this._directApiKey = cleanEnvValue(env.OPENAI_API_KEY);
+    this._directBaseUrl = cleanEnvValue(env.OPENAI_BASE_URL).replace(/\/+$/, '');
+    this._directModel = cleanEnvValue(env.CODEX_MODEL) || cleanEnvValue(env.OPENCLAW_MODEL);
 
     // Per-channel thread tracking (like Claude's session IDs)
     this._channelThreads = {};
@@ -280,6 +295,7 @@ class CodexAdapter extends BaseAdapter {
 
   async _handleViaSubprocess(content, msgChannel) {
     const env = { ...(this.agentEnv || process.env) };
+    dropEmptyCodexEnv(env);
 
     // Set model via env if configured
     if (this._directModel) env.CODEX_MODEL = this._directModel;

@@ -41,6 +41,8 @@ function parseArgs(argv) {
 function getConnector(flags) {
   const opts = {};
   if (flags.config) opts.configDir = flags.config;
+  const endpoint = flags.endpoint || process.env.OPENAGENTS_ENDPOINT;
+  if (endpoint) opts.workspaceEndpoint = endpoint;
   return new AgentConnector(opts);
 }
 
@@ -714,6 +716,7 @@ Commands:
 
 Options:
   --config <dir>              Config directory (default: ~/.openagents)
+  --endpoint <url>            Workspace backend URL (or OPENAGENTS_ENDPOINT)
   --install                   Install runtime during create
 `);
 }

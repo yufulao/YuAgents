@@ -41,6 +41,33 @@ describe('EnvManager', () => {
     assert.equal(loaded.C, '4');
   });
 
+  it('save treats literal null and undefined strings as empty values', () => {
+    const env = new EnvManager(tmpDir);
+    env.save('codex', {
+      OPENAI_API_KEY: 'null',
+      OPENAI_BASE_URL: 'undefined',
+      CODEX_MODEL: 'gpt-5-codex',
+    });
+    const loaded = env.load('codex');
+    assert.equal(loaded.OPENAI_API_KEY, undefined);
+    assert.equal(loaded.OPENAI_BASE_URL, undefined);
+    assert.equal(loaded.CODEX_MODEL, 'gpt-5-codex');
+  });
+
+  it('load ignores literal null values left by old launcher versions', () => {
+    const env = new EnvManager(tmpDir);
+    const envDir = path.join(tmpDir, 'env');
+    fs.mkdirSync(envDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(envDir, 'codex.env'),
+      'OPENAI_API_KEY=null\nOPENAI_BASE_URL=https://api.openai.com/v1\n',
+      'utf-8'
+    );
+    const loaded = env.load('codex');
+    assert.equal(loaded.OPENAI_API_KEY, undefined);
+    assert.equal(loaded.OPENAI_BASE_URL, 'https://api.openai.com/v1');
+  });
+
   it('delete removes env file', () => {
     const env = new EnvManager(tmpDir);
     env.save('todel', { X: '1' });
