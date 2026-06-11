@@ -49,10 +49,9 @@ export function EmptyState() {
           <Rocket className="size-8 text-emerald-500" />
         </div>
         <div className="space-y-2">
-          <h3 className="text-lg font-semibold">You&apos;re all set!</h3>
+          <h3 className="text-lg font-semibold">Agent 已就绪</h3>
           <p className="text-sm text-muted-foreground max-w-sm">
-            Your agent is online. Send a message below to start collaborating.
-            Use <span className="font-medium text-foreground">@agent-name</span> to delegate tasks.
+            在线 Agent 会显示在侧栏。直接输入消息，或使用 <span className="font-medium text-foreground">@agent-name</span> 指派任务。
           </p>
         </div>
       </div>
@@ -64,9 +63,9 @@ export function EmptyState() {
       <div className="w-full max-w-2xl space-y-6 py-8">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold tracking-tight">Connect your first agent</h2>
+          <h2 className="text-2xl font-bold tracking-tight">连接第一个 Agent</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Pick an agent you already have installed, or choose one to set up.
+            选择本机已有的 Agent，或按向导完成安装与连接。
           </p>
         </div>
 
@@ -74,7 +73,7 @@ export function EmptyState() {
         {loading ? (
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             <Loader2 className="size-4 animate-spin mr-2" />
-            <span className="text-sm">Loading agents...</span>
+            <span className="text-sm">正在加载 Agent...</span>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
@@ -138,11 +137,11 @@ export function EmptyState() {
               {/* Option A: Desktop App */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold">Option A</span>
-                  <span className="text-xs text-muted-foreground">— Desktop App (recommended)</span>
+                  <span className="text-xs font-semibold">方式 A</span>
+                  <span className="text-xs text-muted-foreground">— 桌面应用（推荐）</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-2.5">
-                  Download the OpenAgents Launcher for a visual setup experience.
+                  下载 OpenAgents Launcher，用图形界面完成配置。
                 </p>
                 <div className="flex gap-2">
                   {[
@@ -165,34 +164,34 @@ export function EmptyState() {
 
               <div className="flex items-center gap-3">
                 <div className="flex-1 border-t" />
-                <span className="text-[10px] text-muted-foreground">or</span>
+                <span className="text-[10px] text-muted-foreground">或</span>
                 <div className="flex-1 border-t" />
               </div>
 
               {/* Option B: CLI */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold">Option B</span>
-                  <span className="text-xs text-muted-foreground">— Command Line</span>
+                  <span className="text-xs font-semibold">方式 B</span>
+                  <span className="text-xs text-muted-foreground">— 命令行</span>
                 </div>
                 <div className="space-y-3">
                   <CliStep
                     step="1"
-                    label="Install the OpenAgents CLI"
+                    label="安装 OpenAgents CLI"
                     command="curl -fsSL https://openagents.org/install.sh | bash"
                     isCopied={isCopied}
                     onCopy={copyToClipboard}
                   />
                   <CliStep
                     step="2"
-                    label={`Install the ${selectedEntry.label} runtime`}
+                    label={`安装 ${selectedEntry.label} 运行时`}
                     command={`agn install ${selectedEntry.name}`}
                     isCopied={isCopied}
                     onCopy={copyToClipboard}
                   />
                   <CliStep
                     step="3"
-                    label="Connect to this workspace"
+                    label="连接到当前工作区"
                     command={`agn connect my-${selectedEntry.name} ${token.slice(0, 8)}...`}
                     copyCommand={`agn connect my-${selectedEntry.name} ${token}`}
                     isCopied={isCopied}
@@ -206,7 +205,7 @@ export function EmptyState() {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Key className="size-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">Workspace Token</span>
+                    <span className="text-xs font-medium">工作区 Token</span>
                   </div>
                   <button
                     onClick={handleCopyToken}
@@ -222,7 +221,7 @@ export function EmptyState() {
                       tokenCopied ? 'text-emerald-600' : 'text-muted-foreground group-hover:text-foreground',
                     )}>
                       {tokenCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                      {tokenCopied ? 'Copied' : 'Copy'}
+                      {tokenCopied ? '已复制' : '复制'}
                     </span>
                   </button>
                 </div>
@@ -235,7 +234,7 @@ export function EmptyState() {
         <div className="text-center space-y-2 pt-2">
           <div className="flex items-center gap-3 justify-center">
             <div className="w-16 border-t" />
-            <span className="text-[11px] text-muted-foreground">or</span>
+            <span className="text-[11px] text-muted-foreground">或</span>
             <div className="w-16 border-t" />
           </div>
           <button
@@ -243,8 +242,8 @@ export function EmptyState() {
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border hover:bg-accent transition-colors text-sm group"
           >
             <Cloud className="size-4 text-muted-foreground" />
-            <span className="font-medium">Try Cloud Agents</span>
-            <span className="text-xs text-muted-foreground">— paste an API key, no install needed</span>
+            <span className="font-medium">使用云端 Agent</span>
+            <span className="text-xs text-muted-foreground">— 填入 API Key，无需本地安装</span>
             <ChevronRight className="size-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>

@@ -35,11 +35,11 @@ export function AgentProfilePanel() {
     try {
       if (isCloud) await workspaceApi.removeCloudAgent(agent.agentName);
       else await workspaceApi.deleteManagedAgent(agent.agentName);
-      toast.success(`Removed agent "${agent.agentName}"`);
+      toast.success(`已移除 Agent "${agent.agentName}"`);
       setSelectedAgentName(null);
       refreshWorkspace();
     } catch {
-      toast.error('Failed to remove agent');
+      toast.error('移除 Agent 失败');
     }
   }, [agent, isCloud, setSelectedAgentName, refreshWorkspace]);
 
@@ -50,9 +50,9 @@ export function AgentProfilePanel() {
       await workspaceApi.updateManagedAgent(agent.agentName, { lifecycleStatus: next });
       if (isCloud) await workspaceApi.updateCloudAgent(agent.agentName, { status: next === 'active' ? 'active' : 'disabled' });
       await refreshWorkspace();
-      toast.success(next === 'active' ? 'Agent enabled' : 'Agent disabled');
+      toast.success(next === 'active' ? 'Agent 已启用' : 'Agent 已停用');
     } catch {
-      toast.error('Failed to update agent status');
+      toast.error('更新 Agent 状态失败');
     }
   }, [agent, isCloud, isDisabled, refreshWorkspace]);
 
@@ -66,14 +66,14 @@ export function AgentProfilePanel() {
     setSavingKey(true);
     try {
       await workspaceApi.updateCloudAgent(agent.agentName, { apiKey: newApiKey });
-      toast.success('API key updated');
+      toast.success('API Key 已更新');
       setEditingKey(false);
       setNewApiKey('');
       workspaceApi.listCloudAgents().then((configs) => {
         setCloudConfig(configs.find((c) => c.agentName === agent.agentName) || null);
       }).catch(() => {});
     } catch {
-      toast.error('Failed to update API key');
+      toast.error('更新 API Key 失败');
     } finally {
       setSavingKey(false);
     }
@@ -121,9 +121,9 @@ export function AgentProfilePanel() {
       }
       await refreshWorkspace();
       setEditingConfig(false);
-      toast.success('Agent config saved');
+      toast.success('Agent 配置已保存');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save agent config');
+      toast.error(err instanceof Error ? err.message : '保存 Agent 配置失败');
     } finally {
       setSavingConfig(false);
     }
@@ -149,9 +149,9 @@ export function AgentProfilePanel() {
       await workspaceApi.updateMember(agent.agentName, { description });
       await refreshWorkspace();
       setDescDirty(false);
-      toast.success('Description saved');
+      toast.success('说明已保存');
     } catch {
-      toast.error('Failed to save description');
+      toast.error('保存说明失败');
     } finally {
       setSaving(false);
     }
@@ -173,19 +173,19 @@ export function AgentProfilePanel() {
     ? `Cloud: ${(agent.agentType || '').replace('cloud:', '').charAt(0).toUpperCase()}${(agent.agentType || '').replace('cloud:', '').slice(1)}`
     : agent.agentType
       ? agent.agentType.charAt(0).toUpperCase() + agent.agentType.slice(1)
-      : 'Unknown';
+      : '未知';
 
   const infoItems = isCloud
     ? [
-        { icon: <Cloud className="size-3.5" />, label: 'Type', value: displayType },
-        { icon: <Monitor className="size-3.5" />, label: 'Model', value: cloudConfig?.model || '—' },
+        { icon: <Cloud className="size-3.5" />, label: '类型', value: displayType },
+        { icon: <Monitor className="size-3.5" />, label: '模型', value: cloudConfig?.model || '—' },
         { icon: <Globe className="size-3.5" />, label: 'API Key', value: cloudConfig?.apiKeyMasked || '—' },
         { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
       ]
     : [
-        { icon: <Monitor className="size-3.5" />, label: 'Type', value: displayType },
-        { icon: <Globe className="size-3.5" />, label: 'Server', value: agent.serverHost || '—' },
-        { icon: <Folder className="size-3.5" />, label: 'Folder', value: agent.workingDir || '—' },
+        { icon: <Monitor className="size-3.5" />, label: '类型', value: displayType },
+        { icon: <Globe className="size-3.5" />, label: '服务器', value: agent.serverHost || '—' },
+        { icon: <Folder className="size-3.5" />, label: '目录', value: agent.workingDir || '—' },
         { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
       ];
 
@@ -207,7 +207,7 @@ export function AgentProfilePanel() {
           <button
             onClick={() => setSelectedAgentName(null)}
             className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-200/60 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
-            title="Close"
+            title="关闭"
           >
             <X className="size-4" />
           </button>
@@ -240,12 +240,12 @@ export function AgentProfilePanel() {
           {/* Description */}
           <div className="rounded-lg border overflow-hidden">
             <div className="px-3.5 py-2.5 border-b">
-              <span className="text-xs font-medium">Description</span>
+              <span className="text-xs font-medium">说明</span>
             </div>
             <div className="p-3">
               <textarea
                 className="w-full text-[13px] leading-relaxed bg-transparent resize-none outline-none placeholder:text-muted-foreground/50 min-h-[60px]"
-                placeholder={`Describe what ${agent.agentName} does so other agents know when to delegate work...`}
+                placeholder={`描述 ${agent.agentName} 擅长什么，方便其他 Agent 分派工作...`}
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value);
@@ -261,7 +261,7 @@ export function AgentProfilePanel() {
                     disabled={saving}
                     className="text-[11px] px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 font-medium transition-colors"
                   >
-                    {saving ? 'Saving...' : 'Save'}
+                    {saving ? '保存中...' : '保存'}
                   </button>
                 </div>
               )}
@@ -271,7 +271,7 @@ export function AgentProfilePanel() {
           {/* Connection Details */}
           <div className="rounded-lg border overflow-hidden">
             <div className="px-3.5 py-2.5 border-b">
-              <span className="text-xs font-medium">Connection Details</span>
+              <span className="text-xs font-medium">连接详情</span>
             </div>
             <div className="divide-y">
               {infoItems.map((item) => (
@@ -290,7 +290,7 @@ export function AgentProfilePanel() {
                     {item.copyable && (
                       <button
                         className="size-6 shrink-0 flex items-center justify-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors mt-px"
-                        title={`Copy ${item.label}`}
+                        title={`复制${item.label}`}
                         onClick={() => copyToClipboard(item.value)}
                       >
                         {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
@@ -305,9 +305,9 @@ export function AgentProfilePanel() {
           {/* Web-managed config */}
           <div className="rounded-lg border overflow-hidden">
             <div className="px-3.5 py-2.5 border-b flex items-center justify-between">
-              <span className="text-xs font-medium">Agent Configuration</span>
+              <span className="text-xs font-medium">Agent 配置</span>
               {!editingConfig && (
-                <button onClick={() => setEditingConfig(true)} className="text-muted-foreground hover:text-foreground" title="Edit agent config">
+                <button onClick={() => setEditingConfig(true)} className="text-muted-foreground hover:text-foreground" title="编辑 Agent 配置">
                   <Pencil className="size-3.5" />
                 </button>
               )}
@@ -315,37 +315,37 @@ export function AgentProfilePanel() {
             <div className="p-3 space-y-2">
               {editingConfig ? (
                 <>
-                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent" value={displayNameDraft} onChange={(e) => setDisplayNameDraft(e.target.value)} placeholder="Display name" />
-                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent" value={avatarUrlDraft} onChange={(e) => setAvatarUrlDraft(e.target.value)} placeholder="Avatar URL" />
-                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent font-mono" value={workingDirDraft} onChange={(e) => setWorkingDirDraft(e.target.value)} placeholder="Working directory" />
+                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent" value={displayNameDraft} onChange={(e) => setDisplayNameDraft(e.target.value)} placeholder="显示名称" />
+                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent" value={avatarUrlDraft} onChange={(e) => setAvatarUrlDraft(e.target.value)} placeholder="头像 URL" />
+                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent font-mono" value={workingDirDraft} onChange={(e) => setWorkingDirDraft(e.target.value)} placeholder="工作目录" />
                   <div className="grid grid-cols-2 gap-2">
-                    <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelProviderDraft} onChange={(e) => setModelProviderDraft(e.target.value)} placeholder="Provider" />
-                    <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} placeholder="Model" />
+                    <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelProviderDraft} onChange={(e) => setModelProviderDraft(e.target.value)} placeholder="提供方" />
+                    <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} placeholder="模型" />
                     <select className="h-8 px-2 text-xs rounded border bg-background" value={modeDraft} onChange={(e) => setModeDraft(e.target.value)}>
-                      <option value="ask">Ask</option>
-                      <option value="code">Code</option>
-                      <option value="autonomous">Autonomous</option>
+                      <option value="ask">询问</option>
+                      <option value="code">编码</option>
+                      <option value="autonomous">自主</option>
                     </select>
                     <select className="h-8 px-2 text-xs rounded border bg-background" value={qualityDraft} onChange={(e) => setQualityDraft(e.target.value)}>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                      <option value="max">Max</option>
+                      <option value="low">低</option>
+                      <option value="medium">中</option>
+                      <option value="high">高</option>
+                      <option value="max">最高</option>
                     </select>
                   </div>
                   <div className="flex justify-end gap-1.5">
-                    <button onClick={() => setEditingConfig(false)} className="px-2 py-1 text-[10px] rounded border">Cancel</button>
+                    <button onClick={() => setEditingConfig(false)} className="px-2 py-1 text-[10px] rounded border">取消</button>
                     <button onClick={handleSaveConfig} disabled={savingConfig} className="px-2 py-1 text-[10px] rounded bg-primary text-primary-foreground disabled:opacity-50">
-                      {savingConfig ? 'Saving...' : 'Save'}
+                      {savingConfig ? '保存中...' : '保存'}
                     </button>
                   </div>
                 </>
               ) : (
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                  <span className="text-muted-foreground">Mode</span><span>{agent.mode || '—'}</span>
-                  <span className="text-muted-foreground">Quality</span><span>{agent.quality || '—'}</span>
-                  <span className="text-muted-foreground">Provider</span><span className="truncate">{agent.modelProvider || '—'}</span>
-                  <span className="text-muted-foreground">Model</span><span className="truncate">{agent.modelName || agent.model || cloudConfig?.model || '—'}</span>
+                  <span className="text-muted-foreground">模式</span><span>{agent.mode || '—'}</span>
+                  <span className="text-muted-foreground">质量</span><span>{agent.quality || '—'}</span>
+                  <span className="text-muted-foreground">提供方</span><span className="truncate">{agent.modelProvider || '—'}</span>
+                  <span className="text-muted-foreground">模型</span><span className="truncate">{agent.modelName || agent.model || cloudConfig?.model || '—'}</span>
                 </div>
               )}
             </div>
@@ -355,7 +355,7 @@ export function AgentProfilePanel() {
           {isCloud && cloudConfig && (
             <div className="rounded-lg border overflow-hidden">
               <div className="px-3.5 py-2.5 border-b">
-                <span className="text-xs font-medium">Cloud Configuration</span>
+                <span className="text-xs font-medium">云端配置</span>
               </div>
               <div className="p-3 space-y-3">
                 {/* API Key */}
@@ -368,7 +368,7 @@ export function AgentProfilePanel() {
                         className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <KeyRound className="size-2.5" />
-                        Update
+                        更新
                       </button>
                     )}
                   </div>
@@ -378,7 +378,7 @@ export function AgentProfilePanel() {
                         type="password"
                         value={newApiKey}
                         onChange={(e) => setNewApiKey(e.target.value)}
-                        placeholder="New API key..."
+                        placeholder="新的 API Key..."
                         className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono rounded border bg-transparent outline-none focus:ring-1 focus:ring-foreground/20"
                         autoFocus
                       />
@@ -387,13 +387,13 @@ export function AgentProfilePanel() {
                         disabled={savingKey || !newApiKey}
                         className="px-2 py-1.5 text-[10px] font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                       >
-                        {savingKey ? <RefreshCw className="size-2.5 animate-spin" /> : 'Save'}
+                        {savingKey ? <RefreshCw className="size-2.5 animate-spin" /> : '保存'}
                       </button>
                       <button
                         onClick={() => { setEditingKey(false); setNewApiKey(''); }}
                         className="px-2 py-1.5 text-[10px] font-medium rounded border hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                       >
-                        Cancel
+                        取消
                       </button>
                     </div>
                   ) : (
@@ -404,7 +404,7 @@ export function AgentProfilePanel() {
                 {/* System prompt (if set) */}
                 {cloudConfig.systemPrompt && (
                   <div>
-                    <span className="text-[11px] text-muted-foreground">System Prompt</span>
+                    <span className="text-[11px] text-muted-foreground">系统提示词</span>
                     <p className="text-xs text-foreground mt-1 whitespace-pre-wrap line-clamp-3">{cloudConfig.systemPrompt}</p>
                   </div>
                 )}
@@ -464,7 +464,7 @@ export function AgentProfilePanel() {
               <div className="rounded-lg border overflow-hidden">
                 <div className="px-3.5 py-2.5 border-b flex items-center gap-1.5">
                   <Sparkles className="size-3 text-amber-500" />
-                  <span className="text-xs font-medium">Installed Skills</span>
+                  <span className="text-xs font-medium">已安装技能</span>
                   <span className="text-[10px] text-muted-foreground ml-auto">{installed.length}</span>
                 </div>
                 <div className="divide-y">
@@ -503,34 +503,34 @@ export function AgentProfilePanel() {
               className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border bg-background hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             >
               <Plus className="size-3" />
-              Start a Thread
+              新建会话
             </button>
             {isCloud && (
               <button
                 onClick={handleToggleDisabled}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                title={isDisabled ? 'Enable agent' : 'Disable agent'}
+                title={isDisabled ? '启用 Agent' : '停用 Agent'}
               >
                 <Power className="size-3" />
-                {isDisabled ? 'Enable' : 'Disable'}
+                {isDisabled ? '启用' : '停用'}
               </button>
             )}
             <button
               onClick={handleRemoveCloudAgent}
               className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              title="Remove agent"
+              title="移除 Agent"
             >
               <Trash2 className="size-3" />
-              Remove
+              移除
             </button>
             {!isCloud && (
               <button
                 onClick={handleToggleDisabled}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                title={isDisabled ? 'Enable agent' : 'Disable agent'}
+                title={isDisabled ? '启用 Agent' : '停用 Agent'}
               >
                 <Power className="size-3" />
-                {isDisabled ? 'Enable' : 'Disable'}
+                {isDisabled ? '启用' : '停用'}
               </button>
             )}
           </div>

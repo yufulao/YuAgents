@@ -339,7 +339,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
           {filteredKnowledge.length > 0 && (
             <>
               {filteredAgents.length > 0 && (
-                <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-t border-border">Knowledge</div>
+                <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-t border-border">知识库</div>
               )}
               {filteredKnowledge.map((entry) => {
                 const idx = mentionItems.findIndex((m) => m.type === 'knowledge' && m.entry.id === entry.id);
@@ -376,7 +376,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
         {/* Drag overlay */}
         {isDragging && (
           <div className="absolute inset-0 flex items-center justify-center rounded-2xl z-10 pointer-events-none">
-            <span className="text-sm font-medium text-primary">Drop files here</span>
+            <span className="text-sm font-medium text-primary">松开即可上传文件</span>
           </div>
         )}
 
@@ -422,7 +422,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
             onPaste={handlePaste}
             onFocus={() => { setIsFocused(true); onFocusChange?.(true); }}
             onBlur={() => { setIsFocused(false); onFocusChange?.(false); }}
-            placeholder={agents.length > 1 || knowledge.length > 0 ? 'Message... (use @ to mention agents or knowledge)' : 'Message...'}
+            placeholder={agents.length > 1 || knowledge.length > 0 ? '输入消息...（用 @ 提及 Agent 或知识库）' : '输入消息...'}
             rows={1}
             disabled={disabled}
             data-chat-input
@@ -432,14 +432,14 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
           {isFocused ? (
             <kbd
               className="pointer-events-none absolute right-1 top-2.5 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input h-4 px-1"
-              title="Press Esc to exit typing mode"
+              title="按 Esc 退出输入"
             >
               esc
             </kbd>
           ) : !message && (
             <kbd
               className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center rounded text-[9px] font-mono font-medium bg-muted text-muted-foreground border border-input size-4"
-              title="Press any key to start typing"
+              title="按任意键开始输入"
             >
               i
             </kbd>
@@ -459,7 +459,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
             <button
               onClick={() => fileInputRef.current?.click()}
               className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Attach file"
+              title="添加文件"
             >
               <Paperclip className="size-4" />
             </button>
@@ -478,7 +478,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
                 }
               }}
               className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Attach image"
+              title="添加图片"
             >
               <ImageIcon className="size-4" />
             </button>
@@ -486,7 +486,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
               <DropdownMenuTrigger asChild>
                 <button
                   className="size-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                  title="More actions"
+                  title="更多操作"
                 >
                   <Plus className="size-4" />
                 </button>
@@ -494,7 +494,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
               <DropdownMenuContent align="start" side="top" className="min-w-[180px]">
                 <DropdownMenuItem onSelect={() => onCreateRoutine?.()}>
                   <CalendarClock className="size-4 mr-2" />
-                  Create Routine
+                  创建例行任务
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

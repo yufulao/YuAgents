@@ -95,17 +95,17 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogTitle>New Thread</DialogTitle>
+        <DialogTitle>新建会话</DialogTitle>
         <DialogDescription className="text-sm text-muted-foreground">
           {multipleAgents
-            ? 'Pick which agents join this conversation.'
-            : 'Start a new conversation with your agent.'}
+            ? '选择要加入本次会话的 Agent。'
+            : '与当前 Agent 开始新会话。'}
         </DialogDescription>
 
         {/* Agent list */}
         <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
           {onlineAgents.length === 0 && (
-            <p className="text-sm text-muted-foreground py-4 text-center">No agents are currently online.</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">当前没有在线 Agent。</p>
           )}
           {onlineAgents.map((agent) => {
             const isSelected = selected.has(agent.agentName);
@@ -145,14 +145,14 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
                   isMaster ? (
                     <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium shrink-0">
                       <Star className="size-3 fill-current" />
-                      lead
+                      主持
                     </span>
                   ) : (
                     <button
                       onClick={(e) => { e.stopPropagation(); setAsMaster(agent.agentName); }}
                       className="text-[11px] px-2 py-0.5 rounded-full text-muted-foreground hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
                     >
-                      set lead
+                      设为主持
                     </button>
                   )
                 )}
@@ -164,7 +164,7 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
         {/* Lead explanation — only when multiple agents are selected */}
         {multipleAgents && selected.size > 1 && (
           <p className="text-[11px] text-muted-foreground/70 mt-2 px-1">
-            The <Star className="size-2.5 inline fill-amber-500 text-amber-500 -mt-px" /> lead agent coordinates the others and responds to your messages first.
+            <Star className="size-2.5 inline fill-amber-500 text-amber-500 -mt-px" /> 主持 Agent 会协调其他成员，并优先响应你的消息。
           </p>
         )}
 
@@ -173,14 +173,14 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
           <div className="mt-3">
             <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1.5">
               <History className="size-3" />
-              Resume from past session
+              从历史会话继续
             </label>
             <select
               value={resumeFrom}
               onChange={(e) => setResumeFrom(e.target.value)}
               className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">New conversation (no context)</option>
+              <option value="">新会话（不带上下文）</option>
               {resumableSessions.map((s) => (
                 <option key={s.sessionId} value={s.sessionId}>
                   {s.title || s.sessionId}
@@ -192,10 +192,10 @@ export function NewThreadDialog({ open, onOpenChange, agents, sessions, onCreate
 
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
+            取消
           </Button>
           <Button size="sm" onClick={handleCreate} disabled={selected.size === 0}>
-            {resumeFrom ? 'Resume Thread' : 'Start Thread'}
+            {resumeFrom ? '继续会话' : '开始会话'}
           </Button>
         </div>
       </DialogContent>

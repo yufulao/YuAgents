@@ -44,7 +44,7 @@ const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string
 };
 
 const AGENT_HANDLE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$/;
-const AGENT_HANDLE_HINT = 'Use an ASCII Handle for @mentions. Put Chinese names in Display Name.';
+const AGENT_HANDLE_HINT = 'Handle 仅用于 @mention，请使用 ASCII；中文名称请填在显示名称。';
 
 function getAgentBrand(name: string) {
   return AGENT_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white' };
@@ -166,11 +166,11 @@ export function ConnectAgentView() {
 
   const handleAddCloudAgent = async () => {
     if (!selectedProvider || !cfgModel || !cfgName) {
-      toast.error('Please fill in all required fields');
+      toast.error('请填写必填项');
       return;
     }
     if (isCustomProvider && !cfgBaseUrl) {
-      toast.error('Custom endpoint requires a base URL');
+      toast.error('自定义端点需要 Base URL');
       return;
     }
     setSaving(true);
@@ -183,14 +183,14 @@ export function ConnectAgentView() {
         baseUrl: cfgBaseUrl || undefined,
         systemPrompt: cfgPrompt || undefined,
       });
-      toast.success(`Cloud agent "@${cfgName}" added`);
+      toast.success(`已添加云端 Agent "@${cfgName}"`);
       refreshWorkspace();
       loadCloudAgents();
       setSelectedProvider(null);
       setCfgKey('');
       setCfgPrompt('');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add cloud agent');
+      toast.error(err instanceof Error ? err.message : '添加云端 Agent 失败');
     } finally {
       setSaving(false);
     }
@@ -199,11 +199,11 @@ export function ConnectAgentView() {
   const handleRemoveCloudAgent = async (agentName: string) => {
     try {
       await workspaceApi.removeCloudAgent(agentName);
-      toast.success(`Removed "@${agentName}"`);
+      toast.success(`已移除 "@${agentName}"`);
       loadCloudAgents();
       refreshWorkspace();
     } catch {
-      toast.error('Failed to remove cloud agent');
+      toast.error('移除云端 Agent 失败');
     }
   };
 
@@ -211,11 +211,11 @@ export function ConnectAgentView() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-        <h2 className="text-sm font-semibold">Connect Agents</h2>
+        <h2 className="text-sm font-semibold">连接 Agent</h2>
         <button
           onClick={() => setViewMode('threads')}
           className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
-          title="Close"
+          title="关闭"
         >
           <X className="size-4" />
         </button>
@@ -233,7 +233,7 @@ export function ConnectAgentView() {
           )}
         >
           <Terminal className="size-3.5" />
-          Local Agents
+          本地 Agent
           {activeTab === 'local' && (
             <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-foreground rounded-full" />
           )}
@@ -248,7 +248,7 @@ export function ConnectAgentView() {
           )}
         >
           <Cloud className="size-3.5" />
-          Cloud Agents
+          云端 Agent
           {activeTab === 'cloud' && (
             <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-foreground rounded-full" />
           )}
@@ -260,7 +260,7 @@ export function ConnectAgentView() {
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
             <Loader2 className="size-4 animate-spin mr-2" />
-            <span className="text-xs">Loading...</span>
+            <span className="text-xs">加载中...</span>
           </div>
         ) : activeTab === 'local' ? (
           <LocalAgentsTab
@@ -358,7 +358,7 @@ function LocalAgentsTab({
     const handle = localName.trim();
     if (!selectedEntry || !handle) return;
     if (!AGENT_HANDLE_RE.test(handle)) {
-      toast.error(`Invalid Handle. ${AGENT_HANDLE_HINT}`);
+      toast.error(`Handle 无效。${AGENT_HANDLE_HINT}`);
       return;
     }
     setCreating(true);
@@ -375,9 +375,9 @@ function LocalAgentsTab({
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
-      toast.success(`Agent "@${handle}" created`);
+      toast.success(`已创建 Agent "@${handle}"`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create agent');
+      toast.error(err instanceof Error ? err.message : '创建 Agent 失败');
     } finally {
       setCreating(false);
     }
@@ -407,7 +407,7 @@ function LocalAgentsTab({
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-medium leading-tight truncate">{entry.label}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                  {entry.builtin ? 'Built-in' : entry.tags?.[0] || 'Open Source'}
+                  {entry.builtin ? '内置' : entry.tags?.[0] || '开源'}
                 </div>
               </div>
               {isSelected && <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
@@ -448,9 +448,9 @@ function LocalAgentsTab({
           <div className="p-4 space-y-4">
             <div className="rounded-lg border bg-background p-3 space-y-3">
               <div>
-                <h4 className="text-xs font-semibold">Create Web-managed Agent</h4>
+                <h4 className="text-xs font-semibold">创建 Web 管理的 Agent</h4>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Save the agent profile and runtime config here; the local daemon can start it later.
+                  在这里保存 Agent 资料与运行配置，本地守护进程可据此启动。
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -458,60 +458,60 @@ function LocalAgentsTab({
                   <Label className="text-[11px]">Handle</Label>
                   <Input value={localName} onChange={(e) => setLocalName(e.target.value)} className="h-8 text-xs" />
                   <p className="text-[10px] text-muted-foreground">
-                    @mention uses this ASCII Handle.
+                    @mention 使用这个 ASCII Handle。
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Display Name</Label>
+                  <Label className="text-[11px]">显示名称</Label>
                   <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="h-8 text-xs" />
                   <p className="text-[10px] text-muted-foreground">
-                    Chinese agent names belong here.
+                    中文 Agent 名称填在这里。
                   </p>
                 </div>
                 <div className="space-y-1 sm:col-span-2">
-                  <Label className="text-[11px]">Working Directory</Label>
+                  <Label className="text-[11px]">工作目录</Label>
                   <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-8 text-xs font-mono" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Model Provider</Label>
+                  <Label className="text-[11px]">模型提供方</Label>
                   <Input value={modelProvider} onChange={(e) => setModelProvider(e.target.value)} placeholder="openai, anthropic..." className="h-8 text-xs" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Model</Label>
+                  <Label className="text-[11px]">模型</Label>
                   <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="gpt-5, claude..." className="h-8 text-xs" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Mode</Label>
+                  <Label className="text-[11px]">模式</Label>
                   <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
-                    <option value="ask">Ask</option>
-                    <option value="code">Code</option>
-                    <option value="autonomous">Autonomous</option>
+                    <option value="ask">询问</option>
+                    <option value="code">编码</option>
+                    <option value="autonomous">自主</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Quality</Label>
+                  <Label className="text-[11px]">质量</Label>
                   <select value={quality} onChange={(e) => setQuality(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="max">Max</option>
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                    <option value="max">最高</option>
                   </select>
                 </div>
               </div>
               <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !localName.trim()} className="w-full">
                 {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
-                Create Agent Config
+                创建 Agent 配置
               </Button>
             </div>
 
             {/* Option A: Desktop App */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-semibold text-foreground">Option A</span>
-                <span className="text-xs text-muted-foreground">— Desktop App (recommended)</span>
+                <span className="text-xs font-semibold text-foreground">方式 A</span>
+                <span className="text-xs text-muted-foreground">— 桌面应用（推荐）</span>
               </div>
               <p className="text-[11px] text-muted-foreground mb-2">
-                Download the OpenAgents launcher for a visual setup experience.
+                下载 OpenAgents Launcher，用图形界面完成配置。
               </p>
               <div className="flex gap-2">
                 <a
@@ -543,21 +543,21 @@ function LocalAgentsTab({
 
             <div className="flex items-center gap-3">
               <div className="flex-1 border-t" />
-              <span className="text-[10px] text-muted-foreground">or</span>
+              <span className="text-[10px] text-muted-foreground">或</span>
               <div className="flex-1 border-t" />
             </div>
 
             {/* Option B: CLI */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-semibold text-foreground">Option B</span>
-                <span className="text-xs text-muted-foreground">— Command Line</span>
+                <span className="text-xs font-semibold text-foreground">方式 B</span>
+                <span className="text-xs text-muted-foreground">— 命令行</span>
               </div>
 
               {/* Step 1: Install CLI */}
               <div className="space-y-3">
                 <div>
-                  <span className="text-[11px] text-muted-foreground">1. Install the OpenAgents CLI</span>
+                  <span className="text-[11px] text-muted-foreground">1. 安装 OpenAgents CLI</span>
                   <div className="relative group mt-1">
                     <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
                       <span className="text-zinc-500">$ </span>
@@ -574,7 +574,7 @@ function LocalAgentsTab({
 
                 {/* Step 2: Install agent runtime */}
                 <div>
-                  <span className="text-[11px] text-muted-foreground">2. Install the {selectedEntry.label} runtime</span>
+                  <span className="text-[11px] text-muted-foreground">2. 安装 {selectedEntry.label} 运行时</span>
                   <div className="relative group mt-1">
                     <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
                       <span className="text-zinc-500">$ </span>
@@ -591,7 +591,7 @@ function LocalAgentsTab({
 
                 {/* Step 3: Connect */}
                 <div>
-                  <span className="text-[11px] text-muted-foreground">3. Connect to this workspace</span>
+                  <span className="text-[11px] text-muted-foreground">3. 连接到当前工作区</span>
                   <div className="relative group mt-1">
                     <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
                       <span className="text-zinc-500">$ </span>
@@ -612,7 +612,7 @@ function LocalAgentsTab({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Key className="size-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium">Workspace Token</span>
+                <span className="text-xs font-medium">工作区 Token</span>
               </div>
               <button
                 onClick={onCopyToken}
@@ -626,7 +626,7 @@ function LocalAgentsTab({
                   tokenCopied ? 'text-emerald-600' : 'text-muted-foreground group-hover:text-foreground',
                 )}>
                   {tokenCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                  {tokenCopied ? 'Copied' : 'Copy'}
+                  {tokenCopied ? '已复制' : '复制'}
                 </span>
               </button>
             </div>
@@ -637,7 +637,7 @@ function LocalAgentsTab({
       {/* Hint when nothing selected */}
       {!selectedEntry && (
         <p className="text-center text-xs text-muted-foreground py-4">
-          Select an agent above to see connection instructions
+          选择上方 Agent 查看连接方式
         </p>
       )}
     </div>
@@ -696,11 +696,11 @@ function CloudAgentsTab({
   onRemove: (name: string) => void;
 }) {
   const providerGroups = [
-    { label: 'Chat Models', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral', 'sensenova'] },
-    { label: 'Search & Agents', names: ['perplexity', 'manus'] },
-    { label: 'Fast Inference', names: ['groq', 'together', 'fireworks', 'openrouter', 'sambanova', 'cerebras'] },
-    { label: 'Image & Media', names: ['stability', 'replicate', 'fal', 'elevenlabs'] },
-    { label: 'Custom', names: ['custom'] },
+    { label: '对话模型', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral', 'sensenova'] },
+    { label: '搜索与 Agent', names: ['perplexity', 'manus'] },
+    { label: '高速推理', names: ['groq', 'together', 'fireworks', 'openrouter', 'sambanova', 'cerebras'] },
+    { label: '图像与媒体', names: ['stability', 'replicate', 'fal', 'elevenlabs'] },
+    { label: '自定义', names: ['custom'] },
   ];
 
   // When a provider is selected, show config view instead of grid
@@ -713,7 +713,7 @@ function CloudAgentsTab({
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className="size-3 rotate-180" />
-          All providers
+          所有提供方
         </button>
 
         <div className="rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
@@ -725,7 +725,7 @@ function CloudAgentsTab({
               <div>
                 <h3 className="text-sm font-semibold">{selectedProviderInfo.label}</h3>
                 <p className="text-[11px] text-muted-foreground">
-                  {isCustomProvider ? 'Connect any OpenAI-compatible endpoint' : 'Configure and add a cloud agent'}
+                  {isCustomProvider ? '连接任意 OpenAI 兼容端点' : '配置并添加云端 Agent'}
                 </p>
               </div>
             </div>
@@ -735,7 +735,7 @@ function CloudAgentsTab({
             {/* Custom endpoint: Base URL */}
             {isCustomProvider && (
               <div className="space-y-1.5">
-                <Label htmlFor="cloud-base-url" className="text-xs">Endpoint URL</Label>
+                <Label htmlFor="cloud-base-url" className="text-xs">端点 URL</Label>
                 <Input
                   id="cloud-base-url"
                   value={cfgBaseUrl}
@@ -743,14 +743,14 @@ function CloudAgentsTab({
                   placeholder="https://api.example.com"
                   className="text-sm font-mono h-9"
                 />
-                <p className="text-[10px] text-muted-foreground">/v1 is appended automatically if needed</p>
+                <p className="text-[10px] text-muted-foreground">需要时会自动补全 /v1</p>
               </div>
             )}
 
             {/* Model selector — list for known providers, text input for custom */}
             {isCustomProvider ? (
               <div className="space-y-1.5">
-                <Label htmlFor="cloud-model" className="text-xs">Model Name</Label>
+                <Label htmlFor="cloud-model" className="text-xs">模型名称</Label>
                 <Input
                   id="cloud-model"
                   value={cfgModel}
@@ -761,7 +761,7 @@ function CloudAgentsTab({
               </div>
             ) : (
               <div className="space-y-1.5">
-                <Label className="text-xs">Model</Label>
+                <Label className="text-xs">模型</Label>
                 <div className="grid grid-cols-1 gap-1">
                   {selectedProviderInfo.models.map((m) => (
                     <button
@@ -798,11 +798,11 @@ function CloudAgentsTab({
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                   </svg>
-                  Sign in with Google
+                  使用 Google 登录
                 </a>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 border-t" />
-                  <span className="text-[10px] text-muted-foreground">or use API key</span>
+                  <span className="text-[10px] text-muted-foreground">或使用 API Key</span>
                   <div className="flex-1 border-t" />
                 </div>
               </>
@@ -810,7 +810,7 @@ function CloudAgentsTab({
 
             {/* Agent name */}
             <div className="space-y-1.5">
-              <Label htmlFor="cloud-name" className="text-xs">Agent Name</Label>
+              <Label htmlFor="cloud-name" className="text-xs">Agent 名称</Label>
               <Input
                 id="cloud-name"
                 value={cfgName}
@@ -818,7 +818,7 @@ function CloudAgentsTab({
                 placeholder="e.g. chatgpt"
                 className="text-sm h-9"
               />
-              <p className="text-[10px] text-muted-foreground">Use this to @mention the agent in chat</p>
+              <p className="text-[10px] text-muted-foreground">聊天中用这个名称 @mention Agent</p>
             </div>
 
             {/* API Key */}
@@ -829,10 +829,10 @@ function CloudAgentsTab({
                 type="password"
                 value={cfgKey}
                 onChange={(e) => setCfgKey(e.target.value)}
-                placeholder="sk-... (optional with official login)"
+                placeholder="sk-...（官方登录时可留空）"
                 className="text-sm font-mono h-9"
               />
-              <p className="text-[10px] text-muted-foreground">Leave empty when this workspace uses an official login or local credential profile.</p>
+              <p className="text-[10px] text-muted-foreground">工作区使用官方登录或本地凭据配置时可留空。</p>
             </div>
 
             {/* Advanced */}
@@ -841,16 +841,16 @@ function CloudAgentsTab({
                 onClick={() => setShowAdvanced(!showAdvanced)}
                 className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               >
-                {showAdvanced ? 'Hide' : 'Show'} advanced options
+                {showAdvanced ? '收起' : '显示'}高级选项
               </button>
               {showAdvanced && (
                 <div className="mt-2">
-                  <Label htmlFor="cloud-prompt" className="text-xs">System Prompt</Label>
+                  <Label htmlFor="cloud-prompt" className="text-xs">系统提示词</Label>
                   <Textarea
                     id="cloud-prompt"
                     value={cfgPrompt}
                     onChange={(e) => setCfgPrompt(e.target.value)}
-                    placeholder="Custom instructions for this agent..."
+                    placeholder="这个 Agent 的自定义指令..."
                     className="text-sm min-h-[50px] mt-1.5"
                   />
                 </div>
@@ -865,7 +865,7 @@ function CloudAgentsTab({
               size="sm"
             >
               {saving && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
-              Add Agent
+              添加 Agent
             </Button>
           </div>
         </div>
@@ -901,7 +901,7 @@ function CloudAgentsTab({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium leading-tight truncate">{p.label}</div>
-                      <div className="text-[9px] text-muted-foreground">{p.models.length} models</div>
+                      <div className="text-[9px] text-muted-foreground">{p.models.length} 个模型</div>
                     </div>
                   </button>
                 );
@@ -915,7 +915,7 @@ function CloudAgentsTab({
       {cloudAgents.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 px-1">
-            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Connected</span>
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">已连接</span>
             <div className="flex-1 border-t" />
           </div>
           {cloudAgents.map((agent) => (
@@ -937,7 +937,7 @@ function CloudAgentsTab({
               <button
                 onClick={() => onRemove(agent.agentName)}
                 className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
-                title="Remove"
+                title="移除"
               >
                 <Trash2 className="size-3" />
               </button>

@@ -222,7 +222,7 @@ function getThreadInfo(message: WorkspaceMessage): ThreadInfo | null {
 
   if (!parentId && !title && !preview && count === null && messages.length === 0) return null;
   return {
-    title: typeof title === 'string' && title.trim() ? title : 'Thread',
+    title: typeof title === 'string' && title.trim() ? title : '话题',
     count: Number.isFinite(count) ? count : null,
     preview: typeof preview === 'string' && preview.trim() ? preview : null,
     parentId: typeof parentId === 'string' && parentId.trim() ? parentId : null,
@@ -293,16 +293,16 @@ function ThreadSummary({ thread }: { thread: ThreadInfo }) {
             thread.messages.slice(0, 5).map((reply, index) => (
               <div key={`${reply.createdAt || index}-${reply.senderName || 'reply'}`} className="border-l-2 border-primary/30 pl-2">
                 <div className="text-[10px] text-muted-foreground">
-                  {reply.senderName || 'unknown'} {reply.createdAt ? new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                  {reply.senderName || '未知'} {reply.createdAt ? new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                 </div>
                 <div className="text-[11px] whitespace-pre-wrap break-words">
-                  {reply.content || '(empty)'}
+                  {reply.content || '（空消息）'}
                 </div>
               </div>
             ))
           ) : (
             <div className="text-[11px] text-muted-foreground">
-              {thread.parentId ? shortId(thread.parentId) : 'Thread metadata'}
+              {thread.parentId ? shortId(thread.parentId) : '话题元数据'}
             </div>
           )}
         </div>
@@ -346,7 +346,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('Failed to copy');
+      toast.error('复制失败');
     }
   };
 
@@ -370,8 +370,8 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
   const isCurrentUser = isHuman && !!message.senderId && message.senderId === currentUser.id;
   const displayName = isHuman
     ? isCurrentUser
-      ? 'You'
-      : (message.senderName && message.senderName !== 'user' ? message.senderName : 'User')
+      ? '我'
+      : (message.senderName && message.senderName !== 'user' ? message.senderName : '用户')
     : message.senderName;
   const seed = message.senderId || message.senderName || 'human';
 
@@ -427,7 +427,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
                 className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
               >
                 {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                {expanded ? 'Show less' : 'Show full'}
+                {expanded ? '收起' : '展开全文'}
               </button>
             )}
             {thread && <ThreadSummary thread={thread} />}
@@ -441,7 +441,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
                 onClick={handleCopy}
               >
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? '已复制' : '复制'}
               </Button>
               {attachments.length > 0 && (
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -457,7 +457,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
               >
                 {detailsOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                 <Info className="size-3" />
-                Details
+                详情
               </Button>
             </div>
             {detailsOpen && (

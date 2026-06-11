@@ -90,7 +90,7 @@ function DMSection({
         className="flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
       >
         <MessageCircle className="size-3" />
-        <span>Agent DMs ({conversations.length})</span>
+        <span>Agent 私聊（{conversations.length}）</span>
         <svg
           className={cn('size-3 ml-auto transition-transform', expanded && 'rotate-180')}
           viewBox="0 0 12 12"
@@ -278,7 +278,7 @@ export function ThreadList() {
             <Search className="size-3.5" />
             <input
               type="text"
-              placeholder="Search messages..."
+              placeholder="搜索消息..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="text-xs bg-transparent outline-none flex-1 placeholder:text-muted-foreground"
@@ -291,7 +291,7 @@ export function ThreadList() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
-            title="Refresh"
+            title="刷新"
           >
             <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
           </button>
@@ -326,7 +326,7 @@ export function ThreadList() {
               const snippet = compactPreview(contentHit.snippet, 80);
               preview = highlightMatch(snippet, searchQuery);
             } else if (lastMsg && lastMsg.content) {
-              const sender = lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName;
+              const sender = lastMsg.senderName === 'user' ? '我' : lastMsg.senderName;
               if (lastMsg.isStatus) {
                 previewIsStatus = true;
                 // Parse "Using tool: <tool_name>" pattern from status messages
@@ -343,7 +343,7 @@ export function ThreadList() {
                 } else if (lastMsg.content.includes('thinking')) {
                   preview = (
                     <span className="flex items-center gap-1">
-                      {sender}: <Loader2 className="size-3 shrink-0 animate-spin" /> thinking...
+                      {sender}: <Loader2 className="size-3 shrink-0 animate-spin" /> 思考中...
                     </span>
                   );
                 } else {
@@ -354,7 +354,7 @@ export function ThreadList() {
                 preview = `${sender}: ${compactPreview(lastMsg.content)}`;
               }
             } else {
-              preview = 'No messages yet';
+              preview = '还没有消息';
             }
 
             return (
@@ -387,8 +387,8 @@ export function ThreadList() {
                     )}
                     <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
                       {isSearching
-                        ? highlightMatch(session.title || 'Untitled', searchQuery)
-                        : (session.title || 'Untitled')}
+                        ? highlightMatch(session.title || '未命名', searchQuery)
+                        : (session.title || '未命名')}
                     </span>
                     {isCompleted && !isSelected ? (
                       <CheckCircle2 className="size-3.5 shrink-0 text-amber-500" />
@@ -425,7 +425,7 @@ export function ThreadList() {
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        const next = window.prompt('Rename thread', session.title || '');
+                        const next = window.prompt('重命名会话', session.title || '');
                         const trimmed = next?.trim();
                         if (trimmed && trimmed !== session.title) {
                           renameSession(session.sessionId, trimmed);
@@ -433,7 +433,7 @@ export function ThreadList() {
                       }}
                     >
                       <Pencil className="size-4" />
-                      <span>Rename</span>
+                      <span>重命名</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={(e) => {
@@ -442,7 +442,7 @@ export function ThreadList() {
                       }}
                     >
                       <Star className={cn('size-4', session.starred && 'fill-amber-400 text-amber-400')} />
-                      <span>{session.starred ? 'Unstar' : 'Star'}</span>
+                      <span>{session.starred ? '取消星标' : '星标'}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={(e) => {
@@ -451,8 +451,8 @@ export function ThreadList() {
                       }}
                     >
                       {session.status === 'archived'
-                        ? <><ArchiveRestore className="size-4" /><span>Unarchive</span></>
-                        : <><Archive className="size-4" /><span>Archive</span></>
+                        ? <><ArchiveRestore className="size-4" /><span>取消归档</span></>
+                        : <><Archive className="size-4" /><span>归档</span></>
                       }
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
@@ -464,7 +464,7 @@ export function ThreadList() {
                       }}
                     >
                       <Trash2 className="size-4" />
-                      <span>Delete</span>
+                      <span>删除</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -476,13 +476,13 @@ export function ThreadList() {
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               {isSearching ? (
                 <>
-                  <p className="text-sm">No results found</p>
-                  <p className="text-xs mt-1">Try a different search term</p>
+                  <p className="text-sm">没有找到结果</p>
+                  <p className="text-xs mt-1">换个关键词试试</p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm">No threads yet</p>
-                  <p className="text-xs mt-1">Create a thread to start chatting</p>
+                  <p className="text-sm">还没有会话</p>
+                  <p className="text-xs mt-1">新建会话后开始协作</p>
                 </>
               )}
             </div>
@@ -523,7 +523,7 @@ export function ThreadList() {
                 className="flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
               >
                 <Archive className="size-3" />
-                <span>Archived ({archivedSessions.length})</span>
+                <span>已归档（{archivedSessions.length}）</span>
                 <svg
                   className={cn('size-3 ml-auto transition-transform', showArchived && 'rotate-180')}
                   viewBox="0 0 12 12"
@@ -544,8 +544,8 @@ export function ThreadList() {
                       ? timeAgo(new Date(activityMs).toISOString())
                       : session.createdAt ? timeAgo(session.createdAt) : '';
                     const preview = lastMsg && lastMsg.content
-                      ? `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${compactPreview(lastMsg.content)}`
-                      : 'No messages yet';
+                      ? `${lastMsg.senderName === 'user' ? '我' : lastMsg.senderName}: ${compactPreview(lastMsg.content)}`
+                      : '还没有消息';
 
                     return (
                       <div
@@ -568,7 +568,7 @@ export function ThreadList() {
                         <div className="flex-1 min-w-0 space-y-0.5">
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
-                              {session.title || 'Untitled'}
+                              {session.title || '未命名'}
                             </span>
                             <span className="text-xs text-muted-foreground shrink-0">
                               {displayTime}
@@ -595,7 +595,7 @@ export function ThreadList() {
                               }}
                             >
                               <ArchiveRestore className="size-4" />
-                              <span>Unarchive</span>
+                              <span>取消归档</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -606,7 +606,7 @@ export function ThreadList() {
                               }}
                             >
                               <Trash2 className="size-4" />
-                              <span>Delete</span>
+                              <span>删除</span>
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

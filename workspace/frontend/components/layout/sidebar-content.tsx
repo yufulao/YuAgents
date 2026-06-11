@@ -88,12 +88,12 @@ export function SidebarContent() {
 
   const handleCopyToken = () => {
     if (!token) {
-      toast.error('No management token available');
+      toast.error('没有可用的管理 Token');
       return;
     }
     navigator.clipboard.writeText(token);
     setTokenCopied(true);
-    toast.success('Management token copied');
+    toast.success('管理 Token 已复制');
     setTimeout(() => setTokenCopied(false), 2000);
   };
 
@@ -119,9 +119,9 @@ export function SidebarContent() {
     try {
       await workspaceApi.claimWorkspace();
       await refreshWorkspace();
-      toast.success('Workspace claimed successfully');
+      toast.success('工作区已认领');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to claim workspace');
+      toast.error(e instanceof Error ? e.message : '认领工作区失败');
     } finally {
       setClaiming(false);
     }
@@ -141,7 +141,7 @@ export function SidebarContent() {
                 <Plus className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">New Thread</TooltipContent>
+            <TooltipContent side="right">新建会话</TooltipContent>
           </Tooltip>
         </div>
 
@@ -169,7 +169,7 @@ export function SidebarContent() {
                   <LogIn className="size-4 text-muted-foreground" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right">Sign in</TooltipContent>
+              <TooltipContent side="right">登录</TooltipContent>
             </Tooltip>
           )}
           {isOpenAgentsDomain && user && (
@@ -190,7 +190,7 @@ export function SidebarContent() {
                 {isDark ? <Sun className="size-4 text-muted-foreground" /> : <Moon className="size-4 text-muted-foreground" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{isDark ? 'Light mode' : 'Dark mode'}</TooltipContent>
+            <TooltipContent side="right">{isDark ? '浅色模式' : '深色模式'}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -198,7 +198,7 @@ export function SidebarContent() {
                 <Settings className="size-4 text-muted-foreground" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Settings</TooltipContent>
+            <TooltipContent side="right">设置</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -217,14 +217,14 @@ export function SidebarContent() {
               className="w-full h-9 flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-[13px] font-medium hover:bg-primary/90 transition-colors"
             >
               <Plus className="size-4" />
-              <span>New Thread</span>
+              <span>新建会话</span>
             </button>
           </div>
 
           {/* Agents */}
           <div className="px-2.5">
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5">
-              Agents ({onlineCount}/{recentAgents.length})
+              Agents（{onlineCount}/{recentAgents.length}）
             </p>
             <div className="space-y-0.5 max-h-48 overflow-y-auto">
               {recentAgents.map((agent) => (
@@ -253,7 +253,7 @@ export function SidebarContent() {
               <>
                 <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5 mt-6">
                   <Users className="size-3 inline-block mr-1 -mt-0.5" />
-                  Online ({onlineUsers.length})
+                  在线成员（{onlineUsers.length}）
                 </p>
                 <div className="space-y-0.5">
                   {onlineUsers.map((u) => (
@@ -263,7 +263,7 @@ export function SidebarContent() {
                     >
                       <div className="size-2 rounded-full bg-emerald-500 shrink-0" />
                       <span className="truncate text-foreground">
-                        {u.id === currentUser.id ? `${u.name} (you)` : u.name}
+                        {u.id === currentUser.id ? `${u.name}（我）` : u.name}
                       </span>
                     </div>
                   ))}
@@ -273,19 +273,19 @@ export function SidebarContent() {
 
             {/* Collaboration */}
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5 mt-6">
-              Collaboration
+              协作
             </p>
             <div className="space-y-0.5">
-              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="Threads" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
+              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="会话" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
               {recentAgents.length > 0 && (
                 <>
-                  <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="Files" count={files.length} onClick={() => setViewMode('files')} />
-                  <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="Browser" count={browserTabs.length} onClick={() => setViewMode('browser')} />
-                  <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="Routines" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
-                  <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="Knowledge" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
-                  <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="Tasks" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
-                  <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="Inbox" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
-                  <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="Skill Hub" onClick={() => setViewMode('skills')} />
+                  <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="文件" count={files.length} onClick={() => setViewMode('files')} />
+                  <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="浏览器" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+                  <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="例行任务" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
+                  <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="知识库" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
+                  <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="任务" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
+                  <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="收件箱" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
+                  <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="技能中心" onClick={() => setViewMode('skills')} />
                 </>
               )}
             </div>
@@ -306,10 +306,10 @@ export function SidebarContent() {
               )}
             >
               <PlusSquare className="size-4" />
-              Connect Your First Agent
+              连接第一个 Agent
             </button>
           ) : (
-            <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="Connect Agent" onClick={() => setViewMode('connect')} />
+            <NavButton active={viewMode === 'connect'} icon={<PlusSquare className="size-[15px]" />} label="连接 Agent" onClick={() => setViewMode('connect')} />
           )}
         </div>
         <div className="shrink-0 border-t border-border px-2.5 py-2.5 space-y-1">
@@ -321,7 +321,7 @@ export function SidebarContent() {
                   {user.email[0].toUpperCase()}
                 </div>
                 <span className="text-[12px] text-muted-foreground truncate flex-1">{user.email}</span>
-                <button onClick={signOut} className="text-muted-foreground hover:text-foreground transition-colors" title="Sign out">
+                <button onClick={signOut} className="text-muted-foreground hover:text-foreground transition-colors" title="退出登录">
                   <LogOut className="size-3.5" />
                 </button>
               </div>
@@ -332,12 +332,12 @@ export function SidebarContent() {
                   className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md bg-emerald-600 text-white text-[12px] font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
                 >
                   <Shield className="size-3.5" />
-                  {claiming ? 'Claiming...' : 'Claim Workspace'}
+                  {claiming ? '认领中...' : '认领工作区'}
                 </button>
               )}
               {isOwnedByUser && (
                 <p className="text-[11px] text-emerald-600 flex items-center gap-1 px-0.5">
-                  <Shield className="size-3" /> You own this workspace
+                  <Shield className="size-3" /> 你拥有此工作区
                 </p>
               )}
             </div>
@@ -351,14 +351,14 @@ export function SidebarContent() {
                 className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
                 <LogIn className="size-[15px]" />
-                <span className="text-xs">Sign in</span>
+                <span className="text-xs">登录</span>
               </button>
             )}
             <div className="flex-1" />
             <button
               onClick={toggleTheme}
               className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-              title={isDark ? 'Light Mode' : 'Dark Mode'}
+              title={isDark ? '浅色模式' : '深色模式'}
             >
               {isDark ? <Sun className="size-[15px]" /> : <Moon className="size-[15px]" />}
             </button>
@@ -366,7 +366,7 @@ export function SidebarContent() {
               <button
                 onClick={handleCopyToken}
                 className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-                title={tokenCopied ? 'Copied!' : 'Copy workspace token'}
+                title={tokenCopied ? '已复制' : '复制工作区 Token'}
               >
                 {tokenCopied ? <Check className="size-[15px]" /> : <KeyRound className="size-[15px]" />}
               </button>
@@ -374,7 +374,7 @@ export function SidebarContent() {
             <button
               onClick={() => setSettingsOpen(true)}
               className="size-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-              title="Settings"
+              title="设置"
             >
               <Settings className="size-[15px]" />
             </button>
@@ -450,10 +450,10 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
       if (bfApiKey.trim()) wsUpdates.browserfabric_api_key = bfApiKey.trim();
       await workspaceApi.updateWorkspace(wsUpdates);
       await refreshWorkspace();
-      toast.success('Settings saved');
+      toast.success('设置已保存');
       onOpenChange(false);
     } catch {
-      toast.error('Failed to save settings');
+      toast.error('保存设置失败');
     } finally {
       setSaving(false);
     }
@@ -462,14 +462,14 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Workspace Settings</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>工作区设置</DialogTitle></DialogHeader>
         <div className="space-y-6 py-4">
           <div className="space-y-2">
-            <Label>Workspace Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="My Workspace" />
+            <Label>工作区名称</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="我的工作区" />
           </div>
           <div className="space-y-2">
-            <Label variant="secondary">Workspace URL</Label>
+            <Label variant="secondary">工作区 URL</Label>
             <div className="flex items-center gap-2">
               <Input value={workspaceUrl} readOnly className="text-xs font-mono" />
               <Button variant="outline" size="icon" onClick={() => copyUrl(workspaceUrl)}>
@@ -478,7 +478,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
             </div>
           </div>
           <div className="space-y-2">
-            <Label variant="secondary">Workspace ID</Label>
+            <Label variant="secondary">工作区 ID</Label>
             <div className="flex items-center gap-2">
               <Input value={workspace.slug} readOnly className="text-xs font-mono" />
               <Button variant="outline" size="icon" onClick={() => copyToken(workspace.slug)}>
@@ -491,13 +491,13 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
           <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <Label>Monitor Mode</Label>
+                <Label>监控模式</Label>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium">
-                  Experimental
+                  实验性
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Show a 2x3 grid overview of recent threads instead of the thread list.
+                用 2x3 网格展示最近会话，而不是列表。
               </p>
             </div>
             <Switch checked={monitorMode} onCheckedChange={setMonitorMode} size="sm" />
@@ -505,9 +505,9 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
 
           <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
             <div className="space-y-0.5">
-              <Label>Notification Sound</Label>
+              <Label>通知音效</Label>
               <p className="text-xs text-muted-foreground">
-                Play a sound when an agent completes a task.
+                Agent 完成任务时播放提示音。
               </p>
             </div>
             <Switch checked={notificationSound} onCheckedChange={setNotificationSound} size="sm" />
@@ -516,13 +516,13 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
           <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <Label>Split Browser View</Label>
+                <Label>分屏浏览器</Label>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium">
-                  Experimental
+                  实验性
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Show browser tab side-by-side with chat when viewing threads.
+                查看会话时让浏览器标签与聊天并排显示。
               </p>
             </div>
             <Switch checked={splitBrowser} onCheckedChange={setSplitBrowser} size="sm" />
@@ -532,10 +532,10 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Users className="size-4 text-muted-foreground" />
-              <Label>Collaborators</Label>
+              <Label>协作者</Label>
             </div>
             <p className="text-xs text-muted-foreground">
-              Add people by email. They can access this workspace by signing in.
+              通过邮箱添加成员。对方登录后即可访问此工作区。
             </p>
             <div className="flex items-center gap-2">
               <Input
@@ -547,12 +547,12 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                     setCollabAdding(true);
                     workspaceApi.addCollaborator(collabEmail.trim().toLowerCase(), 'editor')
                       .then(() => {
-                        toast.success(`Added ${collabEmail.trim()}`);
+                        toast.success(`已添加 ${collabEmail.trim()}`);
                         setCollabEmail('');
                         return workspaceApi.listCollaborators();
                       })
                       .then((d) => setCollaborators(d.collaborators))
-                      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed'))
+                      .catch((e) => toast.error(e instanceof Error ? e.message : '操作失败'))
                       .finally(() => setCollabAdding(false));
                   }
                 }}
@@ -564,18 +564,18 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                   setCollabAdding(true);
                   workspaceApi.addCollaborator(collabEmail.trim().toLowerCase(), 'editor')
                     .then(() => {
-                      toast.success(`Added ${collabEmail.trim()}`);
+                      toast.success(`已添加 ${collabEmail.trim()}`);
                       setCollabEmail('');
                       return workspaceApi.listCollaborators();
                     })
                     .then((d) => setCollaborators(d.collaborators))
-                    .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed'))
+                    .catch((e) => toast.error(e instanceof Error ? e.message : '操作失败'))
                     .finally(() => setCollabAdding(false));
                 }}
                 disabled={collabAdding || !collabEmail.trim()}
                 size="sm"
               >
-                {collabAdding ? '...' : 'Add'}
+                {collabAdding ? '...' : '添加'}
               </Button>
             </div>
             <div className="space-y-1.5 max-h-40 overflow-y-auto">
@@ -583,7 +583,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/30 text-sm">
                   <Crown className="size-3.5 text-amber-500 shrink-0" />
                   <span className="truncate flex-1">{collabOwner}</span>
-                  <span className="text-xs text-muted-foreground">Owner</span>
+                  <span className="text-xs text-muted-foreground">所有者</span>
                 </div>
               )}
               {collaborators.map((c) => (
@@ -593,7 +593,7 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
                     onClick={() => {
                       workspaceApi.removeCollaborator(c.email)
                         .then(() => setCollaborators((prev) => prev.filter((x) => x.email !== c.email)))
-                        .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed'));
+                        .catch((e) => toast.error(e instanceof Error ? e.message : '操作失败'));
                     }}
                     className="size-5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
                   >
@@ -612,24 +612,24 @@ function SettingsDialogPortal({ open, onOpenChange, workspace, refreshWorkspace 
             </div>
             {workspace.browserfabricApiKey && (
               <p className="text-xs text-muted-foreground font-mono">
-                Current: {workspace.browserfabricApiKey}
+                当前：{workspace.browserfabricApiKey}
               </p>
             )}
             <Input
               value={bfApiKey}
               onChange={(e) => setBfApiKey(e.target.value)}
-              placeholder={workspace.browserfabricApiKey ? 'Enter new key to replace' : 'bf_... (optional — auto-provisioned if empty)'}
+              placeholder={workspace.browserfabricApiKey ? '输入新 Key 以替换' : 'bf_...（可选，留空自动分配）'}
               className="text-xs font-mono"
             />
             <p className="text-xs text-muted-foreground">
-              Each workspace gets a free-tier key automatically. Set a custom key to use your own BrowserFabric account.
+              每个工作区会自动获得免费额度 Key；也可以填写自己的 BrowserFabric 账号 Key。
             </p>
           </div>
 
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || !name.trim()}>{saving ? 'Saving...' : 'Save'}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim()}>{saving ? '保存中...' : '保存'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
