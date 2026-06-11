@@ -12,9 +12,15 @@ GET  /v1/discover     Discover agents, channels, resources
 GET  /v1/profile      Network profile metadata
 """
 
+import json
 import logging
+import os
 import re
+import shutil
+import subprocess
+import tomllib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -667,3 +673,101 @@ _AGENT_CATALOG = [
 def agent_catalog():
     """Return the catalog of supported agent client types."""
     return success_response(_AGENT_CATALOG)
+
+
+def _codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+
+
+def _read_codex_config(codex_home: Path) -> dict:
+    config_path = codex_home / "config.toml"
+    if not config_path.exists():
+        return {"path": str(config_path), "exists": False}
+
+    with config_path.open("rb") as f:
+        data = tomllib.load(f)
+
+    allowed = {
+        "model": data.get("model"),
+        "model_reasoning_effort": data.get("model_reasoning_effort"),
+        "model_provider": data.get("model_provider"),
+        "approval_policy": data.get("approval_policy"),
+        "sandbox_mode": data.get("sandbox_mode"),
+    }
+    return {
+        "path": str(config_path),
+        "exists": True,
+        **{k: v for k, v in allowed.items() if v is not None},
+    }
+
+
+def _read_codex_models(codex_home: Path) -> list[dict]:
+    cache_path = codex_home / "models_cache.json"
+    if not cache_path.exists():
+        return []
+
+    with cache_path.open("r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    models = payload.get("models") or []
+    result = []
+    for item in models:
+        slug = item.get("slug")
+        if not slug:
+            continue
+        result.append({
+            "slug": slug,
+            "display_name": item.get("display_name") or slug,
+            "description": item.get("description") or "",
+            "default_reasoning_level": item.get("default_reasoning_level"),
+            "supported_reasoning_levels": item.get("supported_reasoning_levels") or [],
+            "additional_speed_tiers": item.get("additional_speed_tiers") or [],
+            "service_tiers": item.get("service_tiers") or [],
+            "priority": item.get("priority") or 0,
+        })
+    return result
+
+
+def _codex_version(codex_binary: str | None) -> str | None:
+    if not codex_binary:
+        return None
+    try:
+        completed = subprocess.run(
+            [codex_binary, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except Exception:
+        return None
+    text = (completed.stdout or completed.stderr or "").strip()
+    return text or None
+
+
+@router.get("/agent-catalog/codex-local")
+def codex_local_catalog():
+    """Return non-secret local Codex CLI config and model metadata."""
+    codex_home = _codex_home()
+    codex_binary = shutil.which("codex")
+    try:
+        config_info = _read_codex_config(codex_home)
+    except Exception as exc:
+        logger.warning("Failed to read Codex config metadata: %s", exc)
+        config_info = {"path": str(codex_home / "config.toml"), "exists": False, "error": "unreadable"}
+
+    try:
+        models = _read_codex_models(codex_home)
+    except Exception as exc:
+        logger.warning("Failed to read Codex model cache metadata: %s", exc)
+        models = []
+
+    return success_response({
+        "installed": bool(codex_binary),
+        "binary": codex_binary,
+        "version": _codex_version(codex_binary),
+        "codex_home": str(codex_home),
+        "config": config_info,
+        "models": models,
+    })

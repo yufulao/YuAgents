@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider } from '@/lib/types';
+import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider, CodexLocalCatalog, CodexModelInfo } from '@/lib/types';
 import { AgentIcon, ProviderIcon } from '@/components/icons/agent-icons';
 import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
 
@@ -56,8 +56,9 @@ const LOCAL_MODEL_PROVIDERS = [
   { value: 'custom', label: '自定义', models: [] },
 ];
 
+const CODEX_REASONING_FALLBACK = ['low', 'medium', 'high', 'xhigh'];
+
 const LOCAL_AGENT_MODEL_DEFAULTS: Record<string, { provider: string; model: string }> = {
-  codex: { provider: 'openai', model: 'gpt-5' },
   cursor: { provider: 'openai', model: 'gpt-5' },
   copilot: { provider: 'openai', model: 'gpt-5' },
   aider: { provider: 'openai', model: 'gpt-5' },
@@ -79,6 +80,21 @@ function getLocalModelProvider(value: string) {
 
 function getLocalAgentModelDefault(agentType: string) {
   return LOCAL_AGENT_MODEL_DEFAULTS[agentType] || { provider: 'openai', model: 'gpt-5' };
+}
+
+function getCodexModelOptions(codexLocal: CodexLocalCatalog | null): CodexModelInfo[] {
+  return codexLocal?.models || [];
+}
+
+function getCodexSelectedModel(codexLocal: CodexLocalCatalog | null, modelName: string) {
+  return getCodexModelOptions(codexLocal).find((model) => model.slug === modelName);
+}
+
+function getCodexReasoningOptions(model: CodexModelInfo | undefined) {
+  const supported = model?.supported_reasoning_levels
+    ?.map((level) => level.effort)
+    .filter(Boolean);
+  return supported && supported.length > 0 ? supported : CODEX_REASONING_FALLBACK;
 }
 
 function getAgentBrand(name: string) {
@@ -108,6 +124,7 @@ export function ConnectAgentView() {
 
   // Local agents
   const [catalog, setCatalog] = useState<AgentCatalogEntry[]>([]);
+  const [codexLocal, setCodexLocal] = useState<CodexLocalCatalog | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Cloud agents
@@ -133,14 +150,16 @@ export function ConnectAgentView() {
     setLoading(true);
     Promise.allSettled([
       workspaceApi.getAgentCatalog(),
+      workspaceApi.getLocalCodexCatalog(),
       workspaceApi.getCloudProviders(),
       workspaceApi.listCloudAgents(),
     ])
-      .then(([catalogResult, providersResult, agentsResult]) => {
+      .then(([catalogResult, codexResult, providersResult, agentsResult]) => {
         if (cancelled) return;
         setCatalog(catalogResult.status === 'fulfilled'
           ? withDefaultAgentCatalog(catalogResult.value)
           : DEFAULT_AGENT_CATALOG);
+        setCodexLocal(codexResult.status === 'fulfilled' ? codexResult.value : null);
         setCloudProviders(providersResult.status === 'fulfilled' ? providersResult.value : []);
         setCloudAgents(agentsResult.status === 'fulfilled' ? agentsResult.value : []);
       })
@@ -289,6 +308,7 @@ export function ConnectAgentView() {
         ) : activeTab === 'local' ? (
           <LocalAgentsTab
             catalog={catalog}
+            codexLocal={codexLocal}
             selectedAgent={selectedAgent}
             selectedEntry={selectedCatalogEntry}
             onSelectAgent={setSelectedAgent}
@@ -330,11 +350,13 @@ export function ConnectAgentView() {
 
 function LocalAgentsTab({
   catalog,
+  codexLocal,
   selectedAgent,
   selectedEntry,
   onSelectAgent,
 }: {
   catalog: AgentCatalogEntry[];
+  codexLocal: CodexLocalCatalog | null;
   selectedAgent: string | null;
   selectedEntry: AgentCatalogEntry | undefined;
   onSelectAgent: (name: string | null) => void;
@@ -345,10 +367,19 @@ function LocalAgentsTab({
   const [workingDir, setWorkingDir] = useState('');
   const [modelProvider, setModelProvider] = useState('');
   const [modelName, setModelName] = useState('');
-  const [mode, setMode] = useState('code');
+  const [mode, setMode] = useState('execute');
   const [quality, setQuality] = useState('medium');
+  const [codexSpeedTier, setCodexSpeedTier] = useState('');
   const [creating, setCreating] = useState(false);
-  const selectedProvider = getLocalModelProvider(modelProvider);
+  const isCodexSelected = selectedEntry?.name === 'codex';
+  const codexModels = useMemo(() => getCodexModelOptions(codexLocal), [codexLocal]);
+  const codexModel = getCodexSelectedModel(codexLocal, modelName);
+  const codexReasoningOptions = getCodexReasoningOptions(codexModel);
+  const codexSupportsFast = Boolean(codexModel?.additional_speed_tiers?.includes('fast') || codexModel?.service_tiers?.some((tier) => tier.name.toLowerCase() === 'fast'));
+  const localProviders = isCodexSelected
+    ? [{ value: 'codex-local', label: '本机 Codex CLI', models: codexModels.length > 0 ? codexModels.map((model) => model.slug) : (codexLocal?.config?.model ? [codexLocal.config.model] : []) }]
+    : LOCAL_MODEL_PROVIDERS;
+  const selectedProvider = localProviders.find((p) => p.value === modelProvider) || getLocalModelProvider(modelProvider);
   const modelOptions = selectedProvider?.models || [];
   const modelSelectValue = modelOptions.includes(modelName) ? modelName : modelName ? '__custom' : '';
   const handleInvalid = Boolean(localName.trim() && !AGENT_HANDLE_RE.test(localName.trim()));
@@ -356,14 +387,30 @@ function LocalAgentsTab({
   useEffect(() => {
     if (!selectedEntry) return;
     const name = `my-${selectedEntry.name}`;
-    const modelDefaults = getLocalAgentModelDefault(selectedEntry.name);
+    const codexConfigModel = codexLocal?.config?.model;
+    const codexDefaultModel = codexConfigModel || codexModels[0]?.slug || '';
+    const modelDefaults = selectedEntry.name === 'codex'
+      ? { provider: 'codex-local', model: codexDefaultModel }
+      : getLocalAgentModelDefault(selectedEntry.name);
     setLocalName(name);
     setDisplayName(selectedEntry.label);
     setModelProvider(modelDefaults.provider);
     setModelName(modelDefaults.model);
-    setMode('code');
-    setQuality('medium');
-  }, [selectedEntry]);
+    setMode('execute');
+    setQuality(selectedEntry.name === 'codex'
+      ? codexLocal?.config?.model_reasoning_effort || getCodexSelectedModel(codexLocal, codexDefaultModel)?.default_reasoning_level || 'medium'
+      : 'medium');
+    const selectedCodexModel = getCodexSelectedModel(codexLocal, codexDefaultModel);
+    setCodexSpeedTier(selectedEntry.name === 'codex' && selectedCodexModel?.additional_speed_tiers?.includes('fast') ? 'fast' : '');
+  }, [selectedEntry, codexLocal, codexModels]);
+
+  const handleModelChange = (nextModel: string) => {
+    setModelName(nextModel);
+    if (!isCodexSelected) return;
+    const nextCodexModel = getCodexSelectedModel(codexLocal, nextModel);
+    setQuality(nextCodexModel?.default_reasoning_level || codexLocal?.config?.model_reasoning_effort || 'medium');
+    setCodexSpeedTier(nextCodexModel?.additional_speed_tiers?.includes('fast') ? 'fast' : '');
+  };
 
   const handleCreateLocalConfig = async () => {
     const handle = localName.trim();
@@ -383,6 +430,16 @@ function LocalAgentsTab({
         modelName: modelName.trim() || undefined,
         mode,
         quality,
+        managedMetadata: selectedEntry.name === 'codex'
+          ? {
+              local_runtime: 'codex-cli',
+              codex_home: codexLocal?.codex_home || null,
+              codex_config_path: codexLocal?.config?.path || null,
+              codex_auth_source: 'local-codex-auth',
+              codex_service_tier: codexSpeedTier || null,
+              codex_model_reasoning_effort: quality,
+            }
+          : undefined,
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
@@ -464,6 +521,15 @@ function LocalAgentsTab({
                   在这里保存 Agent 资料与运行配置，本地守护进程可据此启动。
                 </p>
               </div>
+              {isCodexSelected && (
+                <div className="rounded-md border bg-background px-3 py-2 text-[11px] text-muted-foreground">
+                  <div className="font-medium text-foreground">使用本机 Codex CLI 登录态</div>
+                  <div className="mt-0.5">
+                    模型来自本机 Codex 模型缓存；启动时由本机 `codex exec` 读取 `~/.codex/config.toml` 和已登录 auth。
+                    {codexLocal?.version ? ` 当前版本：${codexLocal.version}。` : ''}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-[11px]">调用名（英文）</Label>
@@ -484,62 +550,88 @@ function LocalAgentsTab({
                   <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-8 text-xs font-mono" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">模型提供方</Label>
+                  <Label className="text-[11px]">{isCodexSelected ? '运行时' : '模型提供方'}</Label>
                   <select
                     value={modelProvider || 'custom'}
                     onChange={(e) => {
                       const nextProvider = e.target.value;
-                      const next = getLocalModelProvider(nextProvider);
+                      const next = localProviders.find((p) => p.value === nextProvider) || getLocalModelProvider(nextProvider);
                       setModelProvider(nextProvider);
                       setModelName(next?.models[0] || '');
                     }}
+                    disabled={isCodexSelected}
                     className="w-full h-8 rounded-md border bg-background px-2 text-xs"
                   >
-                    {LOCAL_MODEL_PROVIDERS.map((provider) => (
+                    {localProviders.map((provider) => (
                       <option key={provider.value} value={provider.value}>{provider.label}</option>
                     ))}
                   </select>
                   <p className="text-[10px] text-muted-foreground">
-                    这是模型来源；Agent 类型是运行时，模型提供方是它调用哪家的模型。
+                    {isCodexSelected
+                      ? '使用本机 Codex CLI；不在这里填写 API Key。'
+                      : '这是模型来源；Agent 类型是运行时，模型提供方是它调用哪家的模型。'}
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">模型</Label>
+                  <Label className="text-[11px]">{isCodexSelected ? 'Codex 模型' : '模型'}</Label>
                   {modelProvider === 'custom' ? (
                     <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="输入模型名称" className="h-8 text-xs" />
                   ) : (
                     <select
                       value={modelSelectValue}
-                      onChange={(e) => setModelName(e.target.value === '__custom' ? '' : e.target.value)}
+                      onChange={(e) => handleModelChange(e.target.value === '__custom' ? '' : e.target.value)}
                       className="w-full h-8 rounded-md border bg-background px-2 text-xs"
                     >
                       {modelOptions.map((model) => (
-                        <option key={model} value={model}>{model}</option>
+                        <option key={model} value={model}>
+                          {isCodexSelected
+                            ? getCodexSelectedModel(codexLocal, model)?.display_name || model
+                            : model}
+                        </option>
                       ))}
-                      <option value="__custom">自定义...</option>
+                      {!isCodexSelected && <option value="__custom">自定义...</option>}
                     </select>
                   )}
                   {modelSelectValue === '__custom' && modelProvider !== 'custom' && (
                     <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="输入模型名称" className="h-8 text-xs" />
                   )}
+                  {isCodexSelected && codexModels.length === 0 && (
+                    <p className="text-[10px] text-muted-foreground">未读到 Codex 模型缓存；可先运行一次 Codex 或执行 codex update。</p>
+                  )}
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">模式</Label>
+                  <Label className="text-[11px]">工作权限</Label>
                   <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
-                    <option value="ask">询问</option>
-                    <option value="code">编码</option>
-                    <option value="autonomous">自主</option>
+                    <option value="execute">执行</option>
+                    <option value="plan">计划</option>
                   </select>
+                  <p className="text-[10px] text-muted-foreground">控制 Agent 能否执行操作；不是 Codex 的 fast 档位。</p>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">质量</Label>
+                  <Label className="text-[11px]">{isCodexSelected ? '推理强度' : '质量'}</Label>
                   <select value={quality} onChange={(e) => setQuality(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
-                    <option value="max">最高</option>
+                    {(isCodexSelected ? codexReasoningOptions : ['low', 'medium', 'high', 'max']).map((level) => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
                   </select>
                 </div>
+                {isCodexSelected && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label className="text-[11px]">Codex 速度档</Label>
+                    <select
+                      value={codexSpeedTier}
+                      onChange={(e) => setCodexSpeedTier(e.target.value)}
+                      disabled={!codexSupportsFast}
+                      className="w-full h-8 rounded-md border bg-background px-2 text-xs"
+                    >
+                      <option value="">标准</option>
+                      {codexSupportsFast && <option value="fast">Fast</option>}
+                    </select>
+                    <p className="text-[10px] text-muted-foreground">
+                      可选项来自本机 Codex 模型缓存；当前模型{codexSupportsFast ? '支持 Fast。' : '未声明 Fast 档。'}
+                    </p>
+                  </div>
+                )}
               </div>
               <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !localName.trim() || handleInvalid} className="w-full">
                 {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}

@@ -87,7 +87,7 @@ export function AgentProfilePanel() {
   const [workingDirDraft, setWorkingDirDraft] = useState('');
   const [modelProviderDraft, setModelProviderDraft] = useState('');
   const [modelDraft, setModelDraft] = useState('');
-  const [modeDraft, setModeDraft] = useState('code');
+  const [modeDraft, setModeDraft] = useState('execute');
   const [qualityDraft, setQualityDraft] = useState('medium');
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -99,7 +99,7 @@ export function AgentProfilePanel() {
     setWorkingDirDraft(agent.workingDir || '');
     setModelProviderDraft(agent.modelProvider || (isCloud ? agent.agentType?.replace('cloud:', '') || '' : ''));
     setModelDraft(agent.modelName || agent.model || cloudConfig?.model || '');
-    setModeDraft(agent.mode || 'code');
+    setModeDraft(agent.mode || 'execute');
     setQualityDraft(agent.quality || 'medium');
   }, [agent?.agentName, cloudConfig?.model, isCloud]);
 
@@ -322,14 +322,15 @@ export function AgentProfilePanel() {
                     <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelProviderDraft} onChange={(e) => setModelProviderDraft(e.target.value)} placeholder="提供方" />
                     <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} placeholder="模型" />
                     <select className="h-8 px-2 text-xs rounded border bg-background" value={modeDraft} onChange={(e) => setModeDraft(e.target.value)}>
-                      <option value="ask">询问</option>
-                      <option value="code">编码</option>
-                      <option value="autonomous">自主</option>
+                      <option value="execute">执行</option>
+                      <option value="plan">计划</option>
+                      {!['execute', 'plan'].includes(modeDraft) && <option value={modeDraft}>{modeDraft}</option>}
                     </select>
                     <select className="h-8 px-2 text-xs rounded border bg-background" value={qualityDraft} onChange={(e) => setQualityDraft(e.target.value)}>
                       <option value="low">低</option>
                       <option value="medium">中</option>
                       <option value="high">高</option>
+                      <option value="xhigh">xhigh</option>
                       <option value="max">最高</option>
                     </select>
                   </div>
@@ -342,8 +343,8 @@ export function AgentProfilePanel() {
                 </>
               ) : (
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                  <span className="text-muted-foreground">模式</span><span>{agent.mode || '—'}</span>
-                  <span className="text-muted-foreground">质量</span><span>{agent.quality || '—'}</span>
+                  <span className="text-muted-foreground">工作权限</span><span>{agent.mode || '—'}</span>
+                  <span className="text-muted-foreground">推理强度</span><span>{agent.quality || '—'}</span>
                   <span className="text-muted-foreground">提供方</span><span className="truncate">{agent.modelProvider || '—'}</span>
                   <span className="text-muted-foreground">模型</span><span className="truncate">{agent.modelName || agent.model || cloudConfig?.model || '—'}</span>
                 </div>

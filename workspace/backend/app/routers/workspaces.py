@@ -48,8 +48,8 @@ router = APIRouter(prefix="/v1/workspaces", tags=["Workspaces"])
 AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
 AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$")
 VALID_AGENT_LIFECYCLE = {"active", "disabled"}
-VALID_AGENT_MODES = {"ask", "code", "autonomous"}
-VALID_AGENT_QUALITY = {"low", "medium", "high", "max"}
+VALID_AGENT_MODES = {"ask", "code", "autonomous", "plan", "execute"}
+VALID_AGENT_QUALITY = {"low", "medium", "high", "xhigh", "max"}
 
 
 def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
@@ -550,7 +550,7 @@ class ManagedAgentCreateRequest(BaseModel):
     enabled_skills: Optional[Dict[str, bool]] = None
     model_provider: Optional[str] = None
     model_name: Optional[str] = None
-    mode: Optional[str] = "code"
+    mode: Optional[str] = "execute"
     quality: Optional[str] = "medium"
     lifecycle_status: str = "active"
     managed_metadata: Optional[dict] = None
@@ -624,7 +624,7 @@ def create_managed_agent(
         agent_type=body.agent_type or "local",
         model_provider=body.model_provider or None,
         model=body.model_name or None,
-        mode=body.mode or "code",
+        mode=body.mode or "execute",
         quality=body.quality or None,
         working_dir=body.working_dir or None,
         enabled_skills=body.enabled_skills or None,
@@ -794,7 +794,7 @@ def update_member(
     if body.mode is not None:
         if body.mode and body.mode not in VALID_AGENT_MODES:
             return json_response(ResponseCode.BAD_REQUEST, f"Invalid mode: {body.mode}")
-        cfg.mode = body.mode or "code"
+        cfg.mode = body.mode or "execute"
     if body.quality is not None:
         if body.quality and body.quality not in VALID_AGENT_QUALITY:
             return json_response(ResponseCode.BAD_REQUEST, f"Invalid quality: {body.quality}")

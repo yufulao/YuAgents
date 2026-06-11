@@ -61,6 +61,46 @@ export interface SkillCatalogEntry {
   author: string;
 }
 
+export interface CodexReasoningLevel {
+  effort: string;
+  description?: string;
+}
+
+export interface CodexServiceTier {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface CodexModelInfo {
+  slug: string;
+  display_name: string;
+  description?: string;
+  default_reasoning_level?: string | null;
+  supported_reasoning_levels?: CodexReasoningLevel[];
+  additional_speed_tiers?: string[];
+  service_tiers?: CodexServiceTier[];
+  priority?: number;
+}
+
+export interface CodexLocalCatalog {
+  installed: boolean;
+  binary?: string | null;
+  version?: string | null;
+  codex_home: string;
+  config: {
+    path: string;
+    exists: boolean;
+    model?: string;
+    model_reasoning_effort?: string;
+    model_provider?: string;
+    approval_policy?: string;
+    sandbox_mode?: string;
+    error?: string;
+  };
+  models: CodexModelInfo[];
+}
+
 export interface WorkspaceSession {
   sessionId: string;
   workspaceId: string;

@@ -644,6 +644,11 @@ class WorkspaceApi {
     return this.request<AgentCatalogEntry[]>('/v1/agent-catalog');
   }
 
+  /** Fetch non-secret local Codex CLI metadata from the local backend. */
+  async getLocalCodexCatalog(): Promise<import('./types').CodexLocalCatalog> {
+    return this.request<import('./types').CodexLocalCatalog>('/v1/agent-catalog/codex-local');
+  }
+
   async updateAgentRole(_agentName: string, _role: string): Promise<WorkspaceAgent> {
     throw new Error('Agent role management is not yet available in event-native mode');
   }
