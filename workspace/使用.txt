@@ -1,0 +1,4 @@
+启动
+docker compose -f docker-compose.prod.yml up -d --build
+关闭
+docker compose -f docker-compose.prod.yml down
