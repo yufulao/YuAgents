@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Copy, Check, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Volume2, Key, ChevronRight } from 'lucide-react';
+import { X, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Volume2, ChevronRight } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -66,8 +65,7 @@ function CategoryIcon({ category, className }: { category: string; className?: s
 
 export function ConnectAgentView() {
   const { setViewMode } = useLayout();
-  const { workspace, token, refreshWorkspace } = useWorkspace();
-  const { isCopied, copyToClipboard } = useCopyToClipboard();
+  const { workspace, refreshWorkspace } = useWorkspace();
 
   const [activeTab, setActiveTab] = useState<'local' | 'cloud'>('local');
   const [loading, setLoading] = useState(true);
@@ -75,7 +73,6 @@ export function ConnectAgentView() {
   // Local agents
   const [catalog, setCatalog] = useState<AgentCatalogEntry[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [tokenCopied, setTokenCopied] = useState(false);
 
   // Cloud agents
   const [cloudProviders, setCloudProviders] = useState<CloudAgentProvider[]>([]);
@@ -153,16 +150,6 @@ export function ConnectAgentView() {
       setCfgName(model.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
     }
   }, [cfgModel, selectedProviderInfo]);
-
-  const handleCopyToken = () => {
-    navigator.clipboard.writeText(token);
-    setTokenCopied(true);
-    setTimeout(() => setTokenCopied(false), 2000);
-  };
-
-  const maskedToken = token.length > 16
-    ? `${token.slice(0, 8)}${'•'.repeat(8)}${token.slice(-4)}`
-    : token;
 
   const handleAddCloudAgent = async () => {
     if (!selectedProvider || !cfgModel || !cfgName) {
@@ -268,12 +255,6 @@ export function ConnectAgentView() {
             selectedAgent={selectedAgent}
             selectedEntry={selectedCatalogEntry}
             onSelectAgent={setSelectedAgent}
-            token={token}
-            maskedToken={maskedToken}
-            tokenCopied={tokenCopied}
-            onCopyToken={handleCopyToken}
-            isCopied={isCopied}
-            copyToClipboard={copyToClipboard}
           />
         ) : (
           <CloudAgentsTab
@@ -315,23 +296,11 @@ function LocalAgentsTab({
   selectedAgent,
   selectedEntry,
   onSelectAgent,
-  token,
-  maskedToken,
-  tokenCopied,
-  onCopyToken,
-  isCopied,
-  copyToClipboard,
 }: {
   catalog: AgentCatalogEntry[];
   selectedAgent: string | null;
   selectedEntry: AgentCatalogEntry | undefined;
   onSelectAgent: (name: string | null) => void;
-  token: string;
-  maskedToken: string;
-  tokenCopied: boolean;
-  onCopyToken: () => void;
-  isCopied: boolean;
-  copyToClipboard: (text: string) => void;
 }) {
   const { refreshWorkspace } = useWorkspace();
   const [localName, setLocalName] = useState('');
@@ -503,133 +472,9 @@ function LocalAgentsTab({
                 创建 Agent 配置
               </Button>
             </div>
-
-            {/* Option A: Desktop App */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-semibold text-foreground">方式 A</span>
-                <span className="text-xs text-muted-foreground">— 桌面应用（推荐）</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground mb-2">
-                下载 OpenAgents Launcher，用图形界面完成配置。
-              </p>
-              <div className="flex gap-2">
-                <a
-                  href="https://openagents.org/api/download/launcher/mac"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 text-center px-3 py-2 text-[11px] font-medium rounded-md border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  macOS
-                </a>
-                <a
-                  href="https://openagents.org/api/download/launcher/windows"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 text-center px-3 py-2 text-[11px] font-medium rounded-md border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Windows
-                </a>
-                <a
-                  href="https://openagents.org/api/download/launcher/linux-appimage"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 text-center px-3 py-2 text-[11px] font-medium rounded-md border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Linux
-                </a>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 border-t" />
-              <span className="text-[10px] text-muted-foreground">或</span>
-              <div className="flex-1 border-t" />
-            </div>
-
-            {/* Option B: CLI */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-semibold text-foreground">方式 B</span>
-                <span className="text-xs text-muted-foreground">— 命令行</span>
-              </div>
-
-              {/* Step 1: Install CLI */}
-              <div className="space-y-3">
-                <div>
-                  <span className="text-[11px] text-muted-foreground">1. 安装 OpenAgents CLI</span>
-                  <div className="relative group mt-1">
-                    <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
-                      <span className="text-zinc-500">$ </span>
-                      <span className="text-emerald-400">curl -fsSL https://openagents.org/install.sh | bash</span>
-                    </pre>
-                    <button
-                      className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
-                      onClick={() => copyToClipboard('curl -fsSL https://openagents.org/install.sh | bash')}
-                    >
-                      {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Step 2: Install agent runtime */}
-                <div>
-                  <span className="text-[11px] text-muted-foreground">2. 安装 {selectedEntry.label} 运行时</span>
-                  <div className="relative group mt-1">
-                    <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
-                      <span className="text-zinc-500">$ </span>
-                      <span className="text-emerald-400">agn install {selectedEntry.name}</span>
-                    </pre>
-                    <button
-                      className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
-                      onClick={() => copyToClipboard(`agn install ${selectedEntry.name}`)}
-                    >
-                      {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Step 3: Connect */}
-                <div>
-                  <span className="text-[11px] text-muted-foreground">3. 连接到当前工作区</span>
-                  <div className="relative group mt-1">
-                    <pre className="bg-zinc-900 text-zinc-100 rounded-md px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
-                      <span className="text-zinc-500">$ </span>
-                      <span className="text-emerald-400">agn connect my-{selectedEntry.name} {token.slice(0, 8)}...</span>
-                    </pre>
-                    <button
-                      className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
-                      onClick={() => copyToClipboard(`agn connect my-${selectedEntry.name} ${token}`)}
-                    >
-                      {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Token */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Key className="size-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium">工作区 Token</span>
-              </div>
-              <button
-                onClick={onCopyToken}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-md border bg-background hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors group"
-              >
-                <span className="flex-1 text-left font-mono text-xs text-muted-foreground truncate">
-                  {maskedToken}
-                </span>
-                <span className={cn(
-                  'flex items-center gap-1 text-[10px] font-medium shrink-0 transition-colors',
-                  tokenCopied ? 'text-emerald-600' : 'text-muted-foreground group-hover:text-foreground',
-                )}>
-                  {tokenCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                  {tokenCopied ? '已复制' : '复制'}
-                </span>
-              </button>
-            </div>
+            <p className="rounded-md bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
+              本页只负责保存和管理配置；启动命令请在本机终端执行，避免把操作步骤塞进工作台界面。
+            </p>
           </div>
         </div>
       )}

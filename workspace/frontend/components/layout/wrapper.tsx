@@ -36,7 +36,7 @@ function WorkspaceLoadingScreen() {
         />
         <div className="text-center">
           <h1 className="text-xl font-semibold tracking-tight">OpenAgents</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Workspace</p>
+          <p className="text-sm text-muted-foreground mt-0.5">工作区加载中</p>
         </div>
       </div>
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted overflow-hidden">

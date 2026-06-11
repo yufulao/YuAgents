@@ -1,25 +1,22 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Rocket, Copy, Check, ChevronRight, Key, Cloud, ExternalLink, Loader2 } from 'lucide-react';
+import { Rocket, Cloud, ExternalLink, Loader2, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { AgentIcon } from '@/components/icons/agent-icons';
 import { cn } from '@/lib/utils';
 import type { AgentCatalogEntry } from '@/lib/types';
 
 export function EmptyState() {
-  const { agents, token } = useWorkspace();
+  const { agents } = useWorkspace();
   const { setViewMode } = useLayout();
-  const { isCopied, copyToClipboard } = useCopyToClipboard();
   const hasOnlineAgent = agents.some((a) => a.status === 'online');
 
   const [catalog, setCatalog] = useState<AgentCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [tokenCopied, setTokenCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,12 +32,6 @@ export function EmptyState() {
     () => catalog.find((e) => e.name === selectedAgent),
     [catalog, selectedAgent],
   );
-
-  const handleCopyToken = () => {
-    navigator.clipboard.writeText(token);
-    setTokenCopied(true);
-    setTimeout(() => setTokenCopied(false), 2000);
-  };
 
   if (hasOnlineAgent) {
     return (
@@ -105,7 +96,7 @@ export function EmptyState() {
           </div>
         )}
 
-        {/* Selected agent — connection instructions */}
+        {/* Selected agent — short connection entry */}
         {selectedEntry && (
           <div className="rounded-xl border bg-card overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
             {/* Agent header */}
@@ -133,99 +124,16 @@ export function EmptyState() {
               </div>
             </div>
 
-            <div className="p-5 space-y-5">
-              {/* Option A: Desktop App */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold">方式 A</span>
-                  <span className="text-xs text-muted-foreground">— 桌面应用（推荐）</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mb-2.5">
-                  下载 OpenAgents Launcher，用图形界面完成配置。
-                </p>
-                <div className="flex gap-2">
-                  {[
-                    { label: 'macOS', href: 'https://openagents.org/api/download/launcher/mac' },
-                    { label: 'Windows', href: 'https://openagents.org/api/download/launcher/windows' },
-                    { label: 'Linux', href: 'https://openagents.org/api/download/launcher/linux-appimage' },
-                  ].map((dl) => (
-                    <a
-                      key={dl.label}
-                      href={dl.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 text-center px-3 py-2.5 text-xs font-medium rounded-lg border hover:bg-accent transition-colors"
-                    >
-                      {dl.label}
-                    </a>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="flex-1 border-t" />
-                <span className="text-[10px] text-muted-foreground">或</span>
-                <div className="flex-1 border-t" />
-              </div>
-
-              {/* Option B: CLI */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold">方式 B</span>
-                  <span className="text-xs text-muted-foreground">— 命令行</span>
-                </div>
-                <div className="space-y-3">
-                  <CliStep
-                    step="1"
-                    label="安装 OpenAgents CLI"
-                    command="curl -fsSL https://openagents.org/install.sh | bash"
-                    isCopied={isCopied}
-                    onCopy={copyToClipboard}
-                  />
-                  <CliStep
-                    step="2"
-                    label={`安装 ${selectedEntry.label} 运行时`}
-                    command={`agn install ${selectedEntry.name}`}
-                    isCopied={isCopied}
-                    onCopy={copyToClipboard}
-                  />
-                  <CliStep
-                    step="3"
-                    label="连接到当前工作区"
-                    command={`agn connect my-${selectedEntry.name} ${token.slice(0, 8)}...`}
-                    copyCommand={`agn connect my-${selectedEntry.name} ${token}`}
-                    isCopied={isCopied}
-                    onCopy={copyToClipboard}
-                  />
-                </div>
-              </div>
-
-              {/* Token */}
-              {token && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Key className="size-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">工作区 Token</span>
-                  </div>
-                  <button
-                    onClick={handleCopyToken}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border bg-background hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors group"
-                  >
-                    <span className="flex-1 text-left font-mono text-xs text-muted-foreground truncate">
-                      {token.length > 16
-                        ? `${token.slice(0, 8)}${'•'.repeat(8)}${token.slice(-4)}`
-                        : token}
-                    </span>
-                    <span className={cn(
-                      'flex items-center gap-1 text-[11px] font-medium shrink-0 transition-colors',
-                      tokenCopied ? 'text-emerald-600' : 'text-muted-foreground group-hover:text-foreground',
-                    )}>
-                      {tokenCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                      {tokenCopied ? '已复制' : '复制'}
-                    </span>
-                  </button>
-                </div>
-              )}
+            <div className="p-5 space-y-3">
+              <button
+                onClick={() => setViewMode('connect')}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                去连接 Agent
+              </button>
+              <p className="text-xs text-muted-foreground text-center">
+                在连接页可以创建 Web 管理配置、填写显示名称、工作目录、模型和运行模式。
+              </p>
             </div>
           </div>
         )}
@@ -242,45 +150,11 @@ export function EmptyState() {
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border hover:bg-accent transition-colors text-sm group"
           >
             <Cloud className="size-4 text-muted-foreground" />
-            <span className="font-medium">使用云端 Agent</span>
-            <span className="text-xs text-muted-foreground">— 填入 API Key，无需本地安装</span>
+          <span className="font-medium">进入连接页</span>
+          <span className="text-xs text-muted-foreground">— 本地与云端 Agent 都在这里配置</span>
             <ChevronRight className="size-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function CliStep({
-  step,
-  label,
-  command,
-  copyCommand,
-  isCopied,
-  onCopy,
-}: {
-  step: string;
-  label: string;
-  command: string;
-  copyCommand?: string;
-  isCopied: boolean;
-  onCopy: (text: string) => void;
-}) {
-  return (
-    <div>
-      <span className="text-[11px] text-muted-foreground">{step}. {label}</span>
-      <div className="relative group mt-1">
-        <pre className="bg-zinc-900 text-zinc-100 rounded-lg px-3.5 py-2.5 text-xs font-mono leading-relaxed overflow-x-auto">
-          <span className="text-zinc-500">$ </span>
-          <span className="text-emerald-400">{command}</span>
-        </pre>
-        <button
-          className="absolute top-1.5 right-1.5 size-6 flex items-center justify-center rounded bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
-          onClick={() => onCopy(copyCommand || command)}
-        >
-          {isCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-        </button>
       </div>
     </div>
   );

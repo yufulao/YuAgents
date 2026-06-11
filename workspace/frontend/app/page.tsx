@@ -49,260 +49,93 @@ function CodeBlock({ code, className = '' }: { code: string; className?: string 
 
 function LandingPage() {
   const { isOpenAgentsDomain, signIn } = useOpenAgentsAuth();
+  const router = useRouter();
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [workspaceToken, setWorkspaceToken] = useState('');
 
-  const agents = [
-    { name: 'Claude Code', status: 'supported', command: 'openagents start claude', color: 'bg-amber-500' },
-    { name: 'OpenClaw', status: 'supported', command: 'openagents start openclaw', color: 'bg-violet-500' },
-    { name: 'Codex CLI', status: 'supported', command: 'openagents start codex', color: 'bg-emerald-500' },
-    { name: 'Aider', status: 'supported', command: 'openagents start aider', color: 'bg-blue-500' },
-    { name: 'Goose', status: 'supported', command: 'openagents start goose', color: 'bg-rose-500' },
-    { name: 'Custom YAML', status: 'supported', command: 'openagents start ./my-agent/', color: 'bg-zinc-500' },
-  ];
+  const openWorkspace = (e: React.FormEvent) => {
+    e.preventDefault();
+    const slug = workspaceSlug.trim();
+    const token = workspaceToken.trim();
+    if (!slug) return;
+    router.push(token ? `/${slug}?token=${encodeURIComponent(token)}` : `/${slug}`);
+  };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* ── Navbar ── */}
+    <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <Image src="/logo-icon.png" alt="OpenAgents" width={28} height={28} className="dark:hidden" />
             <Image src="/logo-icon.png" alt="OpenAgents" width={28} height={28} className="hidden dark:block" />
-            <span className="font-semibold text-lg">OpenAgents</span>
+            <span className="font-semibold text-lg">OpenAgents 本地工作台</span>
           </div>
           <div className="flex items-center gap-3">
-            <a
-              href="https://openagents.org/docs/getting-started/overview"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline"
-            >
-              Docs
-            </a>
-            <a
-              href="https://github.com/openagents-org/openagents"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline"
-            >
-              GitHub
-            </a>
-            <a
-              href="https://discord.gg/openagents"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline"
-            >
-              Discord
-            </a>
             {isOpenAgentsDomain && (
               <Button size="sm" variant="outline" onClick={signIn}>
-                Sign In
+                登录
               </Button>
             )}
           </div>
         </div>
       </header>
 
-      {/* ── Hero ── */}
-      <section className="py-16 sm:py-24">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            Your agents, working together
-          </h1>
-          <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
-            OpenAgents connects your AI agents — Claude, Codex, Aider, and more — into
-            shared workspaces where they collaborate with each other and with you, in real time.
-          </p>
-          <div className="max-w-lg mx-auto space-y-3">
-            <CodeBlock code="curl -fsSL https://openagents.org/install.sh | bash" />
-            <CodeBlock code="openagents start claude" />
-          </div>
-          <p className="mt-4 text-sm text-muted-foreground">
-            Install in seconds. Works on macOS, Linux, and Windows.
-          </p>
-        </div>
-      </section>
-
-      {/* ── How It Works ── */}
-      <section className="py-16 border-t">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-12">
-            Get started in three steps
-          </h2>
-          <div className="grid gap-8 md:grid-cols-3">
-            {/* Step 1 */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
+          <section className="space-y-6">
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold shrink-0">1</div>
-                <h3 className="font-semibold text-lg">Create a workspace</h3>
-              </div>
-              <CodeBlock code="openagents workspace create" />
-              <p className="text-sm text-muted-foreground">
-                Creates a workspace and gives you a shareable token. Share it with teammates or other agents.
+              <Badge variant="secondary" className="w-fit">本机主控</Badge>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                打开你的本地 Agent 工作区
+              </h1>
+              <p className="text-muted-foreground leading-relaxed max-w-2xl">
+                这里是 Web 控制台入口，不是安装教程。后端、前端、Agent 守护进程启动后，在右侧填入工作区信息即可进入聊天、任务、文件和 Agent 管理界面。
               </p>
             </div>
-            {/* Step 2 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold shrink-0">2</div>
-                <h3 className="font-semibold text-lg">Connect your agents</h3>
-              </div>
-              <CodeBlock code={`openagents start openclaw\nopenagents start claude`} />
-              <p className="text-sm text-muted-foreground">
-                Start any supported agent and it auto-connects to your workspace. Run as many as you need.
-              </p>
-            </div>
-            {/* Step 3 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold shrink-0">3</div>
-                <h3 className="font-semibold text-lg">Collaborate</h3>
-              </div>
-              <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-                Your agents and teammates appear here in a shared workspace — exchanging messages, sharing files, and working on tasks together.
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Open your workspace at <span className="font-mono text-foreground">openagents.org/workspace</span> to see everything in real time.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* ── Supported Agents ── */}
-      <section className="py-16 border-t">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-3">
-            Supported agents
-          </h2>
-          <p className="text-center text-muted-foreground mb-10 max-w-xl mx-auto">
-            Connect any of these agents to your workspace with a single command. More agents are added regularly.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {agents.map((agent) => (
-              <div
-                key={agent.name}
-                className="rounded-lg border bg-card p-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`size-8 rounded-lg ${agent.color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
-                    {agent.name[0]}
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">{agent.name}</p>
-                  </div>
-                </div>
-                <CodeBlock code={agent.command} />
+            <form onSubmit={openWorkspace} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4 max-w-xl">
+              <div className="space-y-1.5">
+                <Label htmlFor="workspace-slug">工作区 ID / slug</Label>
+                <Input
+                  id="workspace-slug"
+                  value={workspaceSlug}
+                  onChange={(e) => setWorkspaceSlug(e.target.value)}
+                  placeholder="例如 0048fff6"
+                  autoFocus
+                />
               </div>
-            ))}
-          </div>
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            Search for more: <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">openagents search coding</code>
-          </p>
-        </div>
-      </section>
-
-      {/* ── Features ── */}
-      <section className="py-16 border-t">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-12">
-            Why OpenAgents
-          </h2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <FeatureCard
-              icon={<Network className="size-5" />}
-              title="Agent Networks"
-              description="Agents discover, communicate, and collaborate in shared environments — hosted or self-hosted."
-            />
-            <FeatureCard
-              icon={<Zap className="size-5" />}
-              title="One-Command Setup"
-              description="openagents start claude creates, configures, and runs your agent. Background daemon auto-restarts on crash."
-            />
-            <FeatureCard
-              icon={<Shield className="size-5" />}
-              title="Protocol Support"
-              description="Native MCP and A2A support. Also works with gRPC, WebSocket, and HTTP."
-            />
-            <FeatureCard
-              icon={<MonitorSmartphone className="size-5" />}
-              title="Cross-Platform"
-              description="macOS (launchd), Linux (systemd), Windows (Task Scheduler). Works everywhere."
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ── CLI Quick Reference ── */}
-      <section className="py-16 border-t">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-center mb-10">
-            CLI quick reference
-          </h2>
-          <div className="space-y-6">
-            <CLIGroup title="Agent Management" commands={[
-              { cmd: 'openagents', desc: 'Scan machine, show agent status' },
-              { cmd: 'openagents start <type>', desc: 'Start an agent (create + workspace prompt + daemon)' },
-              { cmd: 'openagents stop <name>', desc: 'Stop a specific agent' },
-              { cmd: 'openagents status', desc: 'Show running agents and daemon health' },
-              { cmd: 'openagents install <type>', desc: 'Install an agent runtime' },
-              { cmd: 'openagents search <query>', desc: 'Search available agents' },
-            ]} />
-            <CLIGroup title="Daemon" commands={[
-              { cmd: 'openagents up', desc: 'Start daemon (all configured agents)' },
-              { cmd: 'openagents down', desc: 'Stop daemon' },
-              { cmd: 'openagents autostart', desc: 'Auto-start on login' },
-              { cmd: 'openagents logs -f', desc: 'Follow logs in real time' },
-            ]} />
-            <CLIGroup title="Workspace" commands={[
-              { cmd: 'openagents workspace create', desc: 'Create a workspace, get shareable token' },
-              { cmd: 'openagents workspace join <token>', desc: 'Join with a token' },
-              { cmd: 'openagents workspace list', desc: 'List configured workspaces' },
-              { cmd: 'openagents workspace members', desc: 'List agents in a workspace' },
-            ]} />
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA ── */}
-      <section className="py-20 border-t">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center space-y-6">
-          <h2 className="text-2xl sm:text-3xl font-bold">Ready to get started?</h2>
-          <p className="text-muted-foreground">
-            Install OpenAgents and have your first agent running in under a minute.
-          </p>
-          <CodeBlock code="curl -fsSL https://openagents.org/install.sh | bash && openagents start claude" className="max-w-xl mx-auto" />
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <a href="https://openagents.org/docs/getting-started/overview">
-              <Button>
-                Read the Docs
+              <div className="space-y-1.5">
+                <Label htmlFor="workspace-token">工作区 Token（本地 token 模式需要）</Label>
+                <Input
+                  id="workspace-token"
+                  value={workspaceToken}
+                  onChange={(e) => setWorkspaceToken(e.target.value)}
+                  placeholder="粘贴 token；已登录或公开入口可留空"
+                  type="password"
+                />
+              </div>
+              <Button type="submit" disabled={!workspaceSlug.trim()} className="w-full sm:w-auto">
+                打开工作区
                 <ArrowRight className="size-4 ml-1" />
               </Button>
-            </a>
-            <a href="https://github.com/openagents-org/openagents">
-              <Button variant="outline">
-                View on GitHub
-              </Button>
-            </a>
-            <a href="https://discord.gg/openagents">
-              <Button variant="outline">
-                Join Discord
-              </Button>
-            </a>
-          </div>
-        </div>
-      </section>
+            </form>
+          </section>
 
-      {/* ── Footer ── */}
-      <footer className="border-t py-8">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Image src="/logo-icon.png" alt="OpenAgents" width={20} height={20} />
-            <span>OpenAgents</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a href="https://openagents.org" className="hover:text-foreground transition-colors">Website</a>
-            <a href="https://openagents.org/docs/getting-started/overview" className="hover:text-foreground transition-colors">Docs</a>
-            <a href="https://github.com/openagents-org/openagents" className="hover:text-foreground transition-colors">GitHub</a>
-            <a href="https://discord.gg/openagents" className="hover:text-foreground transition-colors">Discord</a>
-            <a href="https://twitter.com/OpenAgentsAI" className="hover:text-foreground transition-colors">Twitter</a>
-          </div>
+          <section className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold">本机启动</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                从仓库根目录执行。完整启动用第一条；只调前端时用第二条。
+              </p>
+            </div>
+            <CodeBlock code={`cd workspace\nmake dev`} />
+            <CodeBlock code={`cd workspace/frontend\nnpm run dev`} />
+            <div className="rounded-md bg-muted/60 p-3 text-xs text-muted-foreground leading-relaxed">
+              前端默认地址是 <span className="font-mono text-foreground">http://localhost:3001</span>。进入工作区后，左侧「连接 Agent」负责创建和管理 Agent 配置。
+            </div>
+          </section>
         </div>
-      </footer>
+      </main>
     </div>
   );
 }
@@ -363,7 +196,7 @@ function CreateWorkspaceForm({
       onCreated();
       router.push(`/${ws.slug}?token=${ws.token}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create workspace');
+      setError(err instanceof Error ? err.message : '创建工作区失败');
       setLoading(false);
     }
   };
@@ -372,17 +205,17 @@ function CreateWorkspaceForm({
     <Card className="border-dashed">
       <CardContent className="p-4">
         <form onSubmit={handleSubmit} className="space-y-3">
-          <h3 className="font-medium text-sm">New Workspace</h3>
+          <h3 className="font-medium text-sm">新建工作区</h3>
           <div className="space-y-2">
             <Input
-              placeholder="Agent name (required)"
+              placeholder="Agent 名称（必填）"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
               required
               autoFocus
             />
             <Input
-              placeholder="Workspace name (optional)"
+              placeholder="工作区名称（可选）"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -391,10 +224,10 @@ function CreateWorkspaceForm({
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={loading}>
               {loading ? <Loader2 className="size-3 animate-spin mr-1" /> : <Plus className="size-3 mr-1" />}
-              Create
+              创建
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
-              Cancel
+              取消
             </Button>
           </div>
         </form>
@@ -423,13 +256,13 @@ function WorkspaceCard({ workspace }: { workspace: WorkspaceSummary }) {
           </div>
           <Badge variant={workspace.status === 'active' ? 'primary' : 'secondary'} className="shrink-0 text-xs">
             {workspace.status === 'archived' && <Archive className="size-3 mr-1" />}
-            {workspace.status}
+            {workspace.status === 'active' ? '活跃' : workspace.status === 'archived' ? '已归档' : workspace.status}
           </Badge>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Users className="size-3" />
-            {workspace.agentCount} agent{workspace.agentCount !== 1 ? 's' : ''}
+            {workspace.agentCount} 个 Agent
           </span>
           {workspace.lastActivityAt && (
             <span className="flex items-center gap-1">
@@ -461,7 +294,7 @@ function Dashboard() {
       const data = await listMyWorkspaces();
       setWorkspaces(data.items);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load workspaces');
+      setError(err instanceof Error ? err.message : '加载工作区失败');
     } finally {
       setLoading(false);
     }
@@ -478,7 +311,7 @@ function Dashboard() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Bot className="size-5 text-primary" />
-            <h1 className="font-semibold">Workspaces</h1>
+            <h1 className="font-semibold">工作区</h1>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground hidden sm:inline">{user?.email}</span>
@@ -494,12 +327,12 @@ function Dashboard() {
         {/* Actions bar */}
         <div className="flex items-center justify-between mb-6">
           <p className="text-sm text-muted-foreground">
-            {loading ? 'Loading...' : `${workspaces.length} workspace${workspaces.length !== 1 ? 's' : ''}`}
+            {loading ? '加载中...' : `${workspaces.length} 个工作区`}
           </p>
           {!showCreate && (
             <Button size="sm" onClick={() => setShowCreate(true)}>
               <Plus className="size-4 mr-1" />
-              New Workspace
+              新建工作区
             </Button>
           )}
         </div>
@@ -531,9 +364,9 @@ function Dashboard() {
         ) : workspaces.length === 0 ? (
           <div className="text-center py-20 space-y-3">
             <Bot className="size-10 mx-auto text-muted-foreground/40" />
-            <p className="text-muted-foreground">No workspaces yet</p>
+            <p className="text-muted-foreground">还没有工作区</p>
             <p className="text-sm text-muted-foreground/70">
-              Create one or claim an anonymous workspace via the CLI
+              可以新建一个，或从本地启动脚本创建后在首页打开。
             </p>
           </div>
         ) : (
