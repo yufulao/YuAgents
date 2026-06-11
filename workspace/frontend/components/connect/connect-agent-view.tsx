@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider } from '@/lib/types';
 import { AgentIcon, ProviderIcon } from '@/components/icons/agent-icons';
+import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
 
 // ---------------------------------------------------------------------------
 // Brand colors for local agents and cloud providers
@@ -95,18 +96,19 @@ export function ConnectAgentView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([
+    Promise.allSettled([
       workspaceApi.getAgentCatalog(),
       workspaceApi.getCloudProviders(),
       workspaceApi.listCloudAgents(),
     ])
-      .then(([entries, providers, agents]) => {
+      .then(([catalogResult, providersResult, agentsResult]) => {
         if (cancelled) return;
-        setCatalog(entries);
-        setCloudProviders(providers);
-        setCloudAgents(agents);
+        setCatalog(catalogResult.status === 'fulfilled'
+          ? withDefaultAgentCatalog(catalogResult.value)
+          : DEFAULT_AGENT_CATALOG);
+        setCloudProviders(providersResult.status === 'fulfilled' ? providersResult.value : []);
+        setCloudAgents(agentsResult.status === 'fulfilled' ? agentsResult.value : []);
       })
-      .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -481,9 +483,12 @@ function LocalAgentsTab({
 
       {/* Hint when nothing selected */}
       {!selectedEntry && (
-        <p className="text-center text-xs text-muted-foreground py-4">
-          选择上方 Agent 查看连接方式
-        </p>
+        <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-4 text-center">
+          <p className="text-sm font-medium">选择一种 Agent 类型</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            选中后填写 Handle、显示名称、工作目录、模型和模式，再点击“创建 Agent 配置”。
+          </p>
+        </div>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { workspaceApi } from '@/lib/api';
 import { AgentIcon } from '@/components/icons/agent-icons';
 import { cn } from '@/lib/utils';
 import type { AgentCatalogEntry } from '@/lib/types';
+import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
 
 export function EmptyState() {
   const { agents } = useWorkspace();
@@ -22,8 +23,8 @@ export function EmptyState() {
     let cancelled = false;
     workspaceApi
       .getAgentCatalog()
-      .then((entries) => { if (!cancelled) setCatalog(entries); })
-      .catch(() => {})
+      .then((entries) => { if (!cancelled) setCatalog(withDefaultAgentCatalog(entries)); })
+      .catch(() => { if (!cancelled) setCatalog(DEFAULT_AGENT_CATALOG); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
