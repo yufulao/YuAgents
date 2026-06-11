@@ -292,6 +292,8 @@ async def _handle_channel_create(event: Event, ctx: PipelineContext) -> Optional
         created_by=event.source,
         master_agent=payload.get("master"),
         resume_from=payload.get("resume_from"),
+        visibility=payload.get("visibility", "public"),
+        mention_policy=payload.get("mention_policy", "members_only"),
         status="active",
     )
     db.add(channel)
@@ -484,6 +486,21 @@ def _fallback_targets(event, channel, mentions: List[str]) -> List[str]:
     # No master — target the first participant
     participants = [p.agent_name for p in (channel.participants or [])]
     return [participants[0]] if participants else []
+
+
+def _channel_participant_names(channel) -> List[str]:
+    return [
+        p.agent_name for p in (channel.participants or [])
+        if p.agent_name != "__no_response__"
+    ]
+
+
+def _filter_targets_to_channel(channel, targets: List[str]) -> List[str]:
+    """Never route a channel message to an agent outside channel membership."""
+    if not targets:
+        return []
+    participants = set(_channel_participant_names(channel))
+    return [name for name in targets if name in participants]
 
 
 _ROUTER_PROMPT = """\
@@ -885,16 +902,6 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     if message_type in ("thinking", "status", "todos"):
         return event
 
-    # Parse @mentions from message content (used for human message routing)
-    known_agents = [
-        m.agent_name for m in db.execute(
-            select(WorkspaceMember).where(
-                WorkspaceMember.workspace_id == workspace.id,
-            )
-        ).scalars().all()
-    ]
-    mentions = _extract_mentions(content, known_agents)
-
     # Resolve channel (needed for both agent and human message routing)
     channel = None
     if event.target.startswith("channel/"):
@@ -923,11 +930,38 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     if not channel:
         return event
 
+    participant_names = _channel_participant_names(channel)
+
+    # Private/dm/system channels are closed worlds: an agent that is not an
+    # explicit participant may not post, even if it somehow learned the target.
+    if event.source.startswith("openagents:") and (channel.visibility or "public") in {"private", "dm", "system"}:
+        sender = event.source[len("openagents:"):]
+        if sender not in participant_names:
+            raise EventRejected(
+                "workspace_mod",
+                "private_channel_post_forbidden: agent is not a channel member",
+            )
+
     # ── Multi-agent channel: always use LLM router ──────────────────
-    real_participants = [
-        p for p in (channel.participants or [])
-        if p.agent_name != "__no_response__"
-    ]
+    real_participants = participant_names
+
+    # Mention routing is governed by the channel, not the workspace roster.
+    # This prevents @mention from waking or implicitly pulling an agent into a
+    # private thread where it is not already a participant.
+    if (channel.mention_policy or "members_only") == "disabled":
+        mention_candidates = []
+    elif (channel.mention_policy or "members_only") == "workspace_members" and (channel.visibility or "public") == "public":
+        mention_candidates = [
+            m.agent_name for m in db.execute(
+                select(WorkspaceMember).where(
+                    WorkspaceMember.workspace_id == workspace.id,
+                )
+            ).scalars().all()
+        ]
+    else:
+        mention_candidates = participant_names
+    mentions = _extract_mentions(content, mention_candidates)
+
     if len(real_participants) >= 2:
         from app.config import config
         if config.ROUTER_LLM_ENABLED and _get_router_api_key():
@@ -939,6 +973,8 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     else:
         targets = _fallback_targets(event, channel, mentions)
 
+    targets = _filter_targets_to_channel(channel, targets)
+
     # ALWAYS set target_agents, even when nobody should respond.
     #
     # Use a non-empty sentinel list ["__no_response__"] instead of []
@@ -949,38 +985,6 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     # name causes old clients to reject (they fail the includes check)
     # and new clients to treat it as "nobody" (the sentinel is ignored).
     event.metadata["target_agents"] = targets if targets else ["__no_response__"]
-
-    # Auto-add targeted agents as channel participants so they can poll
-    # for messages on this channel. Three guards:
-    #   1. Never add the `__no_response__` sentinel — it's a routing
-    #      signal, not a real agent.
-    #   2. Only auto-add when the sender is a human. Agent→agent routing
-    #      decisions (from the LLM router or master-fallback) used to
-    #      drag bystander agents into channels they didn't belong in.
-    #   3. Routine channels (`routines:<agent>`) are locked single-agent
-    #      job queues — never add anyone but the owner.
-    if event.source and event.source.startswith("human:") and \
-            not channel.name.startswith("routines:"):
-        from app.models import ChannelMember
-        existing = {p.agent_name for p in (channel.participants or [])}
-        # Clean up any __no_response__ sentinels that leaked into participants
-        if "__no_response__" in existing:
-            bogus = db.execute(
-                select(ChannelMember).where(
-                    ChannelMember.channel_id == channel.id,
-                    ChannelMember.agent_name == "__no_response__",
-                )
-            ).scalar_one_or_none()
-            if bogus:
-                db.delete(bogus)
-            existing.discard("__no_response__")
-        for agent_name in event.metadata.get("target_agents", []):
-            if agent_name == "__no_response__":
-                continue
-            if agent_name not in existing:
-                db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
-                existing.add(agent_name)
-        db.flush()
 
     return event
 

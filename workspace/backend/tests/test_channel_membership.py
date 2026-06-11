@@ -3,6 +3,10 @@
 Tests for channel.join / channel.leave authorization + routine-channel lock.
 """
 
+from sqlalchemy import select
+
+from app.models import Channel, ChannelMember, WorkspaceMember
+
 
 def _headers(workspace):
     return {"X-Workspace-Token": workspace["token"]}
@@ -20,6 +24,66 @@ def _post_event(client, workspace, *, etype, source, channel, agent_name):
         },
         headers=_headers(workspace),
     )
+
+
+def _post_message(client, workspace, *, source, channel, content):
+    return client.post(
+        "/v1/events",
+        json={
+            "type": "workspace.message.posted",
+            "source": source,
+            "target": f"channel/{channel}",
+            "network": workspace["id"],
+            "payload": {
+                "content": content,
+                "message_type": "chat",
+                "sender_type": "agent" if source.startswith("openagents:") else "human",
+                "sender_name": source.split(":", 1)[1],
+            },
+        },
+        headers=_headers(workspace),
+    )
+
+
+def _set_channel_private(db, workspace):
+    channel_name = workspace["channel"]["name"]
+    channel = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace["id"],
+            Channel.name == channel_name,
+        )
+    ).scalar_one()
+    channel.visibility = "private"
+    channel.mention_policy = "members_only"
+    db.commit()
+    return channel
+
+
+def _add_workspace_member(db, workspace, agent_name):
+    existing = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace["id"],
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not existing:
+        db.add(WorkspaceMember(
+            workspace_id=workspace["id"],
+            agent_name=agent_name,
+            role="member",
+            agent_type="test",
+            status="online",
+        ))
+        db.commit()
+
+
+def _is_channel_member(db, channel, agent_name):
+    return db.execute(
+        select(ChannelMember).where(
+            ChannelMember.channel_id == channel.id,
+            ChannelMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none() is not None
 
 
 class TestChannelJoinAuth:
@@ -116,3 +180,83 @@ class TestChannelLeaveAuth:
         )
         assert resp.status_code == 403, resp.text
         assert "routine_channel_locked" in resp.json()["message"]
+
+
+class TestPrivateChannelPermissions:
+    def test_private_channel_mention_does_not_auto_add_non_member(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+        _add_workspace_member(db, workspace, "agent-beta")
+
+        resp = _post_message(
+            client, workspace,
+            source="human:user",
+            channel=channel.name,
+            content="@agent-beta please respond",
+        )
+
+        assert resp.status_code == 200, resp.text
+        metadata = resp.json()["data"]["metadata"]
+        assert "agent-beta" not in metadata["target_agents"]
+        assert not _is_channel_member(db, channel, "agent-beta")
+
+    def test_private_channel_rejects_post_from_non_member_agent(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+        _add_workspace_member(db, workspace, "agent-beta")
+
+        resp = _post_message(
+            client, workspace,
+            source="openagents:agent-beta",
+            channel=channel.name,
+            content="I should not be able to post here",
+        )
+
+        assert resp.status_code == 403, resp.text
+        assert "private_channel_post_forbidden" in resp.json()["message"]
+
+    def test_private_channel_poll_with_member_scope_hides_non_member_events(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+        _add_workspace_member(db, workspace, "agent-beta")
+        posted = _post_message(
+            client, workspace,
+            source="human:user",
+            channel=channel.name,
+            content="private message",
+        )
+        assert posted.status_code == 200, posted.text
+
+        resp = client.get(
+            "/v1/events",
+            params={
+                "network": workspace["id"],
+                "member": "agent-beta",
+                "type": "workspace.message.posted",
+            },
+            headers=_headers(workspace),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["events"] == []
+
+    def test_unicode_member_mention_routes_when_agent_is_channel_member(self, client, db, workspace):
+        channel_name = workspace["channel"]["name"]
+        agent_name = "测试-agent"
+        _add_workspace_member(db, workspace, agent_name)
+        join = _post_event(
+            client, workspace,
+            etype="network.channel.join",
+            source="human:user",
+            channel=channel_name,
+            agent_name=agent_name,
+        )
+        assert join.status_code == 200, join.text
+
+        resp = _post_message(
+            client, workspace,
+            source="human:user",
+            channel=channel_name,
+            content=f"@{agent_name} 请检查这个线程",
+        )
+
+        assert resp.status_code == 200, resp.text
+        metadata = resp.json()["data"]["metadata"]
+        assert metadata["target_agents"] == [agent_name]

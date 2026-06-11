@@ -66,6 +66,8 @@ export interface WorkspaceSession {
   workspaceId: string;
   createdBy: string | null;
   title: string;
+  visibility: 'public' | 'private' | 'dm' | 'system';
+  mentionPolicy: 'members_only' | 'workspace_members' | 'disabled';
   status: string;
   starred: boolean;
   participants: string[];
@@ -362,6 +364,8 @@ export interface NetworkChannel {
   title: string | null;
   master: string | null;
   participants: string[];
+  visibility?: 'public' | 'private' | 'dm' | 'system';
+  mention_policy?: 'members_only' | 'workspace_members' | 'disabled';
   created_at: number | null;
   last_event_at: number | null;
   status: string;
@@ -489,6 +493,8 @@ export function networkChannelToSession(ch: NetworkChannel, workspaceId: string)
     workspaceId,
     createdBy: null,
     title: ch.title || name,
+    visibility: ch.visibility || 'public',
+    mentionPolicy: ch.mention_policy || 'members_only',
     status: ch.status || 'active',
     starred: ch.starred || false,
     participants: ch.participants,

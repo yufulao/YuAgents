@@ -161,6 +161,8 @@ class Channel(Base):
     created_by = Column(Text, nullable=True)
     master_agent = Column(Text, nullable=True)       # per-channel master
     resume_from = Column(Text, nullable=True)         # channel name to resume context from
+    visibility = Column(Text, nullable=False, default="public", server_default=text("'public'"))  # public | private | dm | system
+    mention_policy = Column(Text, nullable=False, default="members_only", server_default=text("'members_only'"))  # members_only | workspace_members | disabled
     status = Column(Text, default="active")           # active | archived | deleted
     starred = Column(Boolean, default=False, server_default=text("FALSE"))
     last_event_at = Column(BigInteger, nullable=True)

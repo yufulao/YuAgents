@@ -94,6 +94,8 @@ class ChannelUpdateRequest(BaseModel):
     status: Optional[str] = None
     starred: Optional[bool] = None
     master_agent: Optional[str] = None  # Reassign channel master
+    visibility: Optional[str] = None
+    mention_policy: Optional[str] = None
     auto_title: bool = False  # When True, title update is from auto-titling (don't mark as manually set)
 
 class WorkspaceUpdateRequest(BaseModel):
@@ -222,6 +224,8 @@ def _format_channel(ch: Channel) -> dict:
         "createdBy": ch.created_by,
         "masterAgent": ch.master_agent,
         "resumeFrom": ch.resume_from,
+        "visibility": ch.visibility or "public",
+        "mentionPolicy": ch.mention_policy or "members_only",
         "status": ch.status,
         "starred": bool(ch.starred),
         "participants": [p.agent_name for p in (ch.participants or [])],
@@ -1221,6 +1225,14 @@ def update_channel(
         channel.starred = body.starred
     if body.master_agent is not None:
         channel.master_agent = body.master_agent
+    if body.visibility is not None:
+        if body.visibility not in {"public", "private", "dm", "system"}:
+            return json_response(ResponseCode.BAD_REQUEST, f"Invalid visibility: {body.visibility}")
+        channel.visibility = body.visibility
+    if body.mention_policy is not None:
+        if body.mention_policy not in {"members_only", "workspace_members", "disabled"}:
+            return json_response(ResponseCode.BAD_REQUEST, f"Invalid mention_policy: {body.mention_policy}")
+        channel.mention_policy = body.mention_policy
 
     db.commit()
     db.refresh(channel)

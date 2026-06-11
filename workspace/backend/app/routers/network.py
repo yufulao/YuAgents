@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import config
 from app.database import get_db
-from app.models import AgentConfig, Channel, Workspace, WorkspaceMember
+from app.models import AgentConfig, Channel, ChannelMember, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from openagents.core.onm_events import Event
@@ -357,6 +357,7 @@ def resolve_token(
 @router.get("/discover")
 def discover(
     network: str = Query(..., description="Network (workspace) ID"),
+    member: Optional[str] = Query(None, description="Optional agent-name scope for private channel visibility"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -421,12 +422,16 @@ def discover(
             "joined_at": m.joined_at.isoformat() if m.joined_at else None,
         })
 
-    channels_rows = db.execute(
-        select(Channel).where(
-            Channel.workspace_id == workspace.id,
-            Channel.status != "deleted",
+    channels_query = select(Channel).where(
+        Channel.workspace_id == workspace.id,
+        Channel.status != "deleted",
+    )
+    if member:
+        member_channel_ids = select(ChannelMember.channel_id).where(ChannelMember.agent_name == member)
+        channels_query = channels_query.where(
+            (Channel.visibility != "private") | Channel.id.in_(member_channel_ids)
         )
-    ).scalars().all()
+    channels_rows = db.execute(channels_query).scalars().all()
 
     channels = []
     for c in channels_rows:
@@ -437,6 +442,8 @@ def discover(
             "title": c.title,
             "master": c.master_agent,
             "participants": [p.agent_name for p in (c.participants or [])],
+            "visibility": c.visibility or "public",
+            "mention_policy": c.mention_policy or "members_only",
             "created_at": created_at_ts,
             "last_event_at": c.last_event_at,
             "status": c.status or "active",

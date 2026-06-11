@@ -78,7 +78,14 @@ interface WorkspaceContextValue {
   consumeSkipFocus: () => boolean;
   setSelectedFileId: (id: string | null) => void;
   setCurrentFilePath: (path: string) => void;
-  createSession: (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => Promise<WorkspaceSession>;
+  createSession: (opts?: {
+    title?: string;
+    master?: string;
+    participants?: string[];
+    resumeFrom?: string;
+    visibility?: 'public' | 'private' | 'dm' | 'system';
+    mentionPolicy?: 'members_only' | 'workspace_members' | 'disabled';
+  }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   updateSession: (sessionId: string, updates: { starred?: boolean; status?: string }) => Promise<void>;
   addParticipant: (sessionId: string, agentName: string) => Promise<void>;
@@ -928,7 +935,14 @@ export function WorkspaceProvider({
     return () => clearTimeout(timeout);
   }, [refreshDiscovery]);
 
-  const createSession = useCallback(async (opts?: { title?: string; master?: string; participants?: string[]; resumeFrom?: string }) => {
+  const createSession = useCallback(async (opts?: {
+    title?: string;
+    master?: string;
+    participants?: string[];
+    resumeFrom?: string;
+    visibility?: 'public' | 'private' | 'dm' | 'system';
+    mentionPolicy?: 'members_only' | 'workspace_members' | 'disabled';
+  }) => {
     const masterAgent = opts?.master || agents.find((a) => a.role === 'master')?.agentName;
     const participants = opts?.participants || agents.map((a) => a.agentName);
 
@@ -937,6 +951,8 @@ export function WorkspaceProvider({
       master: masterAgent,
       participants,
       resumeFrom: opts?.resumeFrom,
+      visibility: opts?.visibility,
+      mentionPolicy: opts?.mentionPolicy,
     });
     capture('thread_created', { participant_count: participants.length, has_resume: !!opts?.resumeFrom });
     setSessions((prev) => [session, ...prev]);

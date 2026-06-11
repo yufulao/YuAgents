@@ -190,6 +190,8 @@ class WorkspaceApi {
     master?: string;
     participants?: string[];
     resumeFrom?: string;
+    visibility?: 'public' | 'private' | 'dm' | 'system';
+    mentionPolicy?: 'members_only' | 'workspace_members' | 'disabled';
   } = {}): Promise<WorkspaceSession> {
     const event = await this.sendEvent({
       type: 'network.channel.create',
@@ -200,6 +202,8 @@ class WorkspaceApi {
         ...(opts.master && { master: opts.master }),
         ...(opts.participants && { participants: opts.participants }),
         ...(opts.resumeFrom && { resume_from: opts.resumeFrom }),
+        ...(opts.visibility && { visibility: opts.visibility }),
+        ...(opts.mentionPolicy && { mention_policy: opts.mentionPolicy }),
       },
     });
 
@@ -210,6 +214,8 @@ class WorkspaceApi {
       workspaceId: this.workspaceId,
       createdBy: 'human:user',
       title: opts.title || 'New Thread',
+      visibility: opts.visibility || 'public',
+      mentionPolicy: opts.mentionPolicy || 'members_only',
       status: 'active',
       starred: false,
       participants: opts.participants || [],

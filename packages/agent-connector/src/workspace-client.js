@@ -275,6 +275,7 @@ class WorkspaceClient {
     const params = new URLSearchParams({
       network: workspaceId,
       type: 'workspace.message.posted',
+      member: agentName,
       limit: String(limit),
     });
     if (after) params.set('after', after);
