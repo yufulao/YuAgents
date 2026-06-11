@@ -12,7 +12,12 @@ export interface Workspace {
 }
 
 export interface WorkspaceAgent {
+  id?: string;
+  handle?: string;
   agentName: string;
+  displayName?: string;
+  avatar?: { type: string; value: string } | null;
+  avatarUrl?: string | null;
   role: string;
   agentType: string | null;
   serverHost: string | null;
@@ -22,6 +27,16 @@ export interface WorkspaceAgent {
   // `skill_status` maps skill id → install status. Hence the union value type.
   enabledSkills: Record<string, unknown> | null;
   status: string;
+  lifecycleState?: string;
+  activitySummary?: string | null;
+  currentChannel?: string | null;
+  modelProvider?: string | null;
+  model?: string | null;
+  modelName?: string | null;
+  mode?: string | null;
+  quality?: string | null;
+  credentialRef?: string | null;
+  managedMetadata?: Record<string, unknown> | null;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
 }
@@ -283,7 +298,7 @@ export interface CloudAgentConfig {
   provider: string;
   model: string;
   category: 'chat' | 'image' | 'audio';
-  apiKeyMasked: string;
+  apiKeyMasked: string | null;
   baseUrl: string | null;
   systemPrompt: string | null;
   maxTokens: number | null;
@@ -314,14 +329,30 @@ export interface EventPollResponse {
 }
 
 export interface NetworkAgent {
+  id?: string;
   address: string;
+  handle?: string;
+  display_name?: string | null;
+  avatar?: { type: string; value: string } | null;
   role: string;
   status: string;
+  lifecycle_state?: string | null;
+  lifecycle_status?: string | null;
   agent_type: string | null;
+  avatar_url?: string | null;
   server_host: string | null;
   working_dir: string | null;
   description: string | null;
   enabled_skills: Record<string, unknown> | null;
+  model_provider?: string | null;
+  model?: string | null;
+  model_name?: string | null;
+  mode?: string | null;
+  quality?: string | null;
+  credential_ref?: string | null;
+  managed_metadata?: Record<string, unknown> | null;
+  activity_summary?: string | null;
+  current_channel?: string | null;
   last_heartbeat_at: string | null;
   joined_at: string | null;
 }
@@ -420,8 +451,14 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
 
 /** Convert a NetworkAgent from discover to a WorkspaceAgent. */
 export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgent {
+  const agentName = agent.handle || agent.address.replace(/^openagents:/, '');
   return {
-    agentName: agent.address.replace(/^openagents:/, ''),
+    id: agent.id || agentName,
+    handle: agentName,
+    agentName,
+    displayName: agent.display_name || agentName,
+    avatar: agent.avatar || null,
+    avatarUrl: agent.avatar_url || null,
     role: agent.role,
     agentType: agent.agent_type || null,
     serverHost: agent.server_host || null,
@@ -429,6 +466,16 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     description: agent.description || null,
     enabledSkills: agent.enabled_skills || null,
     status: agent.status,
+    lifecycleState: agent.lifecycle_state || (agent.lifecycle_status === 'disabled' ? 'stopped' : agent.status),
+    activitySummary: agent.activity_summary || null,
+    currentChannel: agent.current_channel || null,
+    modelProvider: agent.model_provider || null,
+    model: agent.model || agent.model_name || null,
+    modelName: agent.model_name || agent.model || null,
+    mode: agent.mode || null,
+    quality: agent.quality || null,
+    credentialRef: agent.credential_ref || null,
+    managedMetadata: agent.managed_metadata || null,
     lastHeartbeatAt: agent.last_heartbeat_at || null,
     joinedAt: agent.joined_at || null,
   };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2, KeyRound, RefreshCw, Sparkles, ExternalLink } from 'lucide-react';
+import { X, Copy, Check, Plus, Globe, Folder, Monitor, UserRoundCog, Cloud, Trash2, KeyRound, RefreshCw, Sparkles, ExternalLink, Pencil, Power } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -19,6 +19,7 @@ export function AgentProfilePanel() {
   const agent = agents.find((a) => a.agentName === selectedAgentName);
 
   const isCloud = agent?.agentType?.startsWith('cloud:') ?? false;
+  const isDisabled = agent?.lifecycleState === 'stopped' || agent?.status === 'stopped';
 
   // Cloud agent config
   const [cloudConfig, setCloudConfig] = useState<CloudAgentConfig | null>(null);
@@ -32,14 +33,28 @@ export function AgentProfilePanel() {
   const handleRemoveCloudAgent = useCallback(async () => {
     if (!agent) return;
     try {
-      await workspaceApi.removeCloudAgent(agent.agentName);
-      toast.success(`Removed cloud agent "${agent.agentName}"`);
+      if (isCloud) await workspaceApi.removeCloudAgent(agent.agentName);
+      else await workspaceApi.deleteManagedAgent(agent.agentName);
+      toast.success(`Removed agent "${agent.agentName}"`);
       setSelectedAgentName(null);
       refreshWorkspace();
     } catch {
-      toast.error('Failed to remove cloud agent');
+      toast.error('Failed to remove agent');
     }
-  }, [agent, setSelectedAgentName, refreshWorkspace]);
+  }, [agent, isCloud, setSelectedAgentName, refreshWorkspace]);
+
+  const handleToggleDisabled = useCallback(async () => {
+    if (!agent) return;
+    const next = isDisabled ? 'active' : 'disabled';
+    try {
+      await workspaceApi.updateManagedAgent(agent.agentName, { lifecycleStatus: next });
+      if (isCloud) await workspaceApi.updateCloudAgent(agent.agentName, { status: next === 'active' ? 'active' : 'disabled' });
+      await refreshWorkspace();
+      toast.success(next === 'active' ? 'Agent enabled' : 'Agent disabled');
+    } catch {
+      toast.error('Failed to update agent status');
+    }
+  }, [agent, isCloud, isDisabled, refreshWorkspace]);
 
   // Inline API key update
   const [editingKey, setEditingKey] = useState(false);
@@ -65,6 +80,54 @@ export function AgentProfilePanel() {
   }, [agent, newApiKey]);
 
   useEffect(() => { setEditingKey(false); setNewApiKey(''); }, [agent?.agentName]);
+
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [avatarUrlDraft, setAvatarUrlDraft] = useState('');
+  const [workingDirDraft, setWorkingDirDraft] = useState('');
+  const [modelProviderDraft, setModelProviderDraft] = useState('');
+  const [modelDraft, setModelDraft] = useState('');
+  const [modeDraft, setModeDraft] = useState('code');
+  const [qualityDraft, setQualityDraft] = useState('medium');
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  useEffect(() => {
+    if (!agent) return;
+    setEditingConfig(false);
+    setDisplayNameDraft(agent.displayName || agent.agentName);
+    setAvatarUrlDraft(agent.avatarUrl || '');
+    setWorkingDirDraft(agent.workingDir || '');
+    setModelProviderDraft(agent.modelProvider || (isCloud ? agent.agentType?.replace('cloud:', '') || '' : ''));
+    setModelDraft(agent.modelName || agent.model || cloudConfig?.model || '');
+    setModeDraft(agent.mode || 'code');
+    setQualityDraft(agent.quality || 'medium');
+  }, [agent?.agentName, cloudConfig?.model, isCloud]);
+
+  const handleSaveConfig = useCallback(async () => {
+    if (!agent) return;
+    setSavingConfig(true);
+    try {
+      await workspaceApi.updateManagedAgent(agent.agentName, {
+        displayName: displayNameDraft.trim() || agent.agentName,
+        avatarUrl: avatarUrlDraft.trim(),
+        workingDir: workingDirDraft.trim(),
+        modelProvider: modelProviderDraft.trim(),
+        modelName: modelDraft.trim(),
+        mode: modeDraft,
+        quality: qualityDraft,
+      });
+      if (isCloud && modelDraft.trim() && modelDraft.trim() !== cloudConfig?.model) {
+        await workspaceApi.updateCloudAgent(agent.agentName, { model: modelDraft.trim() });
+      }
+      await refreshWorkspace();
+      setEditingConfig(false);
+      toast.success('Agent config saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save agent config');
+    } finally {
+      setSavingConfig(false);
+    }
+  }, [agent, displayNameDraft, avatarUrlDraft, workingDirDraft, modelProviderDraft, modelDraft, modeDraft, qualityDraft, isCloud, cloudConfig?.model, refreshWorkspace]);
 
   // Description state — local draft + save
   const [description, setDescription] = useState('');
@@ -155,7 +218,10 @@ export function AgentProfilePanel() {
           <div className="flex items-center gap-3">
             <AgentAvatar name={agent.agentName} size={40} status={agent.status} showStatus />
             <div className="flex-1 min-w-0">
-              <h3 className="text-[15px] font-semibold leading-tight truncate">{agent.agentName}</h3>
+              <h3 className="text-[15px] font-semibold leading-tight truncate">{agent.displayName || agent.agentName}</h3>
+              {agent.displayName && agent.displayName !== agent.agentName && (
+                <p className="text-[11px] text-muted-foreground truncate">@{agent.agentName}</p>
+              )}
               <div className="flex items-center gap-1.5 mt-1">
                 <span className={cn(
                   'inline-flex items-center gap-1 text-[11px] px-1.5 py-px rounded font-medium',
@@ -233,6 +299,55 @@ export function AgentProfilePanel() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Web-managed config */}
+          <div className="rounded-lg border overflow-hidden">
+            <div className="px-3.5 py-2.5 border-b flex items-center justify-between">
+              <span className="text-xs font-medium">Agent Configuration</span>
+              {!editingConfig && (
+                <button onClick={() => setEditingConfig(true)} className="text-muted-foreground hover:text-foreground" title="Edit agent config">
+                  <Pencil className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="p-3 space-y-2">
+              {editingConfig ? (
+                <>
+                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent" value={displayNameDraft} onChange={(e) => setDisplayNameDraft(e.target.value)} placeholder="Display name" />
+                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent" value={avatarUrlDraft} onChange={(e) => setAvatarUrlDraft(e.target.value)} placeholder="Avatar URL" />
+                  <input className="w-full h-8 px-2 text-xs rounded border bg-transparent font-mono" value={workingDirDraft} onChange={(e) => setWorkingDirDraft(e.target.value)} placeholder="Working directory" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelProviderDraft} onChange={(e) => setModelProviderDraft(e.target.value)} placeholder="Provider" />
+                    <input className="h-8 px-2 text-xs rounded border bg-transparent" value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} placeholder="Model" />
+                    <select className="h-8 px-2 text-xs rounded border bg-background" value={modeDraft} onChange={(e) => setModeDraft(e.target.value)}>
+                      <option value="ask">Ask</option>
+                      <option value="code">Code</option>
+                      <option value="autonomous">Autonomous</option>
+                    </select>
+                    <select className="h-8 px-2 text-xs rounded border bg-background" value={qualityDraft} onChange={(e) => setQualityDraft(e.target.value)}>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="max">Max</option>
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-1.5">
+                    <button onClick={() => setEditingConfig(false)} className="px-2 py-1 text-[10px] rounded border">Cancel</button>
+                    <button onClick={handleSaveConfig} disabled={savingConfig} className="px-2 py-1 text-[10px] rounded bg-primary text-primary-foreground disabled:opacity-50">
+                      {savingConfig ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                  <span className="text-muted-foreground">Mode</span><span>{agent.mode || '—'}</span>
+                  <span className="text-muted-foreground">Quality</span><span>{agent.quality || '—'}</span>
+                  <span className="text-muted-foreground">Provider</span><span className="truncate">{agent.modelProvider || '—'}</span>
+                  <span className="text-muted-foreground">Model</span><span className="truncate">{agent.modelName || agent.model || cloudConfig?.model || '—'}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -392,12 +507,30 @@ export function AgentProfilePanel() {
             </button>
             {isCloud && (
               <button
-                onClick={handleRemoveCloudAgent}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                title="Remove cloud agent"
+                onClick={handleToggleDisabled}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                title={isDisabled ? 'Enable agent' : 'Disable agent'}
               >
-                <Trash2 className="size-3" />
-                Remove
+                <Power className="size-3" />
+                {isDisabled ? 'Enable' : 'Disable'}
+              </button>
+            )}
+            <button
+              onClick={handleRemoveCloudAgent}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              title="Remove agent"
+            >
+              <Trash2 className="size-3" />
+              Remove
+            </button>
+            {!isCloud && (
+              <button
+                onClick={handleToggleDisabled}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                title={isDisabled ? 'Enable agent' : 'Disable agent'}
+              >
+                <Power className="size-3" />
+                {isDisabled ? 'Enable' : 'Disable'}
               </button>
             )}
           </div>

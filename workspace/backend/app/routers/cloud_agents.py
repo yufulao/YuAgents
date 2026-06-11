@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import CloudAgentConfig, WorkspaceMember
+from app.models import AgentConfig, CloudAgentConfig, WorkspaceMember
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _resolve_workspace, _verify_workspace_access
 from app.services.cloud_providers import providers_catalog, validate_provider_model
@@ -31,7 +31,9 @@ router = APIRouter(prefix="/v1", tags=["Cloud Agents"])
 _AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$")
 
 
-def _mask_api_key(key: str) -> str:
+def _mask_api_key(key: Optional[str]) -> Optional[str]:
+    if not key:
+        return None
     if len(key) <= 8:
         return "****"
     return key[:4] + "..." + key[-4:]
@@ -71,7 +73,7 @@ class AddCloudAgentRequest(BaseModel):
     agent_name: str
     provider: str
     model: str
-    api_key: str
+    api_key: Optional[str] = None
     base_url: Optional[str] = None
     system_prompt: Optional[str] = None
     max_tokens: Optional[int] = None
@@ -129,7 +131,7 @@ async def add_cloud_agent(
         provider=body.provider,
         model=body.model,
         category=model_info.category,
-        api_key=body.api_key,
+        api_key=body.api_key or None,
         base_url=body.base_url,
         system_prompt=body.system_prompt,
         max_tokens=body.max_tokens,
@@ -145,6 +147,22 @@ async def add_cloud_agent(
         description=f"Cloud agent: {model_info.label} ({body.provider})",
     )
     db.add(member)
+
+    db.add(AgentConfig(
+        workspace_id=str(workspace.id),
+        handle=body.agent_name,
+        display_name=body.agent_name,
+        avatar={"type": "pixel", "value": body.agent_name},
+        agent_type=f"cloud:{body.provider}",
+        model_provider=body.provider,
+        model=body.model,
+        mode="ask",
+        quality="medium",
+        credential_ref="api-key" if body.api_key else "official-login",
+        working_dir=None,
+        enabled_skills=None,
+        config_metadata={"cloud_category": model_info.category},
+    ))
 
     db.commit()
 
@@ -259,6 +277,30 @@ async def update_cloud_agent(
 
     if body.status is not None and body.status in ("active", "disabled"):
         cfg.status = body.status
+        member = db.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace.id,
+                WorkspaceMember.agent_name == agent_name,
+            )
+        ).scalar_one_or_none()
+        if member:
+            member.status = "online" if body.status == "active" else "stopped"
+
+    agent_config = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == str(workspace.id),
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+    if agent_config:
+        agent_config.model_provider = cfg.provider
+        agent_config.model = cfg.model
+        metadata = dict(agent_config.config_metadata or {})
+        metadata["cloud_category"] = cfg.category
+        metadata["disabled"] = cfg.status == "disabled"
+        agent_config.config_metadata = metadata
+        if body.api_key is not None:
+            agent_config.credential_ref = "api-key" if body.api_key else "official-login"
 
     db.commit()
 
@@ -305,6 +347,14 @@ async def remove_cloud_agent(
     ).scalar_one_or_none()
     if member:
         db.delete(member)
+    agent_config = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == str(workspace.id),
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+    if agent_config:
+        db.delete(agent_config)
 
     db.commit()
 

@@ -605,7 +605,12 @@ class WorkspaceApi {
   async listAgents(): Promise<WorkspaceAgent[]> {
     const discovery = await this.discover();
     return discovery.agents.map((a) => ({
-      agentName: a.address.replace(/^openagents:/, ''),
+      id: a.id || a.address.replace(/^openagents:/, ''),
+      handle: a.handle || a.address.replace(/^openagents:/, ''),
+      agentName: a.handle || a.address.replace(/^openagents:/, ''),
+      displayName: a.display_name || a.handle || a.address.replace(/^openagents:/, ''),
+      avatar: a.avatar || null,
+      avatarUrl: a.avatar_url || null,
       role: a.role,
       agentType: a.agent_type || null,
       serverHost: a.server_host || null,
@@ -613,8 +618,18 @@ class WorkspaceApi {
       description: a.description || null,
       enabledSkills: a.enabled_skills || null,
       status: a.status,
-      lastHeartbeatAt: null,
-      joinedAt: null,
+      lifecycleState: a.lifecycle_state || (a.lifecycle_status === 'disabled' ? 'stopped' : a.status),
+      activitySummary: a.activity_summary || null,
+      currentChannel: a.current_channel || null,
+      modelProvider: a.model_provider || null,
+      model: a.model || a.model_name || null,
+      modelName: a.model_name || a.model || null,
+      mode: a.mode || null,
+      quality: a.quality || null,
+      credentialRef: a.credential_ref || null,
+      managedMetadata: a.managed_metadata || null,
+      lastHeartbeatAt: a.last_heartbeat_at || null,
+      joinedAt: a.joined_at || null,
     }));
   }
 
@@ -631,6 +646,84 @@ class WorkspaceApi {
     await this.request<unknown>('/v1/remove', {
       method: 'POST',
       body: JSON.stringify({ agent_name: agentName, network: this.workspaceId }),
+    });
+  }
+
+  async addManagedAgent(params: {
+    agentName: string;
+    agentType: string;
+    displayName?: string;
+    avatarUrl?: string;
+    description?: string;
+    serverHost?: string;
+    workingDir?: string;
+    modelProvider?: string;
+    modelName?: string;
+    mode?: string;
+    quality?: string;
+    lifecycleStatus?: 'active' | 'disabled';
+    enabledSkills?: Record<string, boolean>;
+    managedMetadata?: Record<string, unknown>;
+  }): Promise<WorkspaceAgent> {
+    return this.request<WorkspaceAgent>(`/v1/workspaces/${this.workspaceId}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({
+        agent_name: params.agentName,
+        agent_type: params.agentType,
+        display_name: params.displayName || null,
+        avatar_url: params.avatarUrl || null,
+        description: params.description || null,
+        server_host: params.serverHost || null,
+        working_dir: params.workingDir || null,
+        model_provider: params.modelProvider || null,
+        model_name: params.modelName || null,
+        mode: params.mode || null,
+        quality: params.quality || null,
+        lifecycle_status: params.lifecycleStatus || 'active',
+        enabled_skills: params.enabledSkills || null,
+        managed_metadata: params.managedMetadata || null,
+      }),
+    });
+  }
+
+  async updateManagedAgent(agentName: string, updates: {
+    agentType?: string;
+    displayName?: string;
+    avatarUrl?: string;
+    description?: string;
+    serverHost?: string;
+    workingDir?: string;
+    modelProvider?: string;
+    modelName?: string;
+    mode?: string;
+    quality?: string;
+    lifecycleStatus?: 'active' | 'disabled';
+    enabledSkills?: Record<string, boolean>;
+    managedMetadata?: Record<string, unknown>;
+  }): Promise<WorkspaceAgent> {
+    return this.request<WorkspaceAgent>(`/v1/workspaces/${this.workspaceId}/agents/${agentName}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ...updates.agentType !== undefined && { agent_type: updates.agentType },
+        ...updates.displayName !== undefined && { display_name: updates.displayName },
+        ...updates.avatarUrl !== undefined && { avatar_url: updates.avatarUrl },
+        ...updates.description !== undefined && { description: updates.description },
+        ...updates.serverHost !== undefined && { server_host: updates.serverHost },
+        ...updates.workingDir !== undefined && { working_dir: updates.workingDir },
+        ...updates.modelProvider !== undefined && { model_provider: updates.modelProvider },
+        ...updates.modelName !== undefined && { model_name: updates.modelName },
+        ...updates.mode !== undefined && { mode: updates.mode },
+        ...updates.quality !== undefined && { quality: updates.quality },
+        ...updates.lifecycleStatus !== undefined && { lifecycle_status: updates.lifecycleStatus },
+        ...updates.enabledSkills !== undefined && { enabled_skills: updates.enabledSkills },
+        ...updates.managedMetadata !== undefined && { managed_metadata: updates.managedMetadata },
+      }),
+    });
+  }
+
+  async deleteManagedAgent(agentName: string): Promise<void> {
+    await this.request<unknown>(`/v1/workspaces/${this.workspaceId}/agents/${agentName}`, {
+      method: 'DELETE',
     });
   }
 
@@ -654,7 +747,7 @@ class WorkspaceApi {
     agentName: string;
     provider: string;
     model: string;
-    apiKey: string;
+    apiKey?: string;
     baseUrl?: string;
     systemPrompt?: string;
     maxTokens?: number;

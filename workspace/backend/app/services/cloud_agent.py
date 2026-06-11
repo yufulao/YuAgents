@@ -59,6 +59,12 @@ async def invoke_cloud_agents(workspace_id: str, event_data: dict) -> None:
 
             if not cloud_config:
                 continue
+            if not cloud_config.api_key and not (cloud_config.base_url or "").startswith("oauth_refresh:"):
+                await _post_error_message(
+                    workspace_id, event_data, agent_name,
+                    "Cloud agent is missing credentials. Add an API key or connect an official login profile.",
+                )
+                continue
 
             try:
                 await _invoke_single(db, workspace_id, event_data, cloud_config, depth)

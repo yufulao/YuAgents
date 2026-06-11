@@ -15,6 +15,7 @@ PATCH  /v1/workspaces/{id}/members/{name}  Update agent description/role
 
 import json as _json
 import logging
+import re
 import secrets
 import time
 import uuid
@@ -30,6 +31,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.config import config
 from app.database import get_db
 from app.models import (
+    AgentConfig,
     Channel,
     ChannelMember,
     Workspace,
@@ -44,6 +46,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/workspaces", tags=["Workspaces"])
 
 AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
+AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$")
+VALID_AGENT_LIFECYCLE = {"active", "disabled"}
+VALID_AGENT_QUALITY = {"low", "medium", "high", "max"}
 
 
 def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
@@ -124,28 +129,61 @@ def _mask_bf_key(key: str | None) -> str | None:
     return key[:4] + "..."
 
 
+def _member_status(m: WorkspaceMember, now: datetime, cfg: AgentConfig | None = None) -> str:
+    metadata = (cfg.config_metadata if cfg else None) or {}
+    if metadata.get("disabled"):
+        return "stopped"
+    status = m.status
+    is_cloud = (m.agent_type or "").startswith("cloud:")
+    if not is_cloud and m.last_heartbeat:
+        # Ensure timezone-aware comparison (SQLite stores naive datetimes)
+        heartbeat = m.last_heartbeat
+        if heartbeat.tzinfo is None:
+            heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+        if (now - heartbeat) > AGENT_TIMEOUT:
+            status = "offline"
+    return status
+
+
+def _default_avatar(handle: str) -> dict:
+    return {"type": "pixel", "value": handle}
+
+
+def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | None = None) -> dict:
+    display_name = cfg.display_name if cfg else m.agent_name
+    avatar = cfg.avatar if cfg else _default_avatar(m.agent_name)
+    metadata = (cfg.config_metadata if cfg else None) or {}
+    return {
+        "id": cfg.id if cfg else f"{m.workspace_id}:{m.agent_name}",
+        "handle": m.agent_name,
+        "agentName": m.agent_name,
+        "displayName": display_name,
+        "role": m.role,
+        "agentType": cfg.agent_type if cfg else m.agent_type,
+        "status": _member_status(m, now, cfg),
+        "lifecycleState": _member_status(m, now, cfg),
+        "description": m.description,
+        "avatar": avatar,
+        "avatarUrl": avatar.get("value") if avatar.get("type") == "upload" else None,
+        "serverHost": m.server_host,
+        "workingDir": cfg.working_dir if cfg and cfg.working_dir is not None else m.working_dir,
+        "enabledSkills": cfg.enabled_skills if cfg and cfg.enabled_skills is not None else m.enabled_skills,
+        "modelProvider": cfg.model_provider if cfg else None,
+        "model": cfg.model if cfg else None,
+        "modelName": cfg.model if cfg else None,
+        "mode": cfg.mode if cfg else None,
+        "quality": cfg.quality if cfg else None,
+        "credentialRef": cfg.credential_ref if cfg else None,
+        "activitySummary": metadata.get("activity_summary"),
+        "currentChannel": metadata.get("current_channel"),
+        "managedMetadata": metadata,
+        "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
+        "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
+    }
+
+
 def _format_workspace(ws: Workspace, members: list, now: datetime) -> dict:
-    agents = []
-    for m in members:
-        status = m.status
-        is_cloud = (m.agent_type or "").startswith("cloud:")
-        if not is_cloud and m.last_heartbeat:
-            # Ensure timezone-aware comparison (SQLite stores naive datetimes)
-            heartbeat = m.last_heartbeat
-            if heartbeat.tzinfo is None:
-                heartbeat = heartbeat.replace(tzinfo=timezone.utc)
-            if (now - heartbeat) > AGENT_TIMEOUT:
-                status = "offline"
-        agents.append({
-            "agentName": m.agent_name,
-            "role": m.role,
-            "agentType": m.agent_type,
-            "status": status,
-            "description": m.description,
-            "workingDir": m.working_dir,
-            "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
-            "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
-        })
+    agents = [_format_member_agent(m, now, getattr(m, "_agent_config", None)) for m in members]
 
     settings = ws.settings or {}
     return {
@@ -163,6 +201,15 @@ def _format_workspace(ws: Workspace, members: list, now: datetime) -> dict:
         "lastActivityAt": ws.last_activity_at.isoformat() if ws.last_activity_at else None,
         "agents": agents,
     }
+
+
+def _attach_agent_configs(db: Session, workspace_id: str, members: list[WorkspaceMember]) -> None:
+    configs = db.execute(
+        select(AgentConfig).where(AgentConfig.workspace_id == workspace_id)
+    ).scalars().all()
+    by_handle = {c.handle: c for c in configs}
+    for member in members:
+        setattr(member, "_agent_config", by_handle.get(member.agent_name))
 
 
 def _format_channel(ch: Channel) -> dict:
@@ -277,6 +324,8 @@ def list_workspaces(
     query = query.options(selectinload(Workspace.members))
     workspaces = db.execute(query.order_by(Workspace.last_activity_at.desc())).scalars().all()
     now = datetime.now(timezone.utc)
+    for ws in workspaces:
+        _attach_agent_configs(db, str(ws.id), ws.members)
 
     results = [_format_workspace(ws, ws.members, now) for ws in workspaces]
 
@@ -320,6 +369,7 @@ def get_workspace(
     members = db.execute(
         select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
     ).scalars().all()
+    _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
     return success_response(_format_workspace(workspace, members, now))
@@ -372,6 +422,7 @@ def update_workspace(
     members = db.execute(
         select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
     ).scalars().all()
+    _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
     return success_response(_format_workspace(workspace, members, now))
@@ -419,6 +470,7 @@ def claim_workspace(
     members = db.execute(
         select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
     ).scalars().all()
+    _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
     return success_response(_format_workspace(workspace, members, now))
@@ -461,6 +513,147 @@ def rotate_token(
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/workspaces/{workspace_id}/agents — Create a web-managed agent config
+# ---------------------------------------------------------------------------
+
+class MemberUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    role: Optional[str] = None
+    enabled_skills: Optional[Dict[str, bool]] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    server_host: Optional[str] = None
+    working_dir: Optional[str] = None
+    agent_type: Optional[str] = None
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    mode: Optional[str] = None
+    quality: Optional[str] = None
+    lifecycle_status: Optional[str] = None
+    managed_metadata: Optional[dict] = None
+
+
+class ManagedAgentCreateRequest(BaseModel):
+    agent_name: str
+    agent_type: str = "local"
+    role: str = "member"
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    server_host: Optional[str] = None
+    working_dir: Optional[str] = None
+    description: Optional[str] = None
+    enabled_skills: Optional[Dict[str, bool]] = None
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    mode: Optional[str] = "execute"
+    quality: Optional[str] = "medium"
+    lifecycle_status: str = "active"
+    managed_metadata: Optional[dict] = None
+
+
+def _validate_agent_config(body) -> Optional[str]:
+    if not AGENT_NAME_RE.match(body.agent_name):
+        return "Agent name must be 3-64 chars, alphanumeric/hyphen/underscore"
+    if getattr(body, "lifecycle_status", "active") not in VALID_AGENT_LIFECYCLE:
+        return f"Invalid lifecycle_status: {body.lifecycle_status}"
+    if getattr(body, "quality", None) and body.quality not in VALID_AGENT_QUALITY:
+        return f"Invalid quality: {body.quality}"
+    return None
+
+
+@router.post("/{workspace_id}/agents")
+def create_managed_agent(
+    workspace_id: str,
+    body: ManagedAgentCreateRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Create an agent membership/config from the web UI without launching a runtime."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    validation_error = _validate_agent_config(body)
+    if validation_error:
+        return json_response(ResponseCode.BAD_REQUEST, validation_error)
+
+    existing = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == body.agent_name,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return json_response(ResponseCode.BAD_REQUEST, f"Agent '{body.agent_name}' already exists")
+
+    disabled = body.lifecycle_status == "disabled"
+    member = WorkspaceMember(
+        workspace_id=workspace.id,
+        agent_name=body.agent_name,
+        role=body.role or "member",
+        agent_type=body.agent_type or "local",
+        server_host=body.server_host or None,
+        working_dir=body.working_dir or None,
+        description=body.description or None,
+        enabled_skills=body.enabled_skills or None,
+        status="offline" if not disabled else "stopped",
+    )
+    db.add(member)
+    cfg_metadata = dict(body.managed_metadata or {})
+    if disabled:
+        cfg_metadata["disabled"] = True
+    cfg = AgentConfig(
+        workspace_id=workspace.id,
+        handle=body.agent_name,
+        display_name=body.display_name or body.agent_name,
+        avatar={"type": "upload", "value": body.avatar_url} if body.avatar_url else _default_avatar(body.agent_name),
+        agent_type=body.agent_type or "local",
+        model_provider=body.model_provider or None,
+        model=body.model_name or None,
+        mode=body.mode or None,
+        quality=body.quality or None,
+        working_dir=body.working_dir or None,
+        enabled_skills=body.enabled_skills or None,
+        config_metadata=cfg_metadata or None,
+    )
+    db.add(cfg)
+    db.commit()
+
+    now = datetime.now(timezone.utc)
+    return success_response(_format_member_agent(member, now, cfg))
+
+
+@router.patch("/{workspace_id}/agents/{agent_name}")
+def update_managed_agent(
+    workspace_id: str,
+    agent_name: str,
+    body: MemberUpdateRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    return update_member(workspace_id, agent_name, body, db, x_workspace_token, authorization)
+
+
+@router.delete("/{workspace_id}/agents/{agent_name}")
+def delete_managed_agent(
+    workspace_id: str,
+    agent_name: str,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    return remove_member(workspace_id, agent_name, db, x_workspace_token, authorization)
+
+
+# ---------------------------------------------------------------------------
 # DELETE /v1/workspaces/{workspace_id}/members/{agent_name}
 # ---------------------------------------------------------------------------
 
@@ -493,6 +686,14 @@ def remove_member(
     if not member:
         return json_response(ResponseCode.NOT_FOUND, "Member not found")
 
+    cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace.id,
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+    if cfg:
+        db.delete(cfg)
     db.delete(member)
     db.commit()
 
@@ -502,12 +703,6 @@ def remove_member(
 # ---------------------------------------------------------------------------
 # PATCH /v1/workspaces/{workspace_id}/members/{agent_name}
 # ---------------------------------------------------------------------------
-
-class MemberUpdateRequest(BaseModel):
-    description: Optional[str] = None
-    role: Optional[str] = None
-    enabled_skills: Optional[Dict[str, bool]] = None
-
 
 @router.patch("/{workspace_id}/members/{agent_name}")
 def update_member(
@@ -539,24 +734,90 @@ def update_member(
     if not member:
         return json_response(ResponseCode.NOT_FOUND, "Member not found")
 
+    cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace.id,
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+    needs_config = any([
+        body.display_name is not None,
+        body.avatar_url is not None,
+        body.model_provider is not None,
+        body.model_name is not None,
+        body.mode is not None,
+        body.quality is not None,
+        body.lifecycle_status is not None,
+        body.managed_metadata is not None,
+    ])
+    if needs_config and not cfg:
+        cfg = AgentConfig(
+            workspace_id=workspace.id,
+            handle=agent_name,
+            display_name=agent_name,
+            avatar=_default_avatar(agent_name),
+            agent_type=member.agent_type or "local",
+            working_dir=member.working_dir,
+            enabled_skills=member.enabled_skills,
+        )
+        db.add(cfg)
+
     if body.description is not None:
         member.description = body.description
     if body.role is not None:
         member.role = body.role
+    if body.display_name is not None:
+        cfg.display_name = body.display_name or agent_name
+    if body.avatar_url is not None:
+        cfg.avatar = {"type": "upload", "value": body.avatar_url} if body.avatar_url else _default_avatar(agent_name)
+    if body.server_host is not None:
+        member.server_host = body.server_host or None
+    if body.working_dir is not None:
+        member.working_dir = body.working_dir or None
+        if cfg:
+            cfg.working_dir = body.working_dir or None
+    if body.agent_type is not None:
+        member.agent_type = body.agent_type or None
+        if cfg:
+            cfg.agent_type = body.agent_type or "local"
+    if body.model_provider is not None:
+        cfg.model_provider = body.model_provider or None
+    if body.model_name is not None:
+        cfg.model = body.model_name or None
+    if body.mode is not None:
+        cfg.mode = body.mode or None
+    if body.quality is not None:
+        if body.quality and body.quality not in VALID_AGENT_QUALITY:
+            return json_response(ResponseCode.BAD_REQUEST, f"Invalid quality: {body.quality}")
+        cfg.quality = body.quality or None
+    if body.lifecycle_status is not None:
+        if body.lifecycle_status not in VALID_AGENT_LIFECYCLE:
+            return json_response(ResponseCode.BAD_REQUEST, f"Invalid lifecycle_status: {body.lifecycle_status}")
+        metadata = dict(cfg.config_metadata or {})
+        if body.lifecycle_status == "disabled":
+            metadata["disabled"] = True
+            member.status = "stopped"
+        else:
+            metadata.pop("disabled", None)
+            member.status = "offline"
+        cfg.config_metadata = metadata or None
+    if body.managed_metadata is not None:
+        metadata = dict(body.managed_metadata or {})
+        if cfg and cfg.config_metadata and cfg.config_metadata.get("disabled"):
+            metadata["disabled"] = True
+        cfg.config_metadata = metadata or None
     if body.enabled_skills is not None:
         from app.skill_catalog import get_skill_defaults
         defaults = get_skill_defaults()
         valid = {k: v for k, v in body.enabled_skills.items() if k in defaults}
         member.enabled_skills = valid or None
+        if cfg:
+            cfg.enabled_skills = member.enabled_skills
 
     db.commit()
 
-    return success_response({
-        "agentName": member.agent_name,
-        "description": member.description,
-        "role": member.role,
-        "enabledSkills": member.enabled_skills,
-    })
+    now = datetime.now(timezone.utc)
+    return success_response(_format_member_agent(member, now, cfg))
 
 
 # ---------------------------------------------------------------------------

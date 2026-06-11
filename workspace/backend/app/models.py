@@ -122,6 +122,33 @@ class WorkspaceMember(Base):
     )
 
 
+class AgentConfig(Base):
+    """Editable LocalAgent configuration owned by the Web/backend control plane."""
+    __tablename__ = "agent_configs"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    handle = Column(Text, nullable=False)              # stable mention handle
+    display_name = Column(Text, nullable=False)        # supports Chinese
+    avatar = Column(JSONB, nullable=False, default=lambda: {"type": "pixel", "value": ""})
+    agent_type = Column(Text, nullable=False)
+    model_provider = Column(Text, nullable=True)
+    model = Column(Text, nullable=True)
+    mode = Column(Text, nullable=True)
+    quality = Column(Text, nullable=True)
+    credential_ref = Column(Text, nullable=True)       # local profile id, never raw secret
+    working_dir = Column(Text, nullable=True)
+    enabled_skills = Column(JSONB, nullable=True)
+    config_metadata = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "handle", name="uq_agent_config_workspace_handle"),
+        Index("idx_agent_configs_workspace", "workspace_id"),
+    )
+
+
 class Channel(Base):
     """A channel = session / thread (named event stream)."""
     __tablename__ = "channels"
@@ -522,7 +549,7 @@ class CloudAgentConfig(Base):
     provider = Column(Text, nullable=False)              # "openai", "google", "xai", "deepseek"
     model = Column(Text, nullable=False)                  # "gpt-4o", "gemini-2.5-pro", etc.
     category = Column(Text, nullable=False, default="chat")  # "chat" or "image"
-    api_key = Column(Text, nullable=False)
+    api_key = Column(Text, nullable=True)
     base_url = Column(Text, nullable=True)                # custom OpenAI-compatible endpoint
     system_prompt = Column(Text, nullable=True)
     max_tokens = Column(Integer, nullable=True)

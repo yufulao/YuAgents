@@ -162,7 +162,7 @@ export function ConnectAgentView() {
     : token;
 
   const handleAddCloudAgent = async () => {
-    if (!selectedProvider || !cfgModel || !cfgName || !cfgKey) {
+    if (!selectedProvider || !cfgModel || !cfgName) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -330,6 +330,51 @@ function LocalAgentsTab({
   isCopied: boolean;
   copyToClipboard: (text: string) => void;
 }) {
+  const { refreshWorkspace } = useWorkspace();
+  const [localName, setLocalName] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [workingDir, setWorkingDir] = useState('');
+  const [modelProvider, setModelProvider] = useState('');
+  const [modelName, setModelName] = useState('');
+  const [mode, setMode] = useState('code');
+  const [quality, setQuality] = useState('medium');
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!selectedEntry) return;
+    const name = `my-${selectedEntry.name}`;
+    setLocalName(name);
+    setDisplayName(selectedEntry.label);
+    setModelProvider('');
+    setModelName('');
+    setMode('code');
+    setQuality('medium');
+  }, [selectedEntry]);
+
+  const handleCreateLocalConfig = async () => {
+    if (!selectedEntry || !localName.trim()) return;
+    setCreating(true);
+    try {
+      await workspaceApi.addManagedAgent({
+        agentName: localName.trim(),
+        agentType: selectedEntry.name,
+        displayName: displayName.trim() || localName.trim(),
+        workingDir: workingDir.trim() || undefined,
+        modelProvider: modelProvider.trim() || undefined,
+        modelName: modelName.trim() || undefined,
+        mode,
+        quality,
+        lifecycleStatus: 'active',
+      });
+      await refreshWorkspace();
+      toast.success(`Agent "@${localName.trim()}" created`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create agent');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
       {/* Agent grid */}
@@ -393,6 +438,58 @@ function LocalAgentsTab({
 
           {/* Connection methods */}
           <div className="p-4 space-y-4">
+            <div className="rounded-lg border bg-background p-3 space-y-3">
+              <div>
+                <h4 className="text-xs font-semibold">Create Web-managed Agent</h4>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Save the agent profile and runtime config here; the local daemon can start it later.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Handle</Label>
+                  <Input value={localName} onChange={(e) => setLocalName(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Display Name</Label>
+                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <Label className="text-[11px]">Working Directory</Label>
+                  <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Model Provider</Label>
+                  <Input value={modelProvider} onChange={(e) => setModelProvider(e.target.value)} placeholder="openai, anthropic..." className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Model</Label>
+                  <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="gpt-5, claude..." className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Mode</Label>
+                  <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
+                    <option value="ask">Ask</option>
+                    <option value="code">Code</option>
+                    <option value="autonomous">Autonomous</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">Quality</Label>
+                  <select value={quality} onChange={(e) => setQuality(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="max">Max</option>
+                  </select>
+                </div>
+              </div>
+              <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !localName.trim()} className="w-full">
+                {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+                Create Agent Config
+              </Button>
+            </div>
+
             {/* Option A: Desktop App */}
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -718,9 +815,10 @@ function CloudAgentsTab({
                 type="password"
                 value={cfgKey}
                 onChange={(e) => setCfgKey(e.target.value)}
-                placeholder="sk-..."
+                placeholder="sk-... (optional with official login)"
                 className="text-sm font-mono h-9"
               />
+              <p className="text-[10px] text-muted-foreground">Leave empty when this workspace uses an official login or local credential profile.</p>
             </div>
 
             {/* Advanced */}
@@ -748,7 +846,7 @@ function CloudAgentsTab({
             {/* Add button */}
             <Button
               onClick={onAdd}
-              disabled={saving || !cfgName || !cfgKey || !cfgModel || (isCustomProvider && !cfgBaseUrl)}
+              disabled={saving || !cfgName || !cfgModel || (isCustomProvider && !cfgBaseUrl)}
               className="w-full"
               size="sm"
             >

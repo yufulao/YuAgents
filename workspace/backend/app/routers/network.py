@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import config
 from app.database import get_db
-from app.models import Channel, Workspace, WorkspaceMember
+from app.models import AgentConfig, Channel, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from openagents.core.onm_events import Event
@@ -374,26 +374,49 @@ def discover(
     members = db.execute(
         select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
     ).scalars().all()
+    configs = db.execute(
+        select(AgentConfig).where(AgentConfig.workspace_id == str(workspace.id))
+    ).scalars().all()
+    configs_by_handle = {c.handle: c for c in configs}
 
     agents = []
     for m in members:
+        cfg = configs_by_handle.get(m.agent_name)
+        metadata = (cfg.config_metadata if cfg else None) or {}
         status = m.status
         is_cloud = (m.agent_type or "").startswith("cloud:")
+        if metadata.get("disabled"):
+            status = "stopped"
         if not is_cloud and m.last_heartbeat:
             heartbeat = m.last_heartbeat
             if heartbeat.tzinfo is None:
                 heartbeat = heartbeat.replace(tzinfo=timezone.utc)
-            if (now - heartbeat) > AGENT_TIMEOUT:
+            if status != "stopped" and (now - heartbeat) > AGENT_TIMEOUT:
                 status = "offline"
         agents.append({
+            "id": cfg.id if cfg else f"{workspace.id}:{m.agent_name}",
             "address": f"openagents:{m.agent_name}",
+            "handle": m.agent_name,
+            "display_name": cfg.display_name if cfg else m.agent_name,
             "role": m.role,
             "status": status,
-            "agent_type": m.agent_type,
+            "lifecycle_state": status,
+            "agent_type": cfg.agent_type if cfg else m.agent_type,
+            "avatar": cfg.avatar if cfg else {"type": "pixel", "value": m.agent_name},
+            "avatar_url": (cfg.avatar or {}).get("value") if cfg and (cfg.avatar or {}).get("type") == "upload" else None,
             "server_host": m.server_host,
-            "working_dir": m.working_dir,
+            "working_dir": cfg.working_dir if cfg and cfg.working_dir is not None else m.working_dir,
             "description": m.description,
-            "enabled_skills": m.enabled_skills,
+            "enabled_skills": cfg.enabled_skills if cfg and cfg.enabled_skills is not None else m.enabled_skills,
+            "model_provider": cfg.model_provider if cfg else None,
+            "model": cfg.model if cfg else None,
+            "model_name": cfg.model if cfg else None,
+            "mode": cfg.mode if cfg else None,
+            "quality": cfg.quality if cfg else None,
+            "credential_ref": cfg.credential_ref if cfg else None,
+            "activity_summary": metadata.get("activity_summary"),
+            "current_channel": metadata.get("current_channel"),
+            "managed_metadata": metadata,
             "last_heartbeat_at": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
             "joined_at": m.joined_at.isoformat() if m.joined_at else None,
         })
