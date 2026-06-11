@@ -15,7 +15,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/lib/auth-context';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
-import { listMyWorkspaces, createWorkspace, type WorkspaceSummary } from '@/lib/dashboard-api';
+import {
+  listMyWorkspaces,
+  createWorkspace,
+  listLocalWorkspaces,
+  createLocalWorkspace,
+  getLocalWorkspaceTokens,
+  rememberLocalWorkspaceToken,
+  type WorkspaceSummary,
+} from '@/lib/dashboard-api';
+import type { Workspace } from '@/lib/types';
 import { timeAgo } from '@/lib/helpers';
 import { capture } from '@/lib/analytics';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -52,13 +61,69 @@ function LandingPage() {
   const router = useRouter();
   const [workspaceSlug, setWorkspaceSlug] = useState('');
   const [workspaceToken, setWorkspaceToken] = useState('');
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newAgent, setNewAgent] = useState('');
+
+  const loadLocalWorkspaces = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const items = await listLocalWorkspaces();
+      setWorkspaces(items);
+      setTokens(getLocalWorkspaceTokens());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '读取本机工作区失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLocalWorkspaces();
+  }, [loadLocalWorkspaces]);
 
   const openWorkspace = (e: React.FormEvent) => {
     e.preventDefault();
     const slug = workspaceSlug.trim();
     const token = workspaceToken.trim();
     if (!slug) return;
+    if (token) rememberLocalWorkspaceToken(slug, token);
     router.push(token ? `/${slug}?token=${encodeURIComponent(token)}` : `/${slug}`);
+  };
+
+  const openListedWorkspace = (workspace: Workspace) => {
+    const token = tokens[workspace.slug];
+    if (token) {
+      router.push(`/${workspace.slug}?token=${encodeURIComponent(token)}`);
+      return;
+    }
+    setWorkspaceSlug(workspace.slug);
+    setWorkspaceToken('');
+  };
+
+  const createLocal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    setError('');
+    try {
+      const ws = await createLocalWorkspace({
+        name,
+        agentName: newAgent.trim() || undefined,
+        agentType: newAgent.trim() ? 'codex' : undefined,
+      });
+      router.push(`/${ws.slug}?token=${encodeURIComponent(ws.token)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '创建本机工作区失败');
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -80,58 +145,154 @@ function LandingPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] items-start">
           <section className="space-y-6">
             <div className="space-y-3">
               <Badge variant="secondary" className="w-fit">本机主控</Badge>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                打开你的本地 Agent 工作区
+                本机 Workspace
               </h1>
               <p className="text-muted-foreground leading-relaxed max-w-2xl">
-                这里是 Web 控制台入口，不是安装教程。后端、前端、Agent 守护进程启动后，在右侧填入工作区信息即可进入聊天、任务、文件和 Agent 管理界面。
+                Workspace 由本机主控保存和管理。服务器、Web 页面、其他设备只是通过网络入口或 SSH 转发访问本机主控，不把 workspace 放到云端。
               </p>
             </div>
 
-            <form onSubmit={openWorkspace} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4 max-w-xl">
+            <div className="rounded-lg border bg-card">
+              <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-semibold">工作区</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {loading ? '读取中...' : `${workspaces.length} 个本机 workspace`}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={loadLocalWorkspaces} disabled={loading}>
+                  {loading ? <Loader2 className="size-3.5 animate-spin" /> : '刷新'}
+                </Button>
+              </div>
+              <div className="p-4">
+                {error && (
+                  <div className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </div>
+                )}
+                {loading ? (
+                  <div className="flex items-center justify-center py-14 text-muted-foreground">
+                    <Loader2 className="size-5 animate-spin" />
+                  </div>
+                ) : workspaces.length === 0 ? (
+                  <div className="rounded-md border border-dashed px-4 py-8 text-center">
+                    <p className="text-sm font-medium">还没有本机 workspace</p>
+                    <p className="text-xs text-muted-foreground mt-1">在右侧创建一个，或填入已有 slug/token 打开。</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {workspaces.map((workspace) => (
+                      <button
+                        key={workspace.workspaceId}
+                        onClick={() => openListedWorkspace(workspace)}
+                        className="rounded-lg border p-3 text-left hover:border-primary/40 hover:bg-accent/30 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{workspace.name}</div>
+                            <div className="mt-0.5 text-xs text-muted-foreground font-mono truncate">{workspace.slug}</div>
+                          </div>
+                          <Badge variant={tokens[workspace.slug] ? 'primary' : 'secondary'} className="shrink-0 text-[10px]">
+                            {tokens[workspace.slug] ? '可进入' : '需 token'}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Users className="size-3" />
+                            {workspace.agents.length} Agent
+                          </span>
+                          {workspace.lastActivityAt && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="size-3" />
+                              {timeAgo(workspace.lastActivityAt)}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <form onSubmit={createLocal} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold">创建 Workspace</h2>
+                <p className="text-xs text-muted-foreground mt-1">创建后 token 会保存在当前浏览器，用于下次直接进入。</p>
+              </div>
               <div className="space-y-1.5">
-                <Label htmlFor="workspace-slug">工作区 ID / slug</Label>
+                <Label htmlFor="new-workspace-name">名称</Label>
+                <Input
+                  id="new-workspace-name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="例如 主控室"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-workspace-agent">初始 Agent（可选）</Label>
+                <Input
+                  id="new-workspace-agent"
+                  value={newAgent}
+                  onChange={(e) => setNewAgent(e.target.value)}
+                  placeholder="例如 yukari"
+                />
+              </div>
+              <Button type="submit" disabled={!newName.trim() || creating} className="w-full">
+                {creating ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
+                创建并进入
+              </Button>
+            </form>
+
+            <form onSubmit={openWorkspace} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold">打开指定 Workspace</h2>
+                <p className="text-xs text-muted-foreground mt-1">选择左侧无 token 的 workspace 时，也会填到这里。</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="workspace-slug">工作区 slug</Label>
                 <Input
                   id="workspace-slug"
                   value={workspaceSlug}
                   onChange={(e) => setWorkspaceSlug(e.target.value)}
                   placeholder="例如 0048fff6"
-                  autoFocus
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="workspace-token">工作区 Token（本地 token 模式需要）</Label>
+                <Label htmlFor="workspace-token">管理 Token</Label>
                 <Input
                   id="workspace-token"
                   value={workspaceToken}
                   onChange={(e) => setWorkspaceToken(e.target.value)}
-                  placeholder="粘贴 token；已登录或公开入口可留空"
+                  placeholder="粘贴 token 后进入"
                   type="password"
                 />
               </div>
-              <Button type="submit" disabled={!workspaceSlug.trim()} className="w-full sm:w-auto">
+              <Button type="submit" disabled={!workspaceSlug.trim()} className="w-full">
                 打开工作区
                 <ArrowRight className="size-4 ml-1" />
               </Button>
             </form>
-          </section>
 
-          <section className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
+            <div className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold">本机启动</h2>
+              <h2 className="text-sm font-semibold">访问关系</h2>
               <p className="text-xs text-muted-foreground mt-1">
-                从仓库根目录执行。完整启动用第一条；只调前端时用第二条。
+                其他设备打开 Web；Agent 设备连接本机主控 API。
               </p>
             </div>
-            <CodeBlock code={`cd workspace\nmake dev`} />
-            <CodeBlock code={`cd workspace/frontend\nnpm run dev`} />
+            <CodeBlock code={`Web: http://<你的入口>:3000\nAPI: http://<你的入口>:8000`} />
             <div className="rounded-md bg-muted/60 p-3 text-xs text-muted-foreground leading-relaxed">
-              前端默认地址是 <span className="font-mono text-foreground">http://localhost:3001</span>。进入工作区后，左侧「连接 Agent」负责创建和管理 Agent 配置。
+              如果部署在 Linux 服务器，Linux 只做入口或 SSH 转发；workspace 数据和 Agent CLI 配置仍归本机主控。
+            </div>
             </div>
           </section>
         </div>

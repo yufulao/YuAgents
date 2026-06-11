@@ -21,7 +21,7 @@ function renderMentions(children: ReactNode, agentNames: string[]): ReactNode {
   if (!children || agentNames.length === 0) return children;
 
   const escaped = agentNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const mentionRegex = new RegExp(`(@(?:${escaped.join('|')}))(?![\\w-])`, 'g');
+  const mentionRegex = new RegExp(`(@(?:${escaped.join('|')}))(?=$|\\s|[.,!?;:，。！？；：、)\\]）】])`, 'g');
 
   const processNode = (node: ReactNode): ReactNode => {
     if (typeof node === 'string') {

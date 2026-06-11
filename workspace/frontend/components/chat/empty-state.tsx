@@ -43,7 +43,7 @@ export function EmptyState() {
         <div className="space-y-2">
           <h3 className="text-lg font-semibold">Agent 已就绪</h3>
           <p className="text-sm text-muted-foreground max-w-sm">
-            在线 Agent 会显示在侧栏。直接输入消息，或使用 <span className="font-medium text-foreground">@agent-name</span> 指派任务。
+            在线 Agent 会显示在侧栏。直接输入消息，或使用 <span className="font-medium text-foreground">@紫</span> 这样的名称指派任务。
           </p>
         </div>
       </div>
@@ -57,7 +57,7 @@ export function EmptyState() {
         <div className="text-center space-y-2">
           <h2 className="text-2xl font-bold tracking-tight">连接第一个 Agent</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            选择本机已有的 Agent，或按向导完成安装与连接。
+            从本机 Codex 或 Claude 创建一个本地 Agent。
           </p>
         </div>
 
@@ -133,7 +133,7 @@ export function EmptyState() {
                 去连接 Agent
               </button>
               <p className="text-xs text-muted-foreground text-center">
-                在连接页可以创建 Web 管理配置、填写显示名称、工作目录、模型和运行模式。
+                在连接页只需要选择本地外壳、填写 Agent 名称和工作目录；模型读取本机 CLI 配置。
               </p>
             </div>
           </div>
@@ -152,7 +152,7 @@ export function EmptyState() {
           >
             <Cloud className="size-4 text-muted-foreground" />
           <span className="font-medium">进入连接页</span>
-          <span className="text-xs text-muted-foreground">— 本地与云端 Agent 都在这里配置</span>
+          <span className="text-xs text-muted-foreground">— 本地 Agent 只保留 Codex/Claude</span>
             <ChevronRight className="size-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>

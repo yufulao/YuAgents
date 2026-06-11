@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/workspaces", tags=["Workspaces"])
 
 AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
-AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$")
+AGENT_NAME_RE = re.compile(r"^(?!.*[\s@:/\\])[^\s@:/\\]{1,64}$")
 VALID_AGENT_LIFECYCLE = {"active", "disabled"}
 VALID_AGENT_MODES = {"ask", "code", "autonomous", "plan", "execute"}
 VALID_AGENT_QUALITY = {"low", "medium", "high", "xhigh", "max"}
@@ -558,7 +558,7 @@ class ManagedAgentCreateRequest(BaseModel):
 
 def _validate_agent_config(body) -> Optional[str]:
     if not AGENT_NAME_RE.match(body.agent_name):
-        return "Agent name must be 3-64 chars, alphanumeric/hyphen/underscore"
+        return "Agent name must be 1-64 chars and cannot contain whitespace, @, :, /, or \\"
     if getattr(body, "lifecycle_status", "active") not in VALID_AGENT_LIFECYCLE:
         return f"Invalid lifecycle_status: {body.lifecycle_status}"
     if getattr(body, "mode", None) and body.mode not in VALID_AGENT_MODES:

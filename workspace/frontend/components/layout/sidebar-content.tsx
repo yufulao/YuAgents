@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Plus, MessageSquare, FileText, Globe, PlusSquare, Sparkles, BookOpen,
   Settings, Copy, Check, ListTodo, CalendarClock, Inbox,
-  LogIn, LogOut, Shield, Moon, Sun, KeyRound, X, Crown, Users,
+  LogIn, LogOut, Shield, Moon, Sun, KeyRound, X, Crown, Users, Network,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -33,6 +34,13 @@ import { toast } from 'sonner';
 import type { WorkspaceCollaborator } from '@/lib/types';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
 import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
+import {
+  createLocalWorkspace,
+  getLocalWorkspaceTokens,
+  listLocalWorkspaces,
+  rememberLocalWorkspaceToken,
+} from '@/lib/dashboard-api';
+import type { Workspace } from '@/lib/types';
 
 // ── Navigation button helper ──
 
@@ -71,6 +79,7 @@ function NavButton({
 // ── Main SidebarContent ──
 
 export function SidebarContent() {
+  const router = useRouter();
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
   const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines, knowledge, currentUser, onlineUsers, unreadNotificationCount, activeSessionIds } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
@@ -80,6 +89,7 @@ export function SidebarContent() {
   const [claiming, setClaiming] = useState(false);
   const [newThreadOpen, setNewThreadOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -313,6 +323,18 @@ export function SidebarContent() {
           )}
         </div>
         <div className="shrink-0 border-t border-border px-2.5 py-2.5 space-y-1">
+          {workspace && (
+            <button
+              onClick={() => setSwitcherOpen(true)}
+              className="w-full flex items-center gap-2 px-2 h-8 rounded-lg text-[13px] hover:bg-muted transition-colors"
+              title="切换或创建工作区"
+            >
+              <Network className="size-[15px] text-muted-foreground" />
+              <span className="flex-1 truncate text-left">{workspace.name}</span>
+              <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[68px]">{workspace.slug}</span>
+            </button>
+          )}
+
           {/* Logged-in user details */}
           {isOpenAgentsDomain && user && (
             <div className="px-2 py-1.5 space-y-2">
@@ -385,6 +407,16 @@ export function SidebarContent() {
       {/* Settings Dialog */}
       <SettingsDialogPortal open={settingsOpen} onOpenChange={setSettingsOpen} workspace={workspace} refreshWorkspace={refreshWorkspace} />
 
+      <WorkspaceSwitcherDialog
+        open={switcherOpen}
+        onOpenChange={setSwitcherOpen}
+        currentSlug={workspace?.slug || ''}
+        onNavigate={(slug, nextToken) => {
+          if (nextToken) rememberLocalWorkspaceToken(slug, nextToken);
+          router.push(nextToken ? `/${slug}?token=${encodeURIComponent(nextToken)}` : `/${slug}`);
+        }}
+      />
+
 
 
       {/* New Thread Dialog (agent picker) */}
@@ -399,6 +431,157 @@ export function SidebarContent() {
         }}
       />
     </>
+  );
+}
+
+
+function WorkspaceSwitcherDialog({
+  open,
+  onOpenChange,
+  currentSlug,
+  onNavigate,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  currentSlug: string;
+  onNavigate: (slug: string, token?: string) => void;
+}) {
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newAgent, setNewAgent] = useState('');
+  const [manualSlug, setManualSlug] = useState('');
+  const [manualToken, setManualToken] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const load = useMemo(() => async () => {
+    setLoading(true);
+    try {
+      const items = await listLocalWorkspaces();
+      setWorkspaces(items);
+      setTokens(getLocalWorkspaceTokens());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '读取工作区失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) load();
+  }, [open, load]);
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const created = await createLocalWorkspace({
+        name,
+        agentName: newAgent.trim() || undefined,
+        agentType: newAgent.trim() ? 'codex' : undefined,
+      });
+      onOpenChange(false);
+      onNavigate(created.slug, created.token);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建工作区失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleManualOpen = () => {
+    const slug = manualSlug.trim();
+    const token = manualToken.trim();
+    if (!slug) return;
+    if (token) rememberLocalWorkspaceToken(slug, token);
+    onOpenChange(false);
+    onNavigate(slug, token || tokens[slug]);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>切换 Workspace</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-5 py-2">
+          <div className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
+            这里列出的是当前本机主控里的 workspace。服务器和 Web 只是访问入口；选择 workspace 后仍然连接本机 backend。
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>本机 Workspace</Label>
+              <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
+                {loading ? '刷新中...' : '刷新'}
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {workspaces.length === 0 && !loading ? (
+                <div className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                  暂无 workspace
+                </div>
+              ) : (
+                workspaces.map((workspace) => {
+                  const token = tokens[workspace.slug];
+                  const active = workspace.slug === currentSlug;
+                  return (
+                    <button
+                      key={workspace.workspaceId}
+                      onClick={() => {
+                        if (!token) {
+                          setManualSlug(workspace.slug);
+                          setManualToken('');
+                          return;
+                        }
+                        onOpenChange(false);
+                        onNavigate(workspace.slug, token);
+                      }}
+                      className={cn(
+                        'w-full rounded-md border px-3 py-2 text-left transition-colors',
+                        active ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium truncate">{workspace.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{active ? '当前' : token ? '可进入' : '需 token'}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="font-mono">{workspace.slug}</span>
+                        <span>{workspace.agents.length} Agent</span>
+                        {workspace.lastActivityAt && <span>{timeAgo(workspace.lastActivityAt)}</span>}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2 rounded-md border p-3">
+              <Label>创建 Workspace</Label>
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="名称" />
+              <Input value={newAgent} onChange={(e) => setNewAgent(e.target.value)} placeholder="初始 Agent（可选）" />
+              <Button size="sm" className="w-full" onClick={handleCreate} disabled={!newName.trim() || creating}>
+                {creating ? '创建中...' : '创建并进入'}
+              </Button>
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <Label>用 Token 打开</Label>
+              <Input value={manualSlug} onChange={(e) => setManualSlug(e.target.value)} placeholder="workspace slug" />
+              <Input value={manualToken} onChange={(e) => setManualToken(e.target.value)} placeholder="token" type="password" />
+              <Button size="sm" variant="outline" className="w-full" onClick={handleManualOpen} disabled={!manualSlug.trim()}>
+                打开
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

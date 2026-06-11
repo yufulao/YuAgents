@@ -48,7 +48,8 @@ _TERMINAL_STATUS_PATTERNS = (
     "error",
 )
 
-_MENTION_RE = re.compile(r"@([\w][\w\-_]{0,63})")
+_MENTION_RE = re.compile(r"(?<!\S)@([^\s@.,!?;:，。！？；：、)\]）】]+)")
+_MENTION_TRAILING = ".,!?;:，。！？；：、)]）】"
 
 
 def _content_of(event: dict) -> str:
@@ -78,7 +79,7 @@ def _is_terminal_status(content: str) -> bool:
 
 
 def _extract_mentions(content: str) -> set[str]:
-    return {m.group(1).lower() for m in _MENTION_RE.finditer(content or "")}
+    return {m.group(1).rstrip(_MENTION_TRAILING).lower() for m in _MENTION_RE.finditer(content or "")}
 
 
 def _should_push(

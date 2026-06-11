@@ -69,21 +69,21 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
 
   // Extract @mentions from message text
   const extractMentions = (text: string): string[] => {
-    const matches = text.match(/@([\w-]+)/g) || [];
+    const matches = Array.from(text.matchAll(/@([^\s@]+)/g));
     return matches
-      .map((m) => m.slice(1))
+      .map((m) => m[1].replace(/[.,!?;:，。！？；：、)\]）】]+$/, ''))
       .filter((name) => agentNames.includes(name));
   };
 
   // Only suggest online agents — mentioning offline ones never resolves and
   // just clutters the picker on long-lived workspaces.
   const filteredAgents = agents.filter(
-    (a) => a.status === 'online' && a.agentName.toLowerCase().includes(mentionFilter.toLowerCase())
+    (a) => a.status === 'online' && a.agentName.toLocaleLowerCase().includes(mentionFilter.toLocaleLowerCase())
   );
 
   const filteredKnowledge = knowledge.filter(
-    (k) => k.title.toLowerCase().includes(mentionFilter.toLowerCase()) ||
-           k.slug.toLowerCase().includes(mentionFilter.toLowerCase())
+    (k) => k.title.toLocaleLowerCase().includes(mentionFilter.toLocaleLowerCase()) ||
+           k.slug.toLocaleLowerCase().includes(mentionFilter.toLocaleLowerCase())
   );
 
   type MentionItem =
@@ -219,7 +219,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
     // Detect @mention trigger
     const cursorPos = textarea.selectionStart;
     const textBefore = value.slice(0, cursorPos);
-    const atMatch = textBefore.match(/@([\w:-]*)$/);
+    const atMatch = textBefore.match(/@([^\s@]*)$/);
     if (atMatch && (agents.length > 1 || knowledge.length > 0)) {
       setMentionFilter(atMatch[1]);
       setMentionIndex(0);

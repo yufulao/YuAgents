@@ -453,20 +453,23 @@ def _extract_mentions(content: str, known_agents: List[str]) -> List[str]:
     """Parse @agent-name mentions from message text, validated against known agents."""
     if not content or not known_agents:
         return []
-    # Match @word patterns (agent names are alphanumeric + hyphens)
-    raw_mentions = re.findall(r"@([\w-]+)", content)
-    # Only return mentions that match actual workspace members
-    known_set = set(known_agents)
-    return [m for m in raw_mentions if m in known_set]
+    found = []
+    for agent in sorted(known_agents, key=len, reverse=True):
+        pattern = rf"(?<!\S)@{re.escape(agent)}(?=$|\s|[.,!?;:，。！？；：、)\]）】])"
+        if re.search(pattern, content):
+            found.append(agent)
+    return found
 
 
 def _extract_leading_mention(content: str, known_agents: List[str]) -> Optional[str]:
     """Return the agent name if the message starts with @agent-name, else None."""
     if not content or not known_agents:
         return None
-    m = re.match(r"^\s*@([\w-]+)", content)
-    if m and m.group(1) in set(known_agents):
-        return m.group(1)
+    stripped = content.lstrip()
+    for agent in sorted(known_agents, key=len, reverse=True):
+        pattern = rf"@{re.escape(agent)}(?=$|\s|[.,!?;:，。！？；：、)\]）】])"
+        if re.match(pattern, stripped):
+            return agent
     return None
 
 

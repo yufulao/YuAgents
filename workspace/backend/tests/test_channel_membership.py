@@ -449,7 +449,7 @@ class TestPrivateChannelPermissions:
 
     def test_unicode_member_mention_routes_when_agent_is_channel_member(self, client, db, workspace):
         channel_name = workspace["channel"]["name"]
-        agent_name = "测试-agent"
+        agent_name = "紫"
         _add_workspace_member(db, workspace, agent_name)
         join = _post_event(
             client, workspace,
@@ -464,7 +464,7 @@ class TestPrivateChannelPermissions:
             client, workspace,
             source="human:user",
             channel=channel_name,
-            content=f"@{agent_name} 请检查这个线程",
+            content=f"@{agent_name}，请检查这个线程",
         )
 
         assert resp.status_code == 200, resp.text

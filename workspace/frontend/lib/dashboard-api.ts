@@ -1,4 +1,5 @@
 import { getStoredAuth, refreshAccessToken } from './auth';
+import type { Workspace } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org';
 
@@ -12,6 +13,8 @@ export interface WorkspaceSummary {
   createdAt: string | null;
   lastActivityAt: string | null;
 }
+
+const LOCAL_WORKSPACE_TOKENS_KEY = 'oa_local_workspace_tokens';
 
 export interface PaginatedWorkspaces {
   items: WorkspaceSummary[];
@@ -79,4 +82,61 @@ export async function createWorkspace(
     method: 'POST',
     body: JSON.stringify({ agent_name: agentName, name: name || undefined }),
   });
+}
+
+async function localFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || body?.detail || `API error (${res.status})`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+export function getLocalWorkspaceTokens(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_TOKENS_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function rememberLocalWorkspaceToken(slug: string, token: string) {
+  if (typeof window === 'undefined' || !slug || !token) return;
+  const tokens = getLocalWorkspaceTokens();
+  tokens[slug] = token;
+  window.localStorage.setItem(LOCAL_WORKSPACE_TOKENS_KEY, JSON.stringify(tokens));
+}
+
+export async function listLocalWorkspaces(): Promise<Workspace[]> {
+  return localFetch<Workspace[]>('/v1/workspaces');
+}
+
+export async function createLocalWorkspace(params: {
+  name: string;
+  agentName?: string;
+  agentType?: string;
+}): Promise<{ workspaceId: string; slug: string; name: string; token: string }> {
+  const created = await localFetch<{ workspaceId: string; slug: string; name: string; token: string }>('/v1/workspaces', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: params.name,
+      agent_name: params.agentName || undefined,
+      agent_type: params.agentType || undefined,
+    }),
+  });
+  rememberLocalWorkspaceToken(created.slug, created.token);
+  return created;
 }

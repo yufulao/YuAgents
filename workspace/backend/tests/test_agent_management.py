@@ -88,6 +88,23 @@ def test_create_managed_agent_defaults_mode_to_execute(client, workspace, db):
     assert cfg.mode == "execute"
 
 
+def test_create_managed_agent_accepts_chinese_one_field_name(client, workspace, db):
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "紫", "agent_type": "codex"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["handle"] == "紫"
+    assert data["agentName"] == "紫"
+    assert data["displayName"] == "紫"
+
+    cfg = db.query(AgentConfig).filter_by(handle="紫").one()
+    assert cfg.display_name == "紫"
+
+
 def test_managed_agent_rejects_invalid_mode(client, workspace):
     create = client.post(
         f"/v1/workspaces/{workspace['id']}/agents",

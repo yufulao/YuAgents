@@ -11,30 +11,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider, CodexLocalCatalog, CodexModelInfo } from '@/lib/types';
+import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider } from '@/lib/types';
 import { AgentIcon, ProviderIcon } from '@/components/icons/agent-icons';
 import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
 
 // ---------------------------------------------------------------------------
 // Brand colors for local agents and cloud providers
 // ---------------------------------------------------------------------------
-
-const AGENT_BRANDS: Record<string, { bg: string; text: string }> = {
-  claude:    { bg: 'bg-orange-500',  text: 'text-white' },
-  codex:     { bg: 'bg-green-600',   text: 'text-white' },
-  gemini:    { bg: 'bg-blue-500',    text: 'text-white' },
-  openclaw:  { bg: 'bg-violet-600',  text: 'text-white' },
-  amp:       { bg: 'bg-rose-500',    text: 'text-white' },
-  aider:     { bg: 'bg-emerald-500', text: 'text-white' },
-  goose:     { bg: 'bg-amber-600',   text: 'text-white' },
-  cline:     { bg: 'bg-cyan-500',    text: 'text-white' },
-  copilot:   { bg: 'bg-indigo-500',  text: 'text-white' },
-  opencode:  { bg: 'bg-teal-500',    text: 'text-white' },
-  nanoclaw:  { bg: 'bg-pink-500',    text: 'text-white' },
-  cursor:    { bg: 'bg-zinc-800',    text: 'text-white' },
-  hermes:    { bg: 'bg-yellow-500',  text: 'text-white' },
-  kimi:      { bg: 'bg-sky-500',     text: 'text-white' },
-};
 
 const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string }> = {
   openai:    { bg: 'bg-zinc-900 dark:bg-zinc-100', text: 'text-white dark:text-zinc-900', accent: 'border-zinc-300 dark:border-zinc-600' },
@@ -43,63 +26,9 @@ const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string
   deepseek:  { bg: 'bg-blue-700',    text: 'text-white', accent: 'border-blue-300 dark:border-blue-700' },
 };
 
-const AGENT_HANDLE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$/;
-const AGENT_HANDLE_HINT = 'Handle 仅用于 @mention，请使用 ASCII；中文名称请填在显示名称。';
-
-const LOCAL_MODEL_PROVIDERS = [
-  { value: 'openai', label: 'OpenAI', models: ['gpt-5', 'gpt-5-mini', 'gpt-4.1', 'o4-mini'] },
-  { value: 'anthropic', label: 'Anthropic', models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-3-5'] },
-  { value: 'google', label: 'Google', models: ['gemini-2.5-pro', 'gemini-2.5-flash'] },
-  { value: 'moonshot', label: 'Moonshot / Kimi', models: ['kimi-k2', 'kimi-latest'] },
-  { value: 'xai', label: 'xAI', models: ['grok-4', 'grok-3'] },
-  { value: 'deepseek', label: 'DeepSeek', models: ['deepseek-chat', 'deepseek-reasoner'] },
-  { value: 'custom', label: '自定义', models: [] },
-];
-
-const CODEX_REASONING_FALLBACK = ['low', 'medium', 'high', 'xhigh'];
-
-const LOCAL_AGENT_MODEL_DEFAULTS: Record<string, { provider: string; model: string }> = {
-  cursor: { provider: 'openai', model: 'gpt-5' },
-  copilot: { provider: 'openai', model: 'gpt-5' },
-  aider: { provider: 'openai', model: 'gpt-5' },
-  opencode: { provider: 'openai', model: 'gpt-5' },
-  claude: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
-  openclaw: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
-  amp: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
-  hermes: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
-  gemini: { provider: 'google', model: 'gemini-2.5-pro' },
-  kimi: { provider: 'moonshot', model: 'kimi-k2' },
-  goose: { provider: 'openai', model: 'gpt-5' },
-  cline: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
-  nanoclaw: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
-};
-
-function getLocalModelProvider(value: string) {
-  return LOCAL_MODEL_PROVIDERS.find((p) => p.value === value);
-}
-
-function getLocalAgentModelDefault(agentType: string) {
-  return LOCAL_AGENT_MODEL_DEFAULTS[agentType] || { provider: 'openai', model: 'gpt-5' };
-}
-
-function getCodexModelOptions(codexLocal: CodexLocalCatalog | null): CodexModelInfo[] {
-  return codexLocal?.models || [];
-}
-
-function getCodexSelectedModel(codexLocal: CodexLocalCatalog | null, modelName: string) {
-  return getCodexModelOptions(codexLocal).find((model) => model.slug === modelName);
-}
-
-function getCodexReasoningOptions(model: CodexModelInfo | undefined) {
-  const supported = model?.supported_reasoning_levels
-    ?.map((level) => level.effort)
-    .filter(Boolean);
-  return supported && supported.length > 0 ? supported : CODEX_REASONING_FALLBACK;
-}
-
-function getAgentBrand(name: string) {
-  return AGENT_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white' };
-}
+const AGENT_HANDLE_RE = /^[^\s@:/\\]{1,64}$/;
+const AGENT_HANDLE_HINT = '名称用于 @mention，支持中文；不要包含空格、@、冒号或斜杠。';
+const LOCAL_RUNTIME_ORDER = ['codex', 'claude'];
 
 function getProviderBrand(name: string) {
   return PROVIDER_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white', accent: 'border-zinc-300' };
@@ -124,7 +53,6 @@ export function ConnectAgentView() {
 
   // Local agents
   const [catalog, setCatalog] = useState<AgentCatalogEntry[]>([]);
-  const [codexLocal, setCodexLocal] = useState<CodexLocalCatalog | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Cloud agents
@@ -150,16 +78,14 @@ export function ConnectAgentView() {
     setLoading(true);
     Promise.allSettled([
       workspaceApi.getAgentCatalog(),
-      workspaceApi.getLocalCodexCatalog(),
       workspaceApi.getCloudProviders(),
       workspaceApi.listCloudAgents(),
     ])
-      .then(([catalogResult, codexResult, providersResult, agentsResult]) => {
+      .then(([catalogResult, providersResult, agentsResult]) => {
         if (cancelled) return;
         setCatalog(catalogResult.status === 'fulfilled'
           ? withDefaultAgentCatalog(catalogResult.value)
           : DEFAULT_AGENT_CATALOG);
-        setCodexLocal(codexResult.status === 'fulfilled' ? codexResult.value : null);
         setCloudProviders(providersResult.status === 'fulfilled' ? providersResult.value : []);
         setCloudAgents(agentsResult.status === 'fulfilled' ? agentsResult.value : []);
       })
@@ -168,9 +94,15 @@ export function ConnectAgentView() {
   }, []);
 
   // Selected local agent detail
+  const localCatalog = useMemo(() => {
+    return LOCAL_RUNTIME_ORDER
+      .map((name) => catalog.find((entry) => entry.name === name) || DEFAULT_AGENT_CATALOG.find((entry) => entry.name === name))
+      .filter((entry): entry is AgentCatalogEntry => Boolean(entry));
+  }, [catalog]);
+
   const selectedCatalogEntry = useMemo(
-    () => catalog.find((e) => e.name === selectedAgent),
-    [catalog, selectedAgent],
+    () => localCatalog.find((e) => e.name === selectedAgent),
+    [localCatalog, selectedAgent],
   );
 
   // Selected cloud provider detail
@@ -307,8 +239,7 @@ export function ConnectAgentView() {
           </div>
         ) : activeTab === 'local' ? (
           <LocalAgentsTab
-            catalog={catalog}
-            codexLocal={codexLocal}
+            catalog={localCatalog}
             selectedAgent={selectedAgent}
             selectedEntry={selectedCatalogEntry}
             onSelectAgent={setSelectedAgent}
@@ -350,100 +281,57 @@ export function ConnectAgentView() {
 
 function LocalAgentsTab({
   catalog,
-  codexLocal,
   selectedAgent,
   selectedEntry,
   onSelectAgent,
 }: {
   catalog: AgentCatalogEntry[];
-  codexLocal: CodexLocalCatalog | null;
   selectedAgent: string | null;
   selectedEntry: AgentCatalogEntry | undefined;
   onSelectAgent: (name: string | null) => void;
 }) {
   const { refreshWorkspace } = useWorkspace();
-  const [localName, setLocalName] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [agentName, setAgentName] = useState('');
   const [workingDir, setWorkingDir] = useState('');
-  const [modelProvider, setModelProvider] = useState('');
-  const [modelName, setModelName] = useState('');
   const [mode, setMode] = useState('execute');
-  const [quality, setQuality] = useState('medium');
-  const [codexSpeedTier, setCodexSpeedTier] = useState('');
   const [creating, setCreating] = useState(false);
-  const isCodexSelected = selectedEntry?.name === 'codex';
-  const codexModels = useMemo(() => getCodexModelOptions(codexLocal), [codexLocal]);
-  const codexModel = getCodexSelectedModel(codexLocal, modelName);
-  const codexReasoningOptions = getCodexReasoningOptions(codexModel);
-  const codexSupportsFast = Boolean(codexModel?.additional_speed_tiers?.includes('fast') || codexModel?.service_tiers?.some((tier) => tier.name.toLowerCase() === 'fast'));
-  const localProviders = isCodexSelected
-    ? [{ value: 'codex-local', label: '本机 Codex CLI', models: codexModels.length > 0 ? codexModels.map((model) => model.slug) : (codexLocal?.config?.model ? [codexLocal.config.model] : []) }]
-    : LOCAL_MODEL_PROVIDERS;
-  const selectedProvider = localProviders.find((p) => p.value === modelProvider) || getLocalModelProvider(modelProvider);
-  const modelOptions = selectedProvider?.models || [];
-  const modelSelectValue = modelOptions.includes(modelName) ? modelName : modelName ? '__custom' : '';
-  const handleInvalid = Boolean(localName.trim() && !AGENT_HANDLE_RE.test(localName.trim()));
+  const trimmedName = agentName.trim();
+  const nameInvalid = Boolean(trimmedName && !AGENT_HANDLE_RE.test(trimmedName));
 
   useEffect(() => {
+    if (!selectedEntry && catalog.length > 0) {
+      onSelectAgent(catalog[0].name);
+      return;
+    }
     if (!selectedEntry) return;
-    const name = `my-${selectedEntry.name}`;
-    const codexConfigModel = codexLocal?.config?.model;
-    const codexDefaultModel = codexConfigModel || codexModels[0]?.slug || '';
-    const modelDefaults = selectedEntry.name === 'codex'
-      ? { provider: 'codex-local', model: codexDefaultModel }
-      : getLocalAgentModelDefault(selectedEntry.name);
-    setLocalName(name);
-    setDisplayName(selectedEntry.label);
-    setModelProvider(modelDefaults.provider);
-    setModelName(modelDefaults.model);
+    setAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝');
     setMode('execute');
-    setQuality(selectedEntry.name === 'codex'
-      ? codexLocal?.config?.model_reasoning_effort || getCodexSelectedModel(codexLocal, codexDefaultModel)?.default_reasoning_level || 'medium'
-      : 'medium');
-    const selectedCodexModel = getCodexSelectedModel(codexLocal, codexDefaultModel);
-    setCodexSpeedTier(selectedEntry.name === 'codex' && selectedCodexModel?.additional_speed_tiers?.includes('fast') ? 'fast' : '');
-  }, [selectedEntry, codexLocal, codexModels]);
-
-  const handleModelChange = (nextModel: string) => {
-    setModelName(nextModel);
-    if (!isCodexSelected) return;
-    const nextCodexModel = getCodexSelectedModel(codexLocal, nextModel);
-    setQuality(nextCodexModel?.default_reasoning_level || codexLocal?.config?.model_reasoning_effort || 'medium');
-    setCodexSpeedTier(nextCodexModel?.additional_speed_tiers?.includes('fast') ? 'fast' : '');
-  };
+  }, [selectedEntry, catalog, onSelectAgent]);
 
   const handleCreateLocalConfig = async () => {
-    const handle = localName.trim();
-    if (!selectedEntry || !handle) return;
-    if (!AGENT_HANDLE_RE.test(handle)) {
-      toast.error(`Handle 无效。${AGENT_HANDLE_HINT}`);
+    if (!selectedEntry || !trimmedName) return;
+    if (!AGENT_HANDLE_RE.test(trimmedName)) {
+      toast.error(AGENT_HANDLE_HINT);
       return;
     }
     setCreating(true);
     try {
       await workspaceApi.addManagedAgent({
-        agentName: handle,
+        agentName: trimmedName,
         agentType: selectedEntry.name,
-        displayName: displayName.trim() || handle,
+        displayName: trimmedName,
         workingDir: workingDir.trim() || undefined,
-        modelProvider: modelProvider.trim() || undefined,
-        modelName: modelName.trim() || undefined,
+        modelProvider: `${selectedEntry.name}-local`,
         mode,
-        quality,
-        managedMetadata: selectedEntry.name === 'codex'
-          ? {
-              local_runtime: 'codex-cli',
-              codex_home: codexLocal?.codex_home || null,
-              codex_config_path: codexLocal?.config?.path || null,
-              codex_auth_source: 'local-codex-auth',
-              codex_service_tier: codexSpeedTier || null,
-              codex_model_reasoning_effort: quality,
-            }
-          : undefined,
+        managedMetadata: {
+          local_runtime: selectedEntry.name === 'codex' ? 'codex-cli' : 'claude-code',
+          local_config_source: selectedEntry.name === 'codex' ? '~/.codex' : '~/.claude',
+          model_source: 'local-cli-config',
+        },
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
-      toast.success(`已创建 Agent "@${handle}"`);
+      toast.success(`已创建 Agent "@${trimmedName}"`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '创建 Agent 失败');
     } finally {
@@ -453,207 +341,83 @@ function LocalAgentsTab({
 
   return (
     <div className="p-4 space-y-4">
-      {/* Agent grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {catalog.map((entry) => {
-          const brand = getAgentBrand(entry.name);
-          const isSelected = selectedAgent === entry.name;
-          return (
-            <button
-              key={entry.name}
-              onClick={() => onSelectAgent(isSelected ? null : entry.name)}
-              className={cn(
-                'flex items-center gap-2.5 px-3 py-3 rounded-lg border text-left transition-all',
-                isSelected
-                  ? 'border-foreground/20 bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-foreground/10'
-                  : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30',
-              )}
-            >
-              <div className="size-8 shrink-0 flex items-center justify-center">
-                <AgentIcon name={entry.name} size={32} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium leading-tight truncate">{entry.label}</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                  {entry.builtin ? '内置' : entry.tags?.[0] || '开源'}
-                </div>
-              </div>
-              {isSelected && <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Selected agent detail */}
-      {selectedEntry && (
-        <div className="rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Header */}
-          <div className="px-4 py-3 border-b bg-background">
-            <div className="flex items-center gap-3">
-              <div className="size-9 flex items-center justify-center shrink-0">
-                <AgentIcon name={selectedEntry.name} size={36} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold">{selectedEntry.label}</h3>
-                  {selectedEntry.homepage && (
-                    <a
-                      href={selectedEntry.homepage}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                    >
-                      <ExternalLink className="size-3" />
-                    </a>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">{selectedEntry.description}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Connection methods */}
-          <div className="p-4 space-y-4">
-            <div className="rounded-lg border bg-background p-3 space-y-3">
-              <div>
-                <h4 className="text-xs font-semibold">创建 Web 管理的 Agent</h4>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  在这里保存 Agent 资料与运行配置，本地守护进程可据此启动。
-                </p>
-              </div>
-              {isCodexSelected && (
-                <div className="rounded-md border bg-background px-3 py-2 text-[11px] text-muted-foreground">
-                  <div className="font-medium text-foreground">使用本机 Codex CLI 登录态</div>
-                  <div className="mt-0.5">
-                    模型来自本机 Codex 模型缓存；启动时由本机 `codex exec` 读取 `~/.codex/config.toml` 和已登录 auth。
-                    {codexLocal?.version ? ` 当前版本：${codexLocal.version}。` : ''}
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-[11px]">调用名（英文）</Label>
-                  <Input value={localName} onChange={(e) => setLocalName(e.target.value)} className={cn('h-8 text-xs', handleInvalid && 'border-destructive focus-visible:ring-destructive/30')} />
-                  <p className={cn('text-[10px]', handleInvalid ? 'text-destructive' : 'text-muted-foreground')}>
-                    用于 @mention，只能用英文、数字、下划线或短横线。
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px]">显示名称</Label>
-                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="h-8 text-xs" />
-                  <p className="text-[10px] text-muted-foreground">
-                    中文 Agent 名称填在这里。
-                  </p>
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label className="text-[11px]">工作目录</Label>
-                  <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px]">{isCodexSelected ? '运行时' : '模型提供方'}</Label>
-                  <select
-                    value={modelProvider || 'custom'}
-                    onChange={(e) => {
-                      const nextProvider = e.target.value;
-                      const next = localProviders.find((p) => p.value === nextProvider) || getLocalModelProvider(nextProvider);
-                      setModelProvider(nextProvider);
-                      setModelName(next?.models[0] || '');
-                    }}
-                    disabled={isCodexSelected}
-                    className="w-full h-8 rounded-md border bg-background px-2 text-xs"
-                  >
-                    {localProviders.map((provider) => (
-                      <option key={provider.value} value={provider.value}>{provider.label}</option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-muted-foreground">
-                    {isCodexSelected
-                      ? '使用本机 Codex CLI；不在这里填写 API Key。'
-                      : '这是模型来源；Agent 类型是运行时，模型提供方是它调用哪家的模型。'}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px]">{isCodexSelected ? 'Codex 模型' : '模型'}</Label>
-                  {modelProvider === 'custom' ? (
-                    <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="输入模型名称" className="h-8 text-xs" />
-                  ) : (
-                    <select
-                      value={modelSelectValue}
-                      onChange={(e) => handleModelChange(e.target.value === '__custom' ? '' : e.target.value)}
-                      className="w-full h-8 rounded-md border bg-background px-2 text-xs"
-                    >
-                      {modelOptions.map((model) => (
-                        <option key={model} value={model}>
-                          {isCodexSelected
-                            ? getCodexSelectedModel(codexLocal, model)?.display_name || model
-                            : model}
-                        </option>
-                      ))}
-                      {!isCodexSelected && <option value="__custom">自定义...</option>}
-                    </select>
-                  )}
-                  {modelSelectValue === '__custom' && modelProvider !== 'custom' && (
-                    <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="输入模型名称" className="h-8 text-xs" />
-                  )}
-                  {isCodexSelected && codexModels.length === 0 && (
-                    <p className="text-[10px] text-muted-foreground">未读到 Codex 模型缓存；可先运行一次 Codex 或执行 codex update。</p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px]">工作权限</Label>
-                  <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
-                    <option value="execute">执行</option>
-                    <option value="plan">计划</option>
-                  </select>
-                  <p className="text-[10px] text-muted-foreground">控制 Agent 能否执行操作；不是 Codex 的 fast 档位。</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px]">{isCodexSelected ? '推理强度' : '质量'}</Label>
-                  <select value={quality} onChange={(e) => setQuality(e.target.value)} className="w-full h-8 rounded-md border bg-background px-2 text-xs">
-                    {(isCodexSelected ? codexReasoningOptions : ['low', 'medium', 'high', 'max']).map((level) => (
-                      <option key={level} value={level}>{level}</option>
-                    ))}
-                  </select>
-                </div>
-                {isCodexSelected && (
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label className="text-[11px]">Codex 速度档</Label>
-                    <select
-                      value={codexSpeedTier}
-                      onChange={(e) => setCodexSpeedTier(e.target.value)}
-                      disabled={!codexSupportsFast}
-                      className="w-full h-8 rounded-md border bg-background px-2 text-xs"
-                    >
-                      <option value="">标准</option>
-                      {codexSupportsFast && <option value="fast">Fast</option>}
-                    </select>
-                    <p className="text-[10px] text-muted-foreground">
-                      可选项来自本机 Codex 模型缓存；当前模型{codexSupportsFast ? '支持 Fast。' : '未声明 Fast 档。'}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !localName.trim() || handleInvalid} className="w-full">
-                {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
-                创建 Agent 配置
-              </Button>
-            </div>
-            <p className="rounded-md bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
-              本页只负责保存和管理配置；启动命令请在本机终端执行，避免把操作步骤塞进工作台界面。
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Hint when nothing selected */}
-      {!selectedEntry && (
-        <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-4 text-center">
-          <p className="text-sm font-medium">选择一种 Agent 类型</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            选中后填写 Handle、显示名称、工作目录、模型和模式，再点击“创建 Agent 配置”。
+      <div className="rounded-lg border bg-background p-3 space-y-4">
+        <div>
+          <h4 className="text-xs font-semibold">创建本地 Agent</h4>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            先只保留 Codex 和 Claude。模型、provider、Fast、DeepSeek 等都由对应本机 CLI 配置决定。
           </p>
         </div>
-      )}
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">本地外壳</Label>
+          <select
+            value={selectedEntry?.name || selectedAgent || ''}
+            onChange={(e) => onSelectAgent(e.target.value || null)}
+            className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+          >
+            {catalog.map((entry) => (
+              <option key={entry.name} value={entry.name}>{entry.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedEntry && (
+          <div className="rounded-md bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-2 text-foreground font-medium">
+              <AgentIcon name={selectedEntry.name} size={18} />
+              <span>{selectedEntry.label}</span>
+              {selectedEntry.homepage && (
+                <a
+                  href={selectedEntry.homepage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                  aria-label="打开官网"
+                >
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
+            </div>
+            <p className="mt-1">
+              {selectedEntry.name === 'codex'
+                ? '启动时走本机 Codex CLI，读取本机 ~/.codex/config.toml 和登录态。'
+                : '启动时走本机 Claude Code，读取本机 Claude 配置和登录态；DeepSeek 等模型源也配置在 Claude 外壳内。'}
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">Agent 名称</Label>
+          <Input
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            className={cn('h-9 text-sm', nameInvalid && 'border-destructive focus-visible:ring-destructive/30')}
+            placeholder="例如 紫、蓝、魔理沙"
+          />
+          <p className={cn('text-[10px]', nameInvalid ? 'text-destructive' : 'text-muted-foreground')}>
+            名称就是 @ 提及时使用的名字，支持中文；不要包含空格、斜杠、@ 或冒号。
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">工作目录</Label>
+          <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-9 text-xs font-mono" />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">工作权限</Label>
+          <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm">
+            <option value="execute">执行</option>
+            <option value="plan">计划</option>
+          </select>
+        </div>
+
+        <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !trimmedName || nameInvalid} className="w-full">
+          {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+          创建 Agent
+        </Button>
+      </div>
     </div>
   );
 }

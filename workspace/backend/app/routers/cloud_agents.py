@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["Cloud Agents"])
 
-_AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$")
+_AGENT_NAME_RE = re.compile(r"^(?!.*[\s@:/\\])[^\s@:/\\]{1,64}$")
 
 
 def _mask_api_key(key: Optional[str]) -> Optional[str]:
@@ -97,7 +97,7 @@ async def add_cloud_agent(
     if not _AGENT_NAME_RE.match(body.agent_name):
         return json_response(
             ResponseCode.BAD_REQUEST,
-            "Agent name must be 3-64 chars, alphanumeric/hyphen/underscore",
+            "Agent name must be 1-64 chars and cannot contain whitespace, @, :, /, or \\",
         )
 
     model_info = validate_provider_model(body.provider, body.model)
