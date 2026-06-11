@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from sqlalchemy import select
 
+from app.channel_visibility import human_is_channel_member, is_closed_channel
 from openagents.core.onm_events import Event, WorkspaceEventTypes
 from openagents.core.onm_mods import EventRejected, PipelineContext, TransformMod
 
@@ -819,13 +820,7 @@ def _upsert_human_collaborator(workspace, payload: dict, db) -> None:
 
 
 def _join_channel_as_human(channel, payload: dict, db) -> None:
-    """Slack-style implicit join: the first time a human posts in a
-    channel, add them to `channel_human_members` so future chat in this
-    channel pushes to their devices. Idempotent — no-op when the row
-    already exists. Needs `sender_email` on the payload; anonymous
-    token-only visitors leave no membership trail and so don't get
-    pushed for non-mention chat.
-    """
+    """Implicitly join humans to public channels they post in."""
     email = (payload.get("sender_email") or "").strip().lower()
     if not email or channel is None:
         return
@@ -915,13 +910,20 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 
     # Auto-name channel from first human message if title is default/empty
     if event.source.startswith("human:") and channel:
+        sender_email = ((event.payload or {}).get("sender_email") or "").strip().lower()
+        if is_closed_channel(channel) and not human_is_channel_member(db, channel, sender_email):
+            raise EventRejected(
+                "workspace_mod",
+                "private_channel_post_forbidden: human is not a channel member",
+            )
         _auto_title_channel(channel, content, db)
         # First post from a human → make sure they're in the workspace
         # roster so @-mention pushes can find their device tokens later.
         _upsert_human_collaborator(workspace, event.payload or {}, db)
-        # First post in *this* channel → auto-join so future non-mention
-        # chat in the channel pushes to this human's devices.
-        _join_channel_as_human(channel, event.payload or {}, db)
+        if not is_closed_channel(channel):
+            # First public-channel post → auto-join so future non-mention
+            # chat in the channel pushes to this human's devices.
+            _join_channel_as_human(channel, event.payload or {}, db)
 
     # Skip non-human, non-agent sources
     if not event.source.startswith("human:") and not event.source.startswith("openagents:"):
@@ -934,7 +936,7 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 
     # Private/dm/system channels are closed worlds: an agent that is not an
     # explicit participant may not post, even if it somehow learned the target.
-    if event.source.startswith("openagents:") and (channel.visibility or "public") in {"private", "dm", "system"}:
+    if event.source.startswith("openagents:") and is_closed_channel(channel):
         sender = event.source[len("openagents:"):]
         if sender not in participant_names:
             raise EventRejected(

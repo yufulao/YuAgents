@@ -23,8 +23,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import config
+from app.channel_visibility import human_email_from_authorization, visible_channel_names
 from app.database import get_db
-from app.models import AgentConfig, Channel, ChannelMember, Workspace, WorkspaceMember
+from app.models import AgentConfig, Channel, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from openagents.core.onm_events import Event
@@ -422,15 +423,19 @@ def discover(
             "joined_at": m.joined_at.isoformat() if m.joined_at else None,
         })
 
+    human_email = human_email_from_authorization(authorization)
+    visible_names = visible_channel_names(
+        db,
+        workspace,
+        member=member,
+        human_email=human_email,
+        include_public=True,
+    )
     channels_query = select(Channel).where(
         Channel.workspace_id == workspace.id,
         Channel.status != "deleted",
+        Channel.name.in_(visible_names),
     )
-    if member:
-        member_channel_ids = select(ChannelMember.channel_id).where(ChannelMember.agent_name == member)
-        channels_query = channels_query.where(
-            (Channel.visibility != "private") | Channel.id.in_(member_channel_ids)
-        )
     channels_rows = db.execute(channels_query).scalars().all()
 
     channels = []

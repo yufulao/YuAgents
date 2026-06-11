@@ -5,7 +5,7 @@ Tests for channel.join / channel.leave authorization + routine-channel lock.
 
 from sqlalchemy import select
 
-from app.models import Channel, ChannelMember, WorkspaceMember
+from app.models import Channel, ChannelHumanMember, ChannelMember, WorkspaceMember
 
 
 def _headers(workspace):
@@ -26,7 +26,15 @@ def _post_event(client, workspace, *, etype, source, channel, agent_name):
     )
 
 
-def _post_message(client, workspace, *, source, channel, content):
+def _post_message(client, workspace, *, source, channel, content, sender_email=None):
+    payload = {
+        "content": content,
+        "message_type": "chat",
+        "sender_type": "agent" if source.startswith("openagents:") else "human",
+        "sender_name": source.split(":", 1)[1],
+    }
+    if sender_email:
+        payload["sender_email"] = sender_email
     return client.post(
         "/v1/events",
         json={
@@ -34,12 +42,7 @@ def _post_message(client, workspace, *, source, channel, content):
             "source": source,
             "target": f"channel/{channel}",
             "network": workspace["id"],
-            "payload": {
-                "content": content,
-                "message_type": "chat",
-                "sender_type": "agent" if source.startswith("openagents:") else "human",
-                "sender_name": source.split(":", 1)[1],
-            },
+            "payload": payload,
         },
         headers=_headers(workspace),
     )
@@ -84,6 +87,12 @@ def _is_channel_member(db, channel, agent_name):
             ChannelMember.agent_name == agent_name,
         )
     ).scalar_one_or_none() is not None
+
+
+def _add_human_channel_member(db, channel, email="user@example.com"):
+    db.add(ChannelHumanMember(channel_id=channel.id, user_email=email))
+    db.commit()
+    return email
 
 
 class TestChannelJoinAuth:
@@ -185,6 +194,7 @@ class TestChannelLeaveAuth:
 class TestPrivateChannelPermissions:
     def test_private_channel_mention_does_not_auto_add_non_member(self, client, db, workspace):
         channel = _set_channel_private(db, workspace)
+        email = _add_human_channel_member(db, channel)
         _add_workspace_member(db, workspace, "agent-beta")
 
         resp = _post_message(
@@ -192,12 +202,105 @@ class TestPrivateChannelPermissions:
             source="human:user",
             channel=channel.name,
             content="@agent-beta please respond",
+            sender_email=email,
         )
 
         assert resp.status_code == 200, resp.text
         metadata = resp.json()["data"]["metadata"]
         assert "agent-beta" not in metadata["target_agents"]
         assert not _is_channel_member(db, channel, "agent-beta")
+
+    def test_private_channel_discover_without_member_hides_channel(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+
+        resp = client.get(
+            "/v1/discover",
+            params={"network": workspace["id"]},
+            headers=_headers(workspace),
+        )
+
+        assert resp.status_code == 200, resp.text
+        channel_names = [c["address"].replace("channel/", "", 1) for c in resp.json()["data"]["channels"]]
+        assert channel.name not in channel_names
+
+    def test_private_channel_poll_without_member_scope_hides_channel_events(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+        email = _add_human_channel_member(db, channel)
+        posted = _post_message(
+            client, workspace,
+            source="human:user",
+            channel=channel.name,
+            content="private message",
+            sender_email=email,
+        )
+        assert posted.status_code == 200, posted.text
+
+        resp = client.get(
+            "/v1/events",
+            params={
+                "network": workspace["id"],
+                "channel": channel.name,
+                "type": "workspace.message.posted",
+            },
+            headers=_headers(workspace),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["events"] == []
+
+    def test_private_channel_latest_per_channel_hides_preview_without_member(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+        email = _add_human_channel_member(db, channel)
+        posted = _post_message(
+            client, workspace,
+            source="human:user",
+            channel=channel.name,
+            content="private preview",
+            sender_email=email,
+        )
+        assert posted.status_code == 200, posted.text
+
+        resp = client.get(
+            "/v1/events/latest-per-channel",
+            params={"network": workspace["id"]},
+            headers=_headers(workspace),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert channel.name not in resp.json()["data"]["channels"]
+
+    def test_private_channel_stream_rejects_unscoped_channel_subscribe(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+
+        resp = client.get(
+            "/v1/events/stream",
+            params={"network": workspace["id"], "channel": channel.name},
+            headers=_headers(workspace),
+        )
+
+        assert resp.status_code == 403, resp.text
+        assert "private_channel_read_forbidden" in resp.json()["message"]
+
+    def test_private_channel_rejects_post_from_non_member_human(self, client, db, workspace):
+        channel = _set_channel_private(db, workspace)
+
+        resp = _post_message(
+            client, workspace,
+            source="human:user",
+            channel=channel.name,
+            content="I should not be able to post here",
+            sender_email="outsider@example.com",
+        )
+
+        assert resp.status_code == 403, resp.text
+        assert "private_channel_post_forbidden" in resp.json()["message"]
+        existing = db.execute(
+            select(ChannelHumanMember).where(
+                ChannelHumanMember.channel_id == channel.id,
+                ChannelHumanMember.user_email == "outsider@example.com",
+            )
+        ).scalar_one_or_none()
+        assert existing is None
 
     def test_private_channel_rejects_post_from_non_member_agent(self, client, db, workspace):
         channel = _set_channel_private(db, workspace)
@@ -221,6 +324,7 @@ class TestPrivateChannelPermissions:
             source="human:user",
             channel=channel.name,
             content="private message",
+            sender_email=_add_human_channel_member(db, channel),
         )
         assert posted.status_code == 200, posted.text
 

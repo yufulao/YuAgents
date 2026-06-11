@@ -19,8 +19,13 @@ from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
 
 from app import cache
+from app.channel_visibility import (
+    apply_event_channel_visibility,
+    human_email_from_authorization,
+    visible_channel_names,
+)
 from app.database import get_db
-from app.models import Channel, ChannelMember, EventRecord, Workspace
+from app.models import EventRecord, Workspace
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _verify_workspace_access, _workspace_filter
@@ -205,6 +210,8 @@ def poll_events(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    human_email = human_email_from_authorization(authorization)
+
     # Two-level read-through cache for poll traffic.
     #
     # Level 1: FULL key (includes `after`/`before` cursor). Dedupes identical
@@ -226,7 +233,7 @@ def poll_events(
     at_head_key = None
     head_tracker_key = None
     incoming_after = after or ""
-    if not search and not member:
+    if not search and not member and not human_email:
         key_parts = [
             str(workspace.id), target or "", channel or "",
             type or "", conversation or "",
@@ -275,23 +282,14 @@ def poll_events(
                             pass
 
     query = select(EventRecord).where(EventRecord.network_id == workspace.id)
-
-    # Filter events to only channels where the agent is a member
-    if member:
-        member_channel_names = db.execute(
-            select(Channel.name).where(
-                Channel.workspace_id == workspace.id,
-                Channel.id.in_(
-                    select(ChannelMember.channel_id).where(ChannelMember.agent_name == member)
-                ),
-            )
-        ).scalars().all()
-        channel_targets = [f"channel/{name}" for name in member_channel_names]
-        if channel_targets:
-            query = query.where(EventRecord.target.in_(channel_targets))
-        else:
-            # Agent is not a member of any channel — return empty
-            return success_response({"events": [], "has_more": False})
+    query = apply_event_channel_visibility(
+        query,
+        db,
+        workspace,
+        member=member,
+        human_email=human_email,
+        include_public=member is None,
+    )
 
     if conversation:
         parts = [p.strip() for p in conversation.split(",", 1)]
@@ -536,6 +534,7 @@ def list_conversations(
 def latest_per_channel(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     type: Optional[str] = Query("workspace.message", description="Event type prefix to filter"),
+    member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -556,6 +555,19 @@ def latest_per_channel(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
+    channel_targets = [
+        f"channel/{name}"
+        for name in visible_channel_names(
+            db,
+            workspace,
+            member=member,
+            human_email=human_email_from_authorization(authorization),
+            include_public=member is None,
+        )
+    ]
+    if not channel_targets:
+        return success_response({"channels": {}})
+
     # Window function: ROW_NUMBER() OVER (PARTITION BY target ORDER BY timestamp DESC)
     row_num = func.row_number().over(
         partition_by=EventRecord.target,
@@ -567,6 +579,7 @@ def latest_per_channel(
         .where(
             EventRecord.network_id == workspace.id,
             EventRecord.target.startswith("channel/"),
+            EventRecord.target.in_(channel_targets),
         )
     )
 
@@ -605,6 +618,7 @@ async def stream_events(
     request: Request,
     network: str = Query(...),
     channel: Optional[str] = Query(None),
+    member: Optional[str] = Query(None),
     token: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -627,6 +641,18 @@ async def stream_events(
 
     workspace_id = str(workspace.id)
     target_prefix = f"channel/{channel}" if channel else None
+    allowed_channel_targets = {
+        f"channel/{name}"
+        for name in visible_channel_names(
+            db,
+            workspace,
+            member=member,
+            human_email=human_email_from_authorization(authorization),
+            include_public=member is None,
+        )
+    }
+    if target_prefix and target_prefix not in allowed_channel_targets:
+        return json_response(ResponseCode.FORBIDDEN, "private_channel_read_forbidden")
 
     async def event_generator():
         keepalive_interval = 30
@@ -638,6 +664,9 @@ async def stream_events(
             try:
                 event = _json.loads(data)
                 if target_prefix and event.get("target", "") != target_prefix:
+                    continue
+                event_target = event.get("target", "")
+                if event_target.startswith("channel/") and event_target not in allowed_channel_targets:
                     continue
                 event_id = event.get("id", "")
                 yield f"id: {event_id}\ndata: {data.decode()}\n\n"
