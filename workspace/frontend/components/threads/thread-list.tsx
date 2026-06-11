@@ -135,12 +135,23 @@ function DMSection({
 }
 
 export function ThreadList() {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations, refreshWorkspace } = useWorkspace();
   const { sidebarToggle, isMobile, openMobileDetail } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await refreshWorkspace();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Debounced content search
   useEffect(() => {
@@ -267,10 +278,12 @@ export function ThreadList() {
             )}
           </div>
           <button
+            onClick={handleRefresh}
+            disabled={refreshing}
             className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
             title="Refresh"
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
           </button>
         </div>
       </div>

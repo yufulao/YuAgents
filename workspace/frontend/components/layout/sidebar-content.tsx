@@ -24,6 +24,7 @@ import { useLayout, type ViewMode } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { isRecentAgent, timeAgo } from '@/lib/helpers';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { AgentActivityPanel } from '@/components/agents/agent-activity-panel';
 import { cn } from '@/lib/utils';
 import { workspaceApi } from '@/lib/api';
 import { Switch } from '@/components/ui/switch';
@@ -71,7 +72,7 @@ function NavButton({
 
 export function SidebarContent() {
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
-  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines, knowledge, currentUser, onlineUsers, unreadNotificationCount } = useWorkspace();
+  const { agents, sessions, files, browserTabs, createSession, workspace, token, refreshWorkspace, todos, routines, knowledge, currentUser, onlineUsers, unreadNotificationCount, activeSessionIds } = useWorkspace();
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -239,6 +240,13 @@ export function SidebarContent() {
                 </button>
               ))}
             </div>
+
+            <AgentActivityPanel
+              agents={recentAgents}
+              sessions={sessions}
+              activeSessionIds={activeSessionIds}
+              onRefresh={refreshWorkspace}
+            />
 
             {/* Online Users */}
             {onlineUsers.length > 0 && (
