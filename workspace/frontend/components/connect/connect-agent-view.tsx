@@ -46,6 +46,41 @@ const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string
 const AGENT_HANDLE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$/;
 const AGENT_HANDLE_HINT = 'Handle 仅用于 @mention，请使用 ASCII；中文名称请填在显示名称。';
 
+const LOCAL_MODEL_PROVIDERS = [
+  { value: 'openai', label: 'OpenAI', models: ['gpt-5', 'gpt-5-mini', 'gpt-4.1', 'o4-mini'] },
+  { value: 'anthropic', label: 'Anthropic', models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-3-5'] },
+  { value: 'google', label: 'Google', models: ['gemini-2.5-pro', 'gemini-2.5-flash'] },
+  { value: 'moonshot', label: 'Moonshot / Kimi', models: ['kimi-k2', 'kimi-latest'] },
+  { value: 'xai', label: 'xAI', models: ['grok-4', 'grok-3'] },
+  { value: 'deepseek', label: 'DeepSeek', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { value: 'custom', label: '自定义', models: [] },
+];
+
+const LOCAL_AGENT_MODEL_DEFAULTS: Record<string, { provider: string; model: string }> = {
+  codex: { provider: 'openai', model: 'gpt-5' },
+  cursor: { provider: 'openai', model: 'gpt-5' },
+  copilot: { provider: 'openai', model: 'gpt-5' },
+  aider: { provider: 'openai', model: 'gpt-5' },
+  opencode: { provider: 'openai', model: 'gpt-5' },
+  claude: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  openclaw: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  amp: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  hermes: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  gemini: { provider: 'google', model: 'gemini-2.5-pro' },
+  kimi: { provider: 'moonshot', model: 'kimi-k2' },
+  goose: { provider: 'openai', model: 'gpt-5' },
+  cline: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+  nanoclaw: { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+};
+
+function getLocalModelProvider(value: string) {
+  return LOCAL_MODEL_PROVIDERS.find((p) => p.value === value);
+}
+
+function getLocalAgentModelDefault(agentType: string) {
+  return LOCAL_AGENT_MODEL_DEFAULTS[agentType] || { provider: 'openai', model: 'gpt-5' };
+}
+
 function getAgentBrand(name: string) {
   return AGENT_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white' };
 }
@@ -313,14 +348,19 @@ function LocalAgentsTab({
   const [mode, setMode] = useState('code');
   const [quality, setQuality] = useState('medium');
   const [creating, setCreating] = useState(false);
+  const selectedProvider = getLocalModelProvider(modelProvider);
+  const modelOptions = selectedProvider?.models || [];
+  const modelSelectValue = modelOptions.includes(modelName) ? modelName : modelName ? '__custom' : '';
+  const handleInvalid = Boolean(localName.trim() && !AGENT_HANDLE_RE.test(localName.trim()));
 
   useEffect(() => {
     if (!selectedEntry) return;
     const name = `my-${selectedEntry.name}`;
+    const modelDefaults = getLocalAgentModelDefault(selectedEntry.name);
     setLocalName(name);
     setDisplayName(selectedEntry.label);
-    setModelProvider('');
-    setModelName('');
+    setModelProvider(modelDefaults.provider);
+    setModelName(modelDefaults.model);
     setMode('code');
     setQuality('medium');
   }, [selectedEntry]);
@@ -426,10 +466,10 @@ function LocalAgentsTab({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Handle</Label>
-                  <Input value={localName} onChange={(e) => setLocalName(e.target.value)} className="h-8 text-xs" />
-                  <p className="text-[10px] text-muted-foreground">
-                    @mention 使用这个 ASCII Handle。
+                  <Label className="text-[11px]">调用名（英文）</Label>
+                  <Input value={localName} onChange={(e) => setLocalName(e.target.value)} className={cn('h-8 text-xs', handleInvalid && 'border-destructive focus-visible:ring-destructive/30')} />
+                  <p className={cn('text-[10px]', handleInvalid ? 'text-destructive' : 'text-muted-foreground')}>
+                    用于 @mention，只能用英文、数字、下划线或短横线。
                   </p>
                 </div>
                 <div className="space-y-1">
@@ -445,11 +485,43 @@ function LocalAgentsTab({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">模型提供方</Label>
-                  <Input value={modelProvider} onChange={(e) => setModelProvider(e.target.value)} placeholder="openai, anthropic..." className="h-8 text-xs" />
+                  <select
+                    value={modelProvider || 'custom'}
+                    onChange={(e) => {
+                      const nextProvider = e.target.value;
+                      const next = getLocalModelProvider(nextProvider);
+                      setModelProvider(nextProvider);
+                      setModelName(next?.models[0] || '');
+                    }}
+                    className="w-full h-8 rounded-md border bg-background px-2 text-xs"
+                  >
+                    {LOCAL_MODEL_PROVIDERS.map((provider) => (
+                      <option key={provider.value} value={provider.value}>{provider.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground">
+                    这是模型来源；Agent 类型是运行时，模型提供方是它调用哪家的模型。
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">模型</Label>
-                  <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="gpt-5, claude..." className="h-8 text-xs" />
+                  {modelProvider === 'custom' ? (
+                    <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="输入模型名称" className="h-8 text-xs" />
+                  ) : (
+                    <select
+                      value={modelSelectValue}
+                      onChange={(e) => setModelName(e.target.value === '__custom' ? '' : e.target.value)}
+                      className="w-full h-8 rounded-md border bg-background px-2 text-xs"
+                    >
+                      {modelOptions.map((model) => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                      <option value="__custom">自定义...</option>
+                    </select>
+                  )}
+                  {modelSelectValue === '__custom' && modelProvider !== 'custom' && (
+                    <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="输入模型名称" className="h-8 text-xs" />
+                  )}
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">模式</Label>
@@ -469,7 +541,7 @@ function LocalAgentsTab({
                   </select>
                 </div>
               </div>
-              <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !localName.trim()} className="w-full">
+              <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !localName.trim() || handleInvalid} className="w-full">
                 {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
                 创建 Agent 配置
               </Button>
