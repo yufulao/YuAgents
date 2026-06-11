@@ -43,6 +43,9 @@ const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string
   deepseek:  { bg: 'bg-blue-700',    text: 'text-white', accent: 'border-blue-300 dark:border-blue-700' },
 };
 
+const AGENT_HANDLE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$/;
+const AGENT_HANDLE_HINT = 'Use an ASCII Handle for @mentions. Put Chinese names in Display Name.';
+
 function getAgentBrand(name: string) {
   return AGENT_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white' };
 }
@@ -352,13 +355,18 @@ function LocalAgentsTab({
   }, [selectedEntry]);
 
   const handleCreateLocalConfig = async () => {
-    if (!selectedEntry || !localName.trim()) return;
+    const handle = localName.trim();
+    if (!selectedEntry || !handle) return;
+    if (!AGENT_HANDLE_RE.test(handle)) {
+      toast.error(`Invalid Handle. ${AGENT_HANDLE_HINT}`);
+      return;
+    }
     setCreating(true);
     try {
       await workspaceApi.addManagedAgent({
-        agentName: localName.trim(),
+        agentName: handle,
         agentType: selectedEntry.name,
-        displayName: displayName.trim() || localName.trim(),
+        displayName: displayName.trim() || handle,
         workingDir: workingDir.trim() || undefined,
         modelProvider: modelProvider.trim() || undefined,
         modelName: modelName.trim() || undefined,
@@ -367,7 +375,7 @@ function LocalAgentsTab({
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
-      toast.success(`Agent "@${localName.trim()}" created`);
+      toast.success(`Agent "@${handle}" created`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create agent');
     } finally {
@@ -449,10 +457,16 @@ function LocalAgentsTab({
                 <div className="space-y-1">
                   <Label className="text-[11px]">Handle</Label>
                   <Input value={localName} onChange={(e) => setLocalName(e.target.value)} className="h-8 text-xs" />
+                  <p className="text-[10px] text-muted-foreground">
+                    @mention uses this ASCII Handle.
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[11px]">Display Name</Label>
                   <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="h-8 text-xs" />
+                  <p className="text-[10px] text-muted-foreground">
+                    Chinese agent names belong here.
+                  </p>
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label className="text-[11px]">Working Directory</Label>

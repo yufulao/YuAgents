@@ -48,6 +48,7 @@ router = APIRouter(prefix="/v1/workspaces", tags=["Workspaces"])
 AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
 AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}[a-zA-Z0-9]$")
 VALID_AGENT_LIFECYCLE = {"active", "disabled"}
+VALID_AGENT_MODES = {"ask", "code", "autonomous"}
 VALID_AGENT_QUALITY = {"low", "medium", "high", "max"}
 
 
@@ -549,7 +550,7 @@ class ManagedAgentCreateRequest(BaseModel):
     enabled_skills: Optional[Dict[str, bool]] = None
     model_provider: Optional[str] = None
     model_name: Optional[str] = None
-    mode: Optional[str] = "execute"
+    mode: Optional[str] = "code"
     quality: Optional[str] = "medium"
     lifecycle_status: str = "active"
     managed_metadata: Optional[dict] = None
@@ -560,6 +561,8 @@ def _validate_agent_config(body) -> Optional[str]:
         return "Agent name must be 3-64 chars, alphanumeric/hyphen/underscore"
     if getattr(body, "lifecycle_status", "active") not in VALID_AGENT_LIFECYCLE:
         return f"Invalid lifecycle_status: {body.lifecycle_status}"
+    if getattr(body, "mode", None) and body.mode not in VALID_AGENT_MODES:
+        return f"Invalid mode: {body.mode}"
     if getattr(body, "quality", None) and body.quality not in VALID_AGENT_QUALITY:
         return f"Invalid quality: {body.quality}"
     return None
@@ -621,7 +624,7 @@ def create_managed_agent(
         agent_type=body.agent_type or "local",
         model_provider=body.model_provider or None,
         model=body.model_name or None,
-        mode=body.mode or None,
+        mode=body.mode or "code",
         quality=body.quality or None,
         working_dir=body.working_dir or None,
         enabled_skills=body.enabled_skills or None,
@@ -789,7 +792,9 @@ def update_member(
     if body.model_name is not None:
         cfg.model = body.model_name or None
     if body.mode is not None:
-        cfg.mode = body.mode or None
+        if body.mode and body.mode not in VALID_AGENT_MODES:
+            return json_response(ResponseCode.BAD_REQUEST, f"Invalid mode: {body.mode}")
+        cfg.mode = body.mode or "code"
     if body.quality is not None:
         if body.quality and body.quality not in VALID_AGENT_QUALITY:
             return json_response(ResponseCode.BAD_REQUEST, f"Invalid quality: {body.quality}")

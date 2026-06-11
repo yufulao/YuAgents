@@ -31,11 +31,13 @@ def test_create_managed_agent_returns_local_agent_contract(client, workspace, db
     assert data["agentType"] == "codex"
     assert data["modelProvider"] == "openai"
     assert data["model"] == "gpt-5"
+    assert data["mode"] == "code"
     assert data["quality"] == "high"
 
     cfg = db.query(AgentConfig).filter_by(handle="codex-main").one()
     assert cfg.display_name == "灵梦 Codex"
     assert cfg.working_dir == "C:/repo"
+    assert cfg.mode == "code"
 
 
 def test_update_disable_and_delete_managed_agent(client, workspace, db):
@@ -67,6 +69,44 @@ def test_update_disable_and_delete_managed_agent(client, workspace, db):
     delete = client.delete(f"/v1/workspaces/{workspace['id']}/agents/local-a", headers=_auth(workspace))
     assert delete.status_code == 200
     assert db.query(AgentConfig).filter_by(handle="local-a").count() == 0
+
+
+def test_create_managed_agent_defaults_mode_to_code(client, workspace, db):
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "mode-default", "agent_type": "codex"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["mode"] == "code"
+
+    cfg = db.query(AgentConfig).filter_by(handle="mode-default").one()
+    assert cfg.mode == "code"
+
+
+def test_managed_agent_rejects_invalid_mode(client, workspace):
+    create = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "bad-mode", "agent_type": "codex", "mode": "execute"},
+    )
+    assert create.status_code == 400
+    assert "Invalid mode" in create.json()["message"]
+
+    client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "good-mode", "agent_type": "codex"},
+    )
+    update = client.patch(
+        f"/v1/workspaces/{workspace['id']}/agents/good-mode",
+        headers=_auth(workspace),
+        json={"mode": "execute"},
+    )
+    assert update.status_code == 400
+    assert "Invalid mode" in update.json()["message"]
 
 
 def test_cloud_agent_allows_empty_api_key(client, workspace):
