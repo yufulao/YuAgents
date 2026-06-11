@@ -20,7 +20,7 @@ from typing import List, Optional
 
 from sqlalchemy import select
 
-from app.channel_visibility import human_is_channel_member, is_closed_channel
+from app.channel_visibility import human_is_channel_member, is_closed_channel, is_workspace_owner
 from openagents.core.onm_events import Event, WorkspaceEventTypes
 from openagents.core.onm_mods import EventRejected, PipelineContext, TransformMod
 
@@ -910,8 +910,14 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 
     # Auto-name channel from first human message if title is default/empty
     if event.source.startswith("human:") and channel:
-        sender_email = ((event.payload or {}).get("sender_email") or "").strip().lower()
-        if is_closed_channel(channel) and not human_is_channel_member(db, channel, sender_email):
+        trusted_human_email = (ctx.extra.get("human_email") or "").strip().lower()
+        if trusted_human_email:
+            event.payload["sender_email"] = trusted_human_email
+        can_post_closed = (
+            is_workspace_owner(workspace, trusted_human_email)
+            or human_is_channel_member(db, channel, trusted_human_email)
+        )
+        if is_closed_channel(channel) and not can_post_closed:
             raise EventRejected(
                 "workspace_mod",
                 "private_channel_post_forbidden: human is not a channel member",

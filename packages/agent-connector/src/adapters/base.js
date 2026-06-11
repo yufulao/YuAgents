@@ -499,7 +499,7 @@ class BaseAdapter {
       try {
         const result = await this.client.pollPending(
           this.workspaceId, this.agentName, this.token,
-          { after: this._lastEventId }
+          { after: this._lastEventId, sessionId: this._sessionId }
         );
         messages = result.messages;
         rawCursor = result.cursor;

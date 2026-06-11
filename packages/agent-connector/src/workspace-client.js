@@ -203,13 +203,15 @@ class WorkspaceClient {
    * Poll messages in a channel via GET /v1/events.
    * @returns {Array} message-compatible objects
    */
-  async pollMessages(workspaceId, channelName, token, { after, limit = 50 } = {}) {
+  async pollMessages(workspaceId, channelName, token, { after, limit = 50, member, sessionId } = {}) {
     const params = new URLSearchParams({
       network: workspaceId,
       channel: channelName,
       type: 'workspace.message',
       limit: String(limit),
     });
+    if (member) params.set('member', member);
+    if (sessionId) params.set('session_id', sessionId);
     if (after) params.set('after', after);
 
     const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
@@ -224,7 +226,7 @@ class WorkspaceClient {
    * when --resume of the previous session fails (the channel's chat history
    * is the only thing that survives a session-storage rotation).
    */
-  async getRecentMessages(workspaceId, channelName, token, limit = 30) {
+  async getRecentMessages(workspaceId, channelName, token, limit = 30, { member, sessionId } = {}) {
     try {
       const params = new URLSearchParams({
         network: workspaceId,
@@ -233,6 +235,8 @@ class WorkspaceClient {
         sort: 'desc',
         limit: String(limit),
       });
+      if (member) params.set('member', member);
+      if (sessionId) params.set('session_id', sessionId);
       const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));
       const result = data.data || data;
       const events = (result && result.events) || [];
@@ -271,13 +275,14 @@ class WorkspaceClient {
    * Poll for pending messages targeted at an agent via GET /v1/events.
    * Returns { messages, cursor } where cursor is the last event ID.
    */
-  async pollPending(workspaceId, agentName, token, { after, limit = 500 } = {}) {
+  async pollPending(workspaceId, agentName, token, { after, limit = 500, sessionId } = {}) {
     const params = new URLSearchParams({
       network: workspaceId,
       type: 'workspace.message.posted',
       member: agentName,
       limit: String(limit),
     });
+    if (sessionId) params.set('session_id', sessionId);
     if (after) params.set('after', after);
 
     const data = await this._get(`/v1/events?${params}`, this._wsHeaders(token));

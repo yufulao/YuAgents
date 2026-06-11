@@ -97,6 +97,7 @@ async def send_event(
         visibility=body.visibility or "channel",
         network=str(workspace.id),
     )
+    human_email = human_email_from_authorization(authorization)
 
     # Build pipeline context — extra kwargs become context.extra dict
     context = PipelineContext(
@@ -106,6 +107,7 @@ async def send_event(
         workspace=workspace,
         token=x_workspace_token,
         bearer_token=_extract_bearer(authorization),
+        human_email=human_email,
     )
 
     # Run through pipeline
@@ -187,6 +189,7 @@ def poll_events(
     conversation: Optional[str] = Query(None, description="Filter to DM conversation between two agents (comma-separated addresses)"),
     search: Optional[str] = Query(None, description="Search message content (case-insensitive)"),
     member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
+    session_id: Optional[str] = Query(None, description="Session id proving the member agent identity"),
     sort: Optional[str] = Query(None, description="Sort order: 'asc' (default) or 'desc'"),
     limit: int = Query(50, ge=1, le=500, description="Max events to return"),
     db: Session = Depends(get_db),
@@ -287,6 +290,7 @@ def poll_events(
         db,
         workspace,
         member=member,
+        session_id=session_id,
         human_email=human_email,
         include_public=member is None,
     )
@@ -535,6 +539,7 @@ def latest_per_channel(
     network: str = Query(..., description="Network (workspace) ID or slug"),
     type: Optional[str] = Query("workspace.message", description="Event type prefix to filter"),
     member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
+    session_id: Optional[str] = Query(None, description="Session id proving the member agent identity"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -561,6 +566,7 @@ def latest_per_channel(
             db,
             workspace,
             member=member,
+            session_id=session_id,
             human_email=human_email_from_authorization(authorization),
             include_public=member is None,
         )
@@ -619,6 +625,7 @@ async def stream_events(
     network: str = Query(...),
     channel: Optional[str] = Query(None),
     member: Optional[str] = Query(None),
+    session_id: Optional[str] = Query(None),
     token: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -647,6 +654,7 @@ async def stream_events(
             db,
             workspace,
             member=member,
+            session_id=session_id,
             human_email=human_email_from_authorization(authorization),
             include_public=member is None,
         )

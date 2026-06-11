@@ -226,7 +226,8 @@ class ClaudeAdapter extends BaseAdapter {
    */
   async _buildChannelRecap(channelName, currentMessage) {
     const messages = await this.client.getRecentMessages(
-      this.workspaceId, channelName, this.token, 30
+      this.workspaceId, channelName, this.token, 30,
+      { member: this.agentName, sessionId: this._sessionId }
     );
     if (!messages || messages.length === 0) return null;
 

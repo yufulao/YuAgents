@@ -103,4 +103,35 @@ describe('WorkspaceClient', () => {
         assert.equal(capturedBody.session_id, 'sess-abc');
       });
   });
+
+  it('pollPending includes session_id when provided', () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    client._get = async (path) => {
+      capturedPath = path;
+      return { data: { events: [] } };
+    };
+    return client.pollPending('ws-1', 'bary-bot', 'tok', { sessionId: 'sess-read' })
+      .then(() => {
+        assert.ok(capturedPath.includes('member=bary-bot'));
+        assert.ok(capturedPath.includes('session_id=sess-read'));
+      });
+  });
+
+  it('getRecentMessages includes member and session_id when provided', () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    client._get = async (path) => {
+      capturedPath = path;
+      return { data: { events: [] } };
+    };
+    return client.getRecentMessages('ws-1', 'private-room', 'tok', 30, {
+      member: 'bary-bot',
+      sessionId: 'sess-history',
+    }).then(() => {
+      assert.ok(capturedPath.includes('channel=private-room'));
+      assert.ok(capturedPath.includes('member=bary-bot'));
+      assert.ok(capturedPath.includes('session_id=sess-history'));
+    });
+  });
 });

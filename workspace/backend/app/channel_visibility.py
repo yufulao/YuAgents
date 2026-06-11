@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Channel, ChannelHumanMember, ChannelMember, EventRecord, Workspace
+from app.models import Channel, ChannelHumanMember, ChannelMember, EventRecord, Workspace, WorkspaceMember
 
 
 CLOSED_CHANNEL_VISIBILITIES = {"private", "dm", "system"}
@@ -26,6 +26,23 @@ def human_email_from_authorization(authorization: Optional[str]) -> Optional[str
 
     email = verify_firebase_token(bearer)
     return email.lower() if email else None
+
+
+def agent_session_is_current(
+    db: Session,
+    workspace: Workspace,
+    member: Optional[str],
+    session_id: Optional[str],
+) -> bool:
+    if not member or not session_id:
+        return False
+    return db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == member,
+            WorkspaceMember.session_id == session_id,
+        )
+    ).scalar_one_or_none() is not None
 
 
 def is_workspace_owner(workspace: Workspace, email: Optional[str]) -> bool:
@@ -48,6 +65,7 @@ def visible_channel_names(
     workspace: Workspace,
     *,
     member: Optional[str] = None,
+    session_id: Optional[str] = None,
     human_email: Optional[str] = None,
     include_public: bool = True,
 ) -> list[str]:
@@ -66,10 +84,18 @@ def visible_channel_names(
     if is_workspace_owner(workspace, human_email):
         return [c.name for c in channels]
 
+    trusted_member = member if agent_session_is_current(db, workspace, member, session_id) else None
+    include_public = include_public or trusted_member is None
+
     agent_channel_ids = set()
-    if member:
+    if trusted_member:
         agent_channel_ids = set(db.execute(
-            select(ChannelMember.channel_id).where(ChannelMember.agent_name == member)
+            select(ChannelMember.channel_id)
+            .join(Channel, Channel.id == ChannelMember.channel_id)
+            .where(
+                Channel.workspace_id == workspace.id,
+                ChannelMember.agent_name == trusted_member,
+            )
         ).scalars().all())
 
     human_channel_ids = set()
@@ -95,6 +121,7 @@ def apply_event_channel_visibility(
     workspace: Workspace,
     *,
     member: Optional[str] = None,
+    session_id: Optional[str] = None,
     human_email: Optional[str] = None,
     include_public: bool = True,
 ):
@@ -105,6 +132,7 @@ def apply_event_channel_visibility(
             db,
             workspace,
             member=member,
+            session_id=session_id,
             human_email=human_email,
             include_public=include_public,
         )

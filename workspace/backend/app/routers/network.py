@@ -359,6 +359,7 @@ def resolve_token(
 def discover(
     network: str = Query(..., description="Network (workspace) ID"),
     member: Optional[str] = Query(None, description="Optional agent-name scope for private channel visibility"),
+    session_id: Optional[str] = Query(None, description="Session id proving the member agent identity"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -428,6 +429,7 @@ def discover(
         db,
         workspace,
         member=member,
+        session_id=session_id,
         human_email=human_email,
         include_public=True,
     )
