@@ -2,7 +2,20 @@
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, User, FileIcon, Download, Eye } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  Eye,
+  FileIcon,
+  Hash,
+  Info,
+  MessageSquare,
+  Paperclip,
+  User,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { memo, useCallback, useMemo, useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
@@ -115,14 +128,206 @@ interface ChatMessageProps {
   agents?: WorkspaceAgent[];
 }
 
+const LONG_MESSAGE_CHARS = 900;
+const LONG_MESSAGE_LINES = 12;
+
+function isLongContent(content: string): boolean {
+  if (content.length > LONG_MESSAGE_CHARS) return true;
+  return content.split(/\r?\n/).length > LONG_MESSAGE_LINES;
+}
+
+function shortId(id?: string): string {
+  return id ? id.slice(0, 8) : '';
+}
+
+function formatJson(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function metadataValue(metadata: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+interface ThreadInfo {
+  title: string;
+  count: number | null;
+  preview: string | null;
+  parentId: string | null;
+  messages: Array<{ senderName?: string; content?: string; createdAt?: string }>;
+}
+
+function getThreadInfo(message: WorkspaceMessage): ThreadInfo | null {
+  const metadata = message.metadata || {};
+  const parentId = metadataValue(metadata, [
+    'thread_id',
+    'threadId',
+    'parent_message_id',
+    'parentMessageId',
+    'topic_id',
+    'topicId',
+  ]);
+  const title = metadataValue(metadata, [
+    'topic_title',
+    'topicTitle',
+    'thread_title',
+    'threadTitle',
+    'topic',
+    'thread',
+    'title',
+  ]);
+  const countValue = metadataValue(metadata, [
+    'reply_count',
+    'replyCount',
+    'thread_reply_count',
+    'threadReplyCount',
+    'message_count',
+    'messageCount',
+  ]);
+  const preview = metadataValue(metadata, [
+    'last_reply_preview',
+    'lastReplyPreview',
+    'thread_preview',
+    'threadPreview',
+    'topic_preview',
+    'topicPreview',
+  ]);
+  const rawMessages = metadataValue(metadata, ['thread_messages', 'threadMessages', 'replies']);
+  const messages = Array.isArray(rawMessages)
+    ? rawMessages
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+      .map((entry) => ({
+        senderName: (entry.senderName as string) || (entry.sender as string) || undefined,
+        content: (entry.content as string) || (entry.text as string) || undefined,
+        createdAt: (entry.createdAt as string) || (entry.created_at as string) || undefined,
+      }))
+    : [];
+
+  const count = typeof countValue === 'number'
+    ? countValue
+    : typeof countValue === 'string' && countValue.trim()
+      ? Number(countValue)
+      : messages.length > 0
+        ? messages.length
+        : null;
+
+  if (!parentId && !title && !preview && count === null && messages.length === 0) return null;
+  return {
+    title: typeof title === 'string' && title.trim() ? title : 'Thread',
+    count: Number.isFinite(count) ? count : null,
+    preview: typeof preview === 'string' && preview.trim() ? preview : null,
+    parentId: typeof parentId === 'string' && parentId.trim() ? parentId : null,
+    messages,
+  };
+}
+
+function messageDetails(message: WorkspaceMessage): Record<string, unknown> {
+  const metadata = { ...(message.metadata || {}) };
+  delete metadata.attachments;
+  delete metadata.thread_messages;
+  delete metadata.threadMessages;
+  delete metadata.replies;
+
+  const details: Record<string, unknown> = {
+    id: message.messageId,
+    channel: message.sessionId,
+    sender: message.senderName,
+    type: message.messageType,
+  };
+  if (message.mentions.length > 0) details.mentions = message.mentions;
+  if (message.targetAgents && message.targetAgents.length > 0) details.targetAgents = message.targetAgents;
+  if (message.details !== undefined && message.details !== null) details.details = message.details;
+  if (Object.keys(metadata).length > 0) details.metadata = metadata;
+  return details;
+}
+
+function MessageBody({
+  content,
+  agentNames,
+  isHuman,
+}: {
+  content: string;
+  agentNames: string[];
+  isHuman: boolean;
+}) {
+  if (!content) return null;
+  return isHuman
+    ? <div className="whitespace-pre-wrap break-words">{content}</div>
+    : <MarkdownContent content={content} agentNames={agentNames} />;
+}
+
+function ThreadSummary({ thread }: { thread: ThreadInfo }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-2 rounded-md border border-border bg-muted/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-2.5 py-2 text-left"
+      >
+        {open ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
+        <MessageSquare className="size-3.5 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-medium truncate">{thread.title}</span>
+          {thread.preview && <span className="block text-[11px] text-muted-foreground truncate">{thread.preview}</span>}
+        </span>
+        {thread.count !== null && (
+          <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {thread.count}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="px-3 pb-2 space-y-1.5">
+          {thread.messages.length > 0 ? (
+            thread.messages.slice(0, 5).map((reply, index) => (
+              <div key={`${reply.createdAt || index}-${reply.senderName || 'reply'}`} className="border-l-2 border-primary/30 pl-2">
+                <div className="text-[10px] text-muted-foreground">
+                  {reply.senderName || 'unknown'} {reply.createdAt ? new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                </div>
+                <div className="text-[11px] whitespace-pre-wrap break-words">
+                  {reply.content || '(empty)'}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-[11px] text-muted-foreground">
+              {thread.parentId ? shortId(thread.parentId) : 'Thread metadata'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: ChatMessageProps) {
   const { currentUser } = useWorkspace();
   const isHuman = message.senderType === 'human' || message.senderType === 'user';
   const isSystem = message.messageType === 'status';
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const agentNames = agents.map((a) => a.agentName);
   const agent = agents.find((a) => a.agentName === message.senderName);
+  const summaryText = typeof message.summary === 'string' && message.summary.trim() ? message.summary.trim() : '';
+  const bodyText = typeof message.body === 'string' && message.body.trim() ? message.body : message.content;
+  const hasSummaryBodySplit = Boolean(summaryText && bodyText && summaryText !== bodyText);
+  const visibleContent = hasSummaryBodySplit && !expanded ? summaryText : bodyText || summaryText || message.content;
+  const longContent = hasSummaryBodySplit || isLongContent(bodyText || summaryText || message.content);
+  const thread = useMemo(() => getThreadInfo(message), [message]);
+  const detailsJson = useMemo(() => formatJson(messageDetails(message)), [message]);
   const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
   const attachments: Attachment[] = rawAttachments.map((a) => ({
     fileId: (a.fileId || a.file_id || '') as string,
@@ -137,7 +342,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(bodyText || message.content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -162,51 +367,31 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
     );
   }
 
-  // ── Human message — Slack style ──
-  if (isHuman) {
-    const isCurrentUser = !!message.senderId && message.senderId === currentUser.id;
-    const displayName = isCurrentUser
+  const isCurrentUser = isHuman && !!message.senderId && message.senderId === currentUser.id;
+  const displayName = isHuman
+    ? isCurrentUser
       ? 'You'
-      : (message.senderName && message.senderName !== 'user' ? message.senderName : 'User');
-    const seed = message.senderId || message.senderName || 'human';
+      : (message.senderName && message.senderName !== 'user' ? message.senderName : 'User')
+    : message.senderName;
+  const seed = message.senderId || message.senderName || 'human';
 
-    return (
-      <div className="py-1.5">
-        <div className="flex items-start gap-2">
+  return (
+    <div className="py-1.5 group/message">
+      <div className="flex items-start gap-2">
+        {isHuman ? (
           <div
             className="size-9 rounded-lg shrink-0 flex items-center justify-center mt-0.5"
             style={{ backgroundColor: humanColor(seed) }}
           >
             <User className="size-4 text-zinc-700" />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[15px] font-bold text-foreground">{displayName}</span>
-              {timestamp && (
-                <span className="text-xs text-muted-foreground">{timestamp}</span>
-              )}
-            </div>
-            <div className="text-sm leading-relaxed mt-0.5">
-              <MarkdownContent content={message.content} agentNames={agentNames} />
-              <Attachments items={attachments} />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Agent message — Slack style ──
-  return (
-    <div className="py-1.5">
-      <div className="flex items-start gap-2">
-        <AgentAvatar name={message.senderName} size={36} square className="mt-0.5" />
+        ) : (
+          <AgentAvatar name={message.senderName} size={36} square className="mt-0.5" />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="text-[15px] font-bold text-foreground truncate">
-              {message.senderName}
-            </span>
-            {agent && (
+            <span className="text-[15px] font-bold text-foreground truncate">{displayName}</span>
+            {!isHuman && agent && (
               <span className={cn(
                 'text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0',
                 agent.role === 'master'
@@ -219,13 +404,36 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
             {timestamp && (
               <span className="text-xs text-muted-foreground">{timestamp}</span>
             )}
+            {message.messageId && (
+              <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-muted-foreground opacity-0 group-hover/message:opacity-100 transition-opacity">
+                <Hash className="size-3" />
+                {shortId(message.messageId)}
+              </span>
+            )}
           </div>
           <div className="text-sm leading-relaxed mt-0.5">
-            <MarkdownContent content={message.content} agentNames={agentNames} />
+            <div className="relative min-w-0">
+              <div className={cn(longContent && !expanded && !hasSummaryBodySplit && 'max-h-[240px] overflow-hidden')}>
+                <MessageBody content={visibleContent} agentNames={agentNames} isHuman={isHuman} />
+              </div>
+              {longContent && !expanded && !hasSummaryBodySplit && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-background" />
+              )}
+            </div>
+            {longContent && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+              >
+                {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                {expanded ? 'Show less' : 'Show full'}
+              </button>
+            )}
+            {thread && <ThreadSummary thread={thread} />}
             <Attachments items={attachments} />
 
-            {/* Copy button */}
-            <div className="flex items-center gap-1 mt-1">
+            <div className="flex items-center gap-1 mt-1.5">
               <Button
                 variant="ghost"
                 size="sm"
@@ -235,7 +443,28 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
                 {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
                 {copied ? 'Copied' : 'Copy'}
               </Button>
+              {attachments.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Paperclip className="size-3" />
+                  {attachments.length}
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground gap-1"
+                onClick={() => setDetailsOpen((v) => !v)}
+              >
+                {detailsOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                <Info className="size-3" />
+                Details
+              </Button>
             </div>
+            {detailsOpen && (
+              <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+                {detailsJson}
+              </pre>
+            )}
           </div>
         </div>
       </div>

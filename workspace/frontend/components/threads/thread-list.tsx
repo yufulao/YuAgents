@@ -62,6 +62,16 @@ function highlightMatch(text: string, query: string): React.ReactNode {
   );
 }
 
+function compactPreview(content: string, limit = 120): string {
+  const cleaned = content
+    .replace(/```[\s\S]*?```/g, '[code]')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > limit ? `${cleaned.slice(0, limit - 3)}...` : cleaned;
+}
+
 function DMSection({
   conversations,
   currentSessionId,
@@ -313,9 +323,7 @@ export function ThreadList() {
             let previewIsStatus = false;
             if (isSearching && contentHit) {
               // Show matching snippet with highlight
-              const snippet = contentHit.snippet.length > 80
-                ? contentHit.snippet.slice(0, 80) + '...'
-                : contentHit.snippet;
+              const snippet = compactPreview(contentHit.snippet, 80);
               preview = highlightMatch(snippet, searchQuery);
             } else if (lastMsg && lastMsg.content) {
               const sender = lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName;
@@ -340,15 +348,10 @@ export function ThreadList() {
                   );
                 } else {
                   // Other status messages — strip markdown
-                  const cleaned = lastMsg.content
-                    .replace(/\*\*/g, '')
-                    .replace(/`/g, '')
-                    .replace(/```[\s\S]*/g, '')
-                    .trim();
-                  preview = `${sender}: ${cleaned}`;
+                  preview = `${sender}: ${compactPreview(lastMsg.content)}`;
                 }
               } else {
-                preview = `${sender}: ${lastMsg.content}`;
+                preview = `${sender}: ${compactPreview(lastMsg.content)}`;
               }
             } else {
               preview = 'No messages yet';
@@ -541,7 +544,7 @@ export function ThreadList() {
                       ? timeAgo(new Date(activityMs).toISOString())
                       : session.createdAt ? timeAgo(session.createdAt) : '';
                     const preview = lastMsg && lastMsg.content
-                      ? `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${lastMsg.content}`
+                      ? `${lastMsg.senderName === 'user' ? 'You' : lastMsg.senderName}: ${compactPreview(lastMsg.content)}`
                       : 'No messages yet';
 
                     return (

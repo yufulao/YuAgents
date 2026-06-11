@@ -83,6 +83,9 @@ export interface WorkspaceMessage {
   senderType: string;
   senderName: string;
   content: string;
+  summary?: string | null;
+  body?: string | null;
+  details?: unknown;
   mentions: string[];
   targetAgents: string[] | null;
   messageType: string;
@@ -441,6 +444,9 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
     senderType: isHuman ? 'human' : 'agent',
     senderName,
     content: (payload.content as string) || '',
+    summary: (payload.summary as string) || null,
+    body: (payload.body as string) || null,
+    details: payload.details ?? event.metadata?.details ?? null,
     mentions: (payload.mentions as string[]) || [],
     targetAgents: (event.metadata?.target_agents as string[]) || null,
     messageType: (payload.message_type as string) || 'chat',
