@@ -61,7 +61,7 @@ echo Starting backend on http://127.0.0.1:8000
   echo set "CORS_ORIGINS=*"
   echo set "WORKSPACE_CREATION_ENABLED=true"
   echo set "WORKSPACE_DIRECTORY_ENABLED=true"
-  echo python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+  echo python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ) > "%BACKEND_CMD%"
 start "OpenAgents backend :8000" cmd /k call "%BACKEND_CMD%"
 
@@ -78,7 +78,7 @@ echo Starting frontend on http://localhost:3001
 (
   echo @echo off
   echo cd /d "%FRONTEND_DIR%"
-  echo set "NEXT_PUBLIC_API_URL=http://127.0.0.1:8000"
+  echo set "NEXT_PUBLIC_API_URL="
   echo set "NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=true"
   echo set "NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=true"
   echo npm run dev
