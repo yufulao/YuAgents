@@ -150,6 +150,7 @@ function Attachments({ items }: { items: Attachment[] }) {
 interface ChatMessageProps {
   message: WorkspaceMessage;
   agents?: WorkspaceAgent[];
+  processSteps?: WorkspaceMessage[];
 }
 
 const LONG_MESSAGE_CHARS = 900;
@@ -162,16 +163,6 @@ function isLongContent(content: string): boolean {
 
 function shortId(id?: string): string {
   return id ? id.slice(0, 8) : '';
-}
-
-function formatJson(value: unknown): string {
-  if (value === undefined || value === null) return '';
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 function metadataValue(metadata: Record<string, unknown>, keys: string[]): unknown {
@@ -254,26 +245,6 @@ function getThreadInfo(message: WorkspaceMessage): ThreadInfo | null {
   };
 }
 
-function messageDetails(message: WorkspaceMessage): Record<string, unknown> {
-  const metadata = { ...(message.metadata || {}) };
-  delete metadata.attachments;
-  delete metadata.thread_messages;
-  delete metadata.threadMessages;
-  delete metadata.replies;
-
-  const details: Record<string, unknown> = {
-    id: message.messageId,
-    channel: message.sessionId,
-    sender: message.senderName,
-    type: message.messageType,
-  };
-  if (message.mentions.length > 0) details.mentions = message.mentions;
-  if (message.targetAgents && message.targetAgents.length > 0) details.targetAgents = message.targetAgents;
-  if (message.details !== undefined && message.details !== null) details.details = message.details;
-  if (Object.keys(metadata).length > 0) details.metadata = metadata;
-  return details;
-}
-
 function MessageBody({
   content,
   agentNames,
@@ -287,6 +258,135 @@ function MessageBody({
   return isHuman
     ? <div className="whitespace-pre-wrap break-words"><MentionText content={content} agentNames={agentNames} /></div>
     : <MarkdownContent content={content} agentNames={agentNames} />;
+}
+
+interface ProcessDetail {
+  label: string;
+  value: string;
+}
+
+const PROCESS_METADATA_LABELS: Record<string, string> = {
+  agent_mode: '工作模式',
+  queue_status: '队列状态',
+  queue_id: '队列 ID',
+  queued_message: '排队消息',
+  session_error: '会话状态',
+  tool: '工具',
+  tool_name: '工具',
+  command: '命令',
+  exit_code: '退出码',
+  status: '状态',
+};
+
+function detailValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(detailValue).filter(Boolean).join('\n');
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.entries(record)
+      .filter(([, entry]) => entry !== undefined && entry !== null && String(entry).trim() !== '')
+      .map(([key, entry]) => `${key}: ${detailValue(entry)}`)
+      .join('\n');
+  }
+  return String(value ?? '').trim();
+}
+
+function processDetails(message: WorkspaceMessage): ProcessDetail[] {
+  const details: ProcessDetail[] = [];
+  const metadata = message.metadata || {};
+
+  if (message.targetAgents && message.targetAgents.length > 0) {
+    details.push({ label: '唤醒 Agent', value: message.targetAgents.join(', ') });
+  }
+  if (message.mentions.length > 0) {
+    details.push({ label: '提及', value: message.mentions.map((name) => `@${name}`).join(', ') });
+  }
+
+  const todos = metadata.todos as Array<{ content?: string; status?: string; assignee?: string }> | undefined;
+  if (Array.isArray(todos) && todos.length > 0) {
+    details.push({
+      label: 'To-do list',
+      value: todos.map((todo) => {
+        const status = todo.status || 'todo';
+        const assignee = todo.assignee ? ` -> ${todo.assignee}` : '';
+        return `${status}: ${todo.content || '未命名任务'}${assignee}`;
+      }).join('\n'),
+    });
+  }
+
+  for (const [key, label] of Object.entries(PROCESS_METADATA_LABELS)) {
+    const value = metadata[key];
+    const text = detailValue(value);
+    if (text) details.push({ label, value: text });
+  }
+
+  return details;
+}
+
+function stepProcessDetails(steps: WorkspaceMessage[]): ProcessDetail[] {
+  const details: ProcessDetail[] = [];
+  for (const step of steps) {
+    const actor = step.senderName || 'Agent';
+    if (step.messageType === 'todos') {
+      const todos = step.metadata?.todos as Array<{ content?: string; status?: string; assignee?: string }> | undefined;
+      if (Array.isArray(todos) && todos.length > 0) {
+        details.push({
+          label: `${actor} To-do`,
+          value: todos.map((todo) => {
+            const status = todo.status || 'todo';
+            const assignee = todo.assignee ? ` -> ${todo.assignee}` : '';
+            return `${status}: ${todo.content || '未命名任务'}${assignee}`;
+          }).join('\n'),
+        });
+      }
+      continue;
+    }
+
+    const content = step.content.trim();
+    const running = content.match(/\*\*Running:\*\*\s*`([^`]+)`/);
+    if (running) {
+      details.push({ label: `${actor} 命令`, value: running[1] });
+      continue;
+    }
+    const editing = content.match(/\*\*Editing:\*\*\s*`([^`]+)`/);
+    if (editing) {
+      details.push({ label: `${actor} 编辑`, value: editing[1] });
+      continue;
+    }
+    const thinking = content.match(/^\*\*Thinking:\*\*\n([\s\S]+)$/);
+    if (step.messageType === 'thinking' || thinking) {
+      const text = (thinking?.[1] || content).trim();
+      if (text && text.toLowerCase() !== 'thinking...') {
+        details.push({ label: `${actor} 思考`, value: text });
+      }
+      continue;
+    }
+    if (content) {
+      details.push({ label: `${actor} 状态`, value: content });
+    }
+  }
+  return details;
+}
+
+function ProcessDetails({ details }: { details: ProcessDetail[] }) {
+  if (details.length === 0) {
+    return (
+      <div className="mt-1.5 rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+        本条消息没有可展示的过程详情。
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 max-h-56 overflow-auto rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] leading-snug">
+      <div className="space-y-2">
+        {details.map((detail, index) => (
+          <div key={`${detail.label}-${index}`} className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+            <div className="text-muted-foreground">{detail.label}</div>
+            <div className="whitespace-pre-wrap break-words text-foreground/80">{detail.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function MentionText({ content, agentNames }: { content: string; agentNames: string[] }) {
@@ -361,7 +461,7 @@ function ThreadSummary({ thread }: { thread: ThreadInfo }) {
   );
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, agents = [], processSteps = [] }: ChatMessageProps) {
   const { currentUser } = useWorkspace();
   const isHuman = message.senderType === 'human' || message.senderType === 'user';
   const isSystem = message.messageType === 'status';
@@ -377,7 +477,11 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
   const visibleContent = hasSummaryBodySplit && !expanded ? summaryText : bodyText || summaryText || message.content;
   const longContent = hasSummaryBodySplit || isLongContent(bodyText || summaryText || message.content);
   const thread = useMemo(() => getThreadInfo(message), [message]);
-  const detailsJson = useMemo(() => formatJson(messageDetails(message)), [message]);
+  const details = useMemo(() => {
+    const stepDetails = stepProcessDetails(processSteps);
+    const messageProcessDetails = processDetails(message);
+    return [...stepDetails, ...messageProcessDetails];
+  }, [message, processSteps]);
   const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
   const attachments: Attachment[] = rawAttachments.map((a) => ({
     fileId: (a.fileId || a.file_id || '') as string,
@@ -516,9 +620,7 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
               </Button>
             </div>
             {detailsOpen && (
-              <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
-                {detailsJson}
-              </pre>
+              <ProcessDetails details={details} />
             )}
           </div>
         </div>

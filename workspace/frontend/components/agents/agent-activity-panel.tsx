@@ -10,6 +10,7 @@ import {
   CircleStop,
   Clock,
   Loader2,
+  Pencil,
   RefreshCw,
   Terminal,
 } from 'lucide-react';
@@ -30,9 +31,9 @@ type ActivityState =
   | 'online'
   | 'starting'
   | 'thinking'
+  | 'editing_file'
   | 'running_command'
   | 'waiting_input'
-  | 'working'
   | 'stopping'
   | 'stopped'
   | 'error';
@@ -48,11 +49,11 @@ interface AgentActivity {
 const STATE_META: Record<ActivityState, { label: string; className: string; icon: typeof Activity }> = {
   offline: { label: 'offline', className: 'text-zinc-500 dark:text-zinc-400', icon: Circle },
   online: { label: 'online', className: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle2 },
-  starting: { label: 'starting', className: 'text-blue-600 dark:text-blue-400', icon: Loader2 },
+  starting: { label: 'starting', className: 'text-amber-600 dark:text-amber-400', icon: Loader2 },
   thinking: { label: 'thinking', className: 'text-amber-600 dark:text-amber-400', icon: Brain },
-  running_command: { label: 'running command', className: 'text-blue-600 dark:text-blue-400', icon: Terminal },
+  editing_file: { label: 'editing file', className: 'text-amber-600 dark:text-amber-400', icon: Pencil },
+  running_command: { label: 'running command', className: 'text-amber-600 dark:text-amber-400', icon: Terminal },
   waiting_input: { label: 'waiting input', className: 'text-violet-600 dark:text-violet-400', icon: Clock },
-  working: { label: 'working', className: 'text-emerald-600 dark:text-emerald-400', icon: Activity },
   stopping: { label: 'stopping', className: 'text-zinc-500 dark:text-zinc-400', icon: Loader2 },
   stopped: { label: 'stopped', className: 'text-zinc-500 dark:text-zinc-400', icon: CircleStop },
   error: { label: 'error', className: 'text-red-600 dark:text-red-400', icon: AlertTriangle },
@@ -63,6 +64,7 @@ const LIFECYCLE_STATES = new Set<ActivityState>([
   'online',
   'starting',
   'thinking',
+  'editing_file',
   'running_command',
   'waiting_input',
   'stopping',
@@ -73,7 +75,8 @@ const LIFECYCLE_STATES = new Set<ActivityState>([
 function normalizeState(agent: WorkspaceAgent, hasActiveThread: boolean): ActivityState {
   const lifecycle = agent.lifecycleState as ActivityState | undefined;
   if (lifecycle && LIFECYCLE_STATES.has(lifecycle)) return lifecycle;
-  if (hasActiveThread) return 'working';
+  if (agent.lifecycleState === 'working') return 'thinking';
+  if (hasActiveThread) return 'thinking';
   if (agent.status === 'online') return 'online';
   if (agent.status === 'error') return 'error';
   if (agent.status === 'stopped' || agent.status === 'disabled') return 'stopped';
@@ -194,7 +197,7 @@ export function AgentActivityPanel({
                       <span className={cn('inline-flex items-center gap-1 text-[10px] shrink-0', meta.className)}>
                         <Icon className={cn(
                           'size-3',
-                          (activity.state === 'thinking' || activity.state === 'starting' || activity.state === 'stopping') && 'animate-pulse',
+                          (activity.state === 'thinking' || activity.state === 'editing_file' || activity.state === 'running_command' || activity.state === 'starting' || activity.state === 'stopping') && 'animate-pulse',
                         )} />
                         {meta.label}
                       </span>

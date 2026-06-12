@@ -819,7 +819,7 @@ def _activity_state_from_message(message_type: str, content: str) -> str:
     if message_type == "todos":
         return "thinking"
     if message_type == "loading":
-        return "working"
+        return "thinking"
     if "failed" in text or "error" in text:
         return "error"
     if "stopping" in text:
@@ -828,9 +828,11 @@ def _activity_state_from_message(message_type: str, content: str) -> str:
         return "stopped"
     if "**running:**" in text or "running:" in text or "command:" in text:
         return "running_command"
+    if "**editing:**" in text or "editing:" in text:
+        return "editing_file"
     if "waiting" in text or "input" in text:
         return "waiting_input"
-    return "working"
+    return "thinking"
 
 
 def _activity_summary_from_message(message_type: str, content: str, metadata: dict | None) -> str:

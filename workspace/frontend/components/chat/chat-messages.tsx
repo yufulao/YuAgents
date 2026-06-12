@@ -12,10 +12,10 @@ import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 // ── Message Grouping ──
 
 type MessageGroup =
-  | { type: 'chat'; message: WorkspaceMessage }
+  | { type: 'chat'; message: WorkspaceMessage; processSteps: WorkspaceMessage[] }
   | { type: 'steps'; messages: WorkspaceMessage[] };
 
-function groupMessages(messages: WorkspaceMessage[]): MessageGroup[] {
+function groupMessages(messages: WorkspaceMessage[], showAllSteps: boolean): MessageGroup[] {
   const groups: MessageGroup[] = [];
   let currentSteps: WorkspaceMessage[] = [];
 
@@ -30,8 +30,13 @@ function groupMessages(messages: WorkspaceMessage[]): MessageGroup[] {
     if (msg.messageType === 'status' || msg.messageType === 'thinking' || msg.messageType === 'todos') {
       currentSteps.push(msg);
     } else {
-      flushSteps();
-      groups.push({ type: 'chat', message: msg });
+      const processSteps = [...currentSteps];
+      if (showAllSteps) {
+        flushSteps();
+      } else {
+        currentSteps = [];
+      }
+      groups.push({ type: 'chat', message: msg, processSteps });
     }
   });
 
@@ -85,9 +90,9 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
   const loadingMessages = useMemo(() => messages.filter((m) => m.messageType === 'loading'), [messages]);
   const realMessages = useMemo(() => messages.filter((m) => m.messageType !== 'loading'), [messages]);
 
-  // Filter: skip empty status messages; when toggle is off, keep only
-  // the current trailing work block. Historical thinking/todos stay
-  // available via the all-steps toggle, but do not fill the chat.
+  // Filter: skip empty status messages. Step groups remain in this list
+  // even when the toggle is off, because completed steps are attached to
+  // the next chat message's "详情" panel instead of being rendered inline.
   const filteredMessages = useMemo(() => {
     const isStep = (msg: WorkspaceMessage) => msg.messageType === 'status' || msg.messageType === 'thinking' || msg.messageType === 'todos';
 
@@ -112,37 +117,11 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
     });
 
     const nonEmpty = deduped.filter((msg) => !isStep(msg) || msg.content.trim());
-    if (showAllSteps) return nonEmpty;
-
-    let lastChatIndex = -1;
-    for (let i = nonEmpty.length - 1; i >= 0; i--) {
-      if (!isStep(nonEmpty[i])) {
-        lastChatIndex = i;
-        break;
-      }
-    }
-
-    const lastIsStep = nonEmpty.length > 0 && isStep(nonEmpty[nonEmpty.length - 1]);
-    const trailing = nonEmpty.filter((msg, index) => {
-      if (!isStep(msg)) return true;
-      return lastIsStep && index > lastChatIndex;
-    });
-    // Find the last status-only message and keep only that one
-    let lastStatusIndex = -1;
-    for (let i = trailing.length - 1; i >= 0; i--) {
-      if (trailing[i].messageType === 'status') {
-        lastStatusIndex = i;
-        break;
-      }
-    }
-    return trailing.filter((msg, index) => {
-      if (msg.messageType !== 'status') return true;
-      return index === lastStatusIndex;
-    });
-  }, [realMessages, showAllSteps]);
+    return nonEmpty;
+  }, [realMessages]);
 
   // Group into chat messages and intermediate step clusters
-  const groups = useMemo(() => groupMessages(filteredMessages), [filteredMessages]);
+  const groups = useMemo(() => groupMessages(filteredMessages, showAllSteps), [filteredMessages, showAllSteps]);
 
   const hasTerminalStatus = realMessages.some(isTerminalStatus);
 
@@ -320,6 +299,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
                   <ChatMessage
                     message={group.message}
                     agents={agents}
+                    processSteps={group.processSteps}
                   />
                 ) : (
                   <IntermediateSteps
