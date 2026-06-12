@@ -31,6 +31,13 @@ const AGENT_HANDLE_RE = /^[^\s@:/\\]{1,64}$/;
 const AGENT_HANDLE_HINT = '名称用于 @mention，支持中文；不要包含空格、@、冒号或斜杠。';
 const LOCAL_RUNTIME_ORDER = ['codex', 'claude'];
 
+function nextAvailableAgentName(base: string, existingNames: Set<string>) {
+  if (!existingNames.has(base)) return base;
+  let i = 2;
+  while (existingNames.has(`${base}${i}`)) i += 1;
+  return `${base}${i}`;
+}
+
 function getProviderBrand(name: string) {
   return PROVIDER_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white', accent: 'border-zinc-300' };
 }
@@ -291,13 +298,18 @@ function LocalAgentsTab({
   selectedEntry: AgentCatalogEntry | undefined;
   onSelectAgent: (name: string | null) => void;
 }) {
-  const { refreshWorkspace } = useWorkspace();
+  const { agents, refreshWorkspace } = useWorkspace();
   const [agentName, setAgentName] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [mode, setMode] = useState('execute');
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
   const [creating, setCreating] = useState(false);
   const trimmedName = agentName.trim();
+  const existingNames = useMemo(() => new Set(agents.map((agent) => agent.agentName)), [agents]);
   const nameInvalid = Boolean(trimmedName && !AGENT_HANDLE_RE.test(trimmedName));
+  const nameExists = Boolean(trimmedName && existingNames.has(trimmedName));
+  const nameProblem = nameInvalid || nameExists;
 
   useEffect(() => {
     if (!selectedEntry && catalog.length > 0) {
@@ -305,17 +317,28 @@ function LocalAgentsTab({
       return;
     }
     if (!selectedEntry) return;
-    setAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝');
+    setAgentName(nextAvailableAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝', existingNames));
     setMode('execute');
-  }, [selectedEntry, catalog, onSelectAgent]);
+    setCreateError('');
+    setCreateSuccess('');
+  }, [selectedEntry, catalog, existingNames, onSelectAgent]);
 
   const handleCreateLocalConfig = async () => {
     if (!selectedEntry || !trimmedName) return;
     if (!AGENT_HANDLE_RE.test(trimmedName)) {
+      setCreateError(AGENT_HANDLE_HINT);
       toast.error(AGENT_HANDLE_HINT);
       return;
     }
+    if (existingNames.has(trimmedName)) {
+      const message = `Agent "${trimmedName}" 已存在，请换一个名称。`;
+      setCreateError(message);
+      toast.error(message);
+      return;
+    }
     setCreating(true);
+    setCreateError('');
+    setCreateSuccess('');
     try {
       await workspaceApi.addManagedAgent({
         agentName: trimmedName,
@@ -332,9 +355,14 @@ function LocalAgentsTab({
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
-      toast.success(`已创建 Agent "@${trimmedName}"`);
+      const message = `已创建 Agent "@${trimmedName}"`;
+      setCreateSuccess(message);
+      setAgentName(nextAvailableAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝', new Set([...Array.from(existingNames), trimmedName])));
+      toast.success(message);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建 Agent 失败');
+      const message = err instanceof Error ? err.message : '创建 Agent 失败';
+      setCreateError(message);
+      toast.error(message);
     } finally {
       setCreating(false);
     }
@@ -393,12 +421,39 @@ function LocalAgentsTab({
           <Input
             value={agentName}
             onChange={(e) => setAgentName(e.target.value)}
-            className={cn('h-9 text-sm', nameInvalid && 'border-destructive focus-visible:ring-destructive/30')}
+            className={cn('h-9 text-sm', nameProblem && 'border-destructive focus-visible:ring-destructive/30')}
             placeholder="例如 紫、蓝、魔理沙"
           />
-          <p className={cn('text-[10px]', nameInvalid ? 'text-destructive' : 'text-muted-foreground')}>
-            名称就是 @ 提及时使用的名字，支持中文；不要包含空格、斜杠、@ 或冒号。
+          <p className={cn('text-[10px]', nameProblem ? 'text-destructive' : 'text-muted-foreground')}>
+            {nameExists
+              ? '这个名称已经存在，请换一个。'
+              : '名称就是 @ 提及时使用的名字，支持中文；不要包含空格、斜杠、@ 或冒号。'}
           </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-[11px]">运行模式 mode</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { value: 'execute', label: '执行', hint: '允许执行工具' },
+              { value: 'plan', label: '计划', hint: '只做方案' },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setMode(option.value)}
+                className={cn(
+                  'rounded-md border px-3 py-2 text-left transition-colors',
+                  mode === option.value
+                    ? 'border-primary/50 bg-primary/10 text-foreground'
+                    : 'bg-background hover:bg-accent',
+                )}
+              >
+                <div className="text-sm font-medium">{option.label}</div>
+                <div className="mt-0.5 text-[10px] text-muted-foreground">{option.hint}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-1">
@@ -406,17 +461,20 @@ function LocalAgentsTab({
           <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-9 text-xs font-mono" />
         </div>
 
-        <div className="space-y-1">
-          <Label className="text-[11px]">工作权限</Label>
-          <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm">
-            <option value="execute">执行</option>
-            <option value="plan">计划</option>
-          </select>
-        </div>
+        {createError && (
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {createError}
+          </div>
+        )}
+        {createSuccess && (
+          <div className="rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+            {createSuccess}
+          </div>
+        )}
 
-        <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !trimmedName || nameInvalid} className="w-full">
+        <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !trimmedName || nameInvalid || nameExists} className="w-full">
           {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
-          创建 Agent
+          {creating ? '创建中...' : '创建 Agent'}
         </Button>
       </div>
     </div>
