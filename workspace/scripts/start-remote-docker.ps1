@@ -4,6 +4,7 @@ param(
   [string]$PublicUrl = "",
   [string]$ProjectName = "openagents-remote-sim",
   [string]$DbPassword = "remote-sim-dev",
+  [switch]$ImportLocalWorkspaces,
   [switch]$Build,
   [switch]$Down,
   [switch]$Logs,
@@ -14,9 +15,15 @@ $ErrorActionPreference = "Stop"
 
 $WorkspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ComposeFile = Join-Path $WorkspaceRoot "docker-compose.prod.yml"
+$ImportScript = Join-Path $PSScriptRoot "import-local-workspaces-to-docker.ps1"
+
+function Quote-Cmd([string]$Value) {
+  return '"' + ($Value -replace '"', '\"') + '"'
+}
 
 function Require-Docker {
-  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  & cmd /d /c "docker compose version >nul 2>nul"
+  if ($LASTEXITCODE -ne 0) {
     throw "Docker CLI was not found. Install Docker Desktop or run this script on the Linux server with Docker installed."
   }
 }
@@ -37,8 +44,12 @@ function Set-RemoteEnv {
   $env:NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED = "false"
 }
 
-function Invoke-Compose([string[]]$Args) {
-  & docker compose -p $ProjectName -f $ComposeFile @Args
+function Invoke-Compose([string[]]$ComposeArgs) {
+  $parts = @("docker", "compose", "-p", (Quote-Cmd $ProjectName), "-f", (Quote-Cmd $ComposeFile))
+  foreach ($arg in $ComposeArgs) {
+    $parts += Quote-Cmd $arg
+  }
+  & cmd /d /c ($parts -join " ")
   if ($LASTEXITCODE -ne 0) {
     throw "docker compose failed with exit code $LASTEXITCODE"
   }
@@ -69,6 +80,13 @@ if ($Build) {
 }
 
 Invoke-Compose $upArgs
+
+if ($ImportLocalWorkspaces) {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $ImportScript -ProjectName $ProjectName
+  if ($LASTEXITCODE -ne 0) {
+    throw "Local workspace import failed"
+  }
+}
 
 $deadline = (Get-Date).AddSeconds(120)
 $healthUrl = "$PublicUrl/v1/agent-catalog"

@@ -25,8 +25,17 @@ http://localhost:18080
 ```
 
 Use an existing workspace name/slug and token/password. A fresh empty Docker
-database has no workspace to enter until you restore or provide one through the
-server-side database.
+database has no workspace to enter until you restore, import, or provide one
+through the server-side database.
+
+On this Windows development machine, `workspace\start.bat` runs the same Docker
+stack and imports existing active workspaces from `backend\workspace_dev.db` by
+default. This does not generate new workspace tokens. To disable that import:
+
+```bat
+set SYNC_LOCAL_WORKSPACES=0
+start.bat
+```
 
 ## Options
 
@@ -58,6 +67,13 @@ Stop:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\start-remote-docker.ps1 -Down
+```
+
+Import existing active local workspaces into the Docker database without
+creating new tokens:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\import-local-workspaces-to-docker.ps1
 ```
 
 ## Smoke Test
