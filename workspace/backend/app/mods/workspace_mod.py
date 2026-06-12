@@ -489,7 +489,7 @@ def _fallback_targets(event, channel, mentions: List[str]) -> List[str]:
     Priority: explicit @mentions → master (for human/member msgs) → all participants.
     """
     if mentions:
-        return [mentions[0]]
+        return _drop_sender_targets(event, mentions)
     if channel.master_agent:
         if event.source.startswith("openagents:"):
             sender = event.source[len("openagents:"):]
@@ -499,7 +499,22 @@ def _fallback_targets(event, channel, mentions: List[str]) -> List[str]:
         return [channel.master_agent]
     # No master — target the first participant
     participants = [p.agent_name for p in (channel.participants or [])]
-    return [participants[0]] if participants else []
+    return _drop_sender_targets(event, participants[:1])
+
+
+def _drop_sender_targets(event, targets: List[str]) -> List[str]:
+    """Remove self-targets while preserving order and deduplicating."""
+    sender = None
+    if event.source and event.source.startswith("openagents:"):
+        sender = event.source[len("openagents:"):]
+    result = []
+    seen = set()
+    for target in targets:
+        if not target or target == sender or target in seen:
+            continue
+        result.append(target)
+        seen.add(target)
+    return result
 
 
 def _channel_participant_names(channel) -> List[str]:
@@ -519,7 +534,7 @@ def _filter_targets_to_channel(channel, targets: List[str]) -> List[str]:
 
 _ROUTER_PROMPT = """\
 You are a conversation router for a multi-agent workspace. Decide which \
-agent should respond next to the LATEST message. Use judgment — read the \
+agent or agents should respond next to the LATEST message. Use judgment — read the \
 message carefully and think about who is actually being addressed.
 
 Channel participants:
@@ -541,9 +556,10 @@ subject being asked to do/say something. If the agent is merely referenced \
 pick the addressed agent, not the mentioned one.
 
 B. If the LATEST message is from a HUMAN:
-   - Always pick exactly one agent. Humans expect a reply — never output \
+   - Always pick at least one agent. Humans expect a reply — never output \
 "stop" for a human message.
-   - Prefer whoever is directly addressed.
+   - If multiple agents are directly addressed with independent work, pick all of them.
+   - Otherwise prefer whoever is directly addressed.
    - If nobody is directly addressed, check CONVERSATIONAL CONTINUITY: \
 if the user was just conversing with a specific agent (the last agent \
 reply was from agent X, or X asked the user a question that this message \
@@ -553,7 +569,8 @@ fall back to the master agent.
 
 C. If the LATEST message is from an AGENT:
    - If it delegates or hands off to another agent ("@Alice please do X", \
-"Alice, could you check X"), route to that agent.
+"Alice, could you check X"), route to that agent. If it delegates parallel \
+work to multiple agents, route to all of them.
    - If it reports back to the master or asks the master to decide, route to the master.
    - If it is a FINAL answer to the previous human question or an \
 acknowledgement ("done", "saved", "sounds good"), output "stop".
@@ -562,6 +579,7 @@ acknowledgement ("done", "saved", "sounds good"), output "stop".
 
 EXAMPLES:
   Human: "@alice what's the status?"                → next:alice
+  Human: "@alice @bob compare these options"        → next:alice,bob
   Human: "check @alice's notes, @bob"                → next:bob       (bob is addressed)
   Human: "how about julia?"  (julia is not an agent) → next:<master>  (who owns that topic)
   Agent alice: "@bob can you verify?"                → next:bob
@@ -576,7 +594,7 @@ EXAMPLES:
     Human: "thanks, can you also check Y?"           → next:alice     (follow-up to alice)
 
 Output EXACTLY one line, lowercase, no punctuation or explanation:
-  next:<agent_name>
+  next:<agent_name>[,<agent_name>...]
   stop"""
 
 
@@ -734,37 +752,37 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
         if result.startswith("next:"):
             # Preserve the original case from the model output so we can
             # match against participant names, which ARE case-sensitive.
-            agent_name = raw_result[len("next:"):].strip().split(",")[0].strip()
+            agent_names = [
+                part.strip()
+                for part in raw_result[len("next:"):].strip().split(",")
+                if part.strip()
+            ]
             # Case-insensitive participant lookup, then canonicalize to
             # the stored case.
             participants_by_lower = {
                 p.agent_name.lower(): p.agent_name
                 for p in (channel.participants or [])
             }
-            canonical = participants_by_lower.get(agent_name.lower())
-            if canonical is None:
-                logger.warning(
-                    "LLM router returned unknown agent: %r (valid: %s)",
-                    agent_name, list(participants_by_lower.values()),
-                )
-                # For human senders, fall through to the safety net below
-                # so the user always gets a reply.
-                if not (new_event.source or "").startswith("human:"):
-                    return []
-                agent_name = None
-            else:
-                agent_name = canonical
-                # Reject self-loops — router sometimes picks the agent
-                # who just spoke. Sender's adapter skips own messages but
-                # legacy clients would still see the target and retry.
-                if (new_event.source or "").startswith("openagents:"):
-                    sender = new_event.source[len("openagents:"):]
-                    if agent_name == sender:
-                        logger.info("LLM router self-loop rejected: %s", sender)
-                        return []
-                return [agent_name]
+            canonical_targets = []
+            for agent_name in agent_names:
+                canonical = participants_by_lower.get(agent_name.lower())
+                if canonical is None:
+                    logger.warning(
+                        "LLM router returned unknown agent: %r (valid: %s)",
+                        agent_name, list(participants_by_lower.values()),
+                    )
+                    continue
+                canonical_targets.append(canonical)
+
+            canonical_targets = _drop_sender_targets(new_event, canonical_targets)
+            if canonical_targets:
+                return canonical_targets
+            # For human senders, fall through to the safety net below so
+            # the user always gets a reply if every returned name was invalid.
+            if not (new_event.source or "").startswith("human:"):
+                return []
         else:
-            agent_name = None  # "stop" or unrecognized
+            agent_names = []  # "stop" or unrecognized
 
         # Safety net: humans ALWAYS get a response. If the router said
         # "stop" (or returned an invalid agent) for a human message,
@@ -792,6 +810,91 @@ async def _route_with_llm(channel, new_event: Event, db, workspace) -> List[str]
             except Exception:
                 pass
         return []
+
+
+def _activity_state_from_message(message_type: str, content: str) -> str:
+    text = (content or "").lower()
+    if message_type == "thinking":
+        return "thinking"
+    if message_type == "todos":
+        return "thinking"
+    if message_type == "loading":
+        return "working"
+    if "failed" in text or "error" in text:
+        return "error"
+    if "stopping" in text:
+        return "stopping"
+    if "stopped" in text:
+        return "stopped"
+    if "**running:**" in text or "running:" in text or "command:" in text:
+        return "running_command"
+    if "waiting" in text or "input" in text:
+        return "waiting_input"
+    return "working"
+
+
+def _activity_summary_from_message(message_type: str, content: str, metadata: dict | None) -> str:
+    if message_type == "todos":
+        todos = (metadata or {}).get("todos") or []
+        count = len(todos) if isinstance(todos, list) else 0
+        return f"To-do list ({count})" if count else "To-do list"
+
+    text = (content or "").strip()
+    for prefix in ("**Thinking:**", "**Running:**", "**Editing:**"):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+    text = re.sub(r"`{1,3}", "", text)
+    text = " ".join(text.split())
+    if not text:
+        return _activity_state_from_message(message_type, content).replace("_", " ")
+    return text[:120] + ("..." if len(text) > 120 else "")
+
+
+def _set_agent_activity(
+    db,
+    workspace_id: str,
+    agent_name: str,
+    channel_name: str | None,
+    message_type: str,
+    content: str,
+    metadata: dict | None,
+) -> None:
+    from app.models import AgentConfig, WorkspaceMember
+    from datetime import datetime, timezone
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member:
+        return
+
+    now = datetime.now(timezone.utc)
+    is_intermediate = message_type in ("thinking", "status", "todos", "loading")
+    if is_intermediate:
+        state = _activity_state_from_message(message_type, content)
+        member.status = state
+    else:
+        state = "online"
+        member.status = "online"
+    member.last_heartbeat = now
+
+    cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace_id,
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+    if cfg:
+        cfg_metadata = dict(cfg.config_metadata or {})
+        cfg_metadata["lifecycle_state"] = state
+        cfg_metadata["activity_summary"] = _activity_summary_from_message(message_type, content, metadata)
+        cfg_metadata["current_channel"] = channel_name if is_intermediate else None
+        cfg.config_metadata = cfg_metadata
+        cfg.updated_at = now
+    db.flush()
 
 
 _DEFAULT_TITLES = {"New Thread", "Session 1", None, ""}
@@ -905,11 +1008,6 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
             # the router checks session_error and returns an error response.
             return event
 
-    # "thinking", "status", and "todos" messages are intermediate agent output
-    # — they should NOT trigger other agents.
-    if message_type in ("thinking", "status", "todos"):
-        return event
-
     # Resolve channel (needed for both agent and human message routing)
     channel = None
     if event.target.startswith("channel/"):
@@ -920,6 +1018,22 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
                 Channel.name == channel_name,
             )
         ).scalar_one_or_none()
+
+    # Intermediate agent output updates the agent activity projection, but
+    # never triggers another agent.
+    if event.source and event.source.startswith("openagents:"):
+        sender = event.source[len("openagents:"):]
+        _set_agent_activity(
+            db,
+            workspace.id,
+            sender,
+            channel.name if channel else None,
+            message_type,
+            content,
+            event.metadata,
+        )
+    if message_type in ("thinking", "status", "todos", "loading"):
+        return event
 
     # Auto-name channel from first human message if title is default/empty
     if event.source.startswith("human:") and channel:
@@ -983,7 +1097,12 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
         mention_candidates = participant_names
     mentions = _extract_mentions(content, mention_candidates)
 
-    if len(real_participants) >= 2:
+    if mentions:
+        # Explicit multi-mention fan-out is deterministic and parallel:
+        # every mentioned channel participant gets the same event in
+        # target_agents, and each connector polls/runs independently.
+        targets = _fallback_targets(event, channel, mentions)
+    elif len(real_participants) >= 2:
         from app.config import config
         if config.ROUTER_LLM_ENABLED and _get_router_api_key():
             targets = await _route_with_llm(channel, event, db, workspace)

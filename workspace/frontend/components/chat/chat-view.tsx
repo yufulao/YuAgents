@@ -388,7 +388,9 @@ export function ChatView() {
     [currentSessionId, currentUser.id, currentUser.name, currentUser.avatarUrl, forceRefresh, agents]
   );
 
-  const hasStatusMessages = displayMessages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
+  const hasStatusMessages = displayMessages.some(
+    (m) => m.messageType === 'status' || m.messageType === 'thinking' || m.messageType === 'todos',
+  );
 
   if (!currentSessionId) {
     const isRoutinesView = viewMode === 'routines';

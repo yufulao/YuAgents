@@ -184,7 +184,8 @@ class TestSendEvent:
 
     def test_member_message_with_mention_routes_to_mentioned_agent(self, client, workspace):
         """Agent messages with explicit @mentions route to the mentioned agent."""
-        # Add member agents to workspace (not to channel — so channel stays single-participant)
+        # Add member agents to workspace, then add the mentioned agent to the
+        # channel. Mentions must not implicitly wake non-channel members.
         for name in ["agent-beta", "agent-gamma"]:
             client.post("/v1/join", json={
                 "agent_name": name,
@@ -193,6 +194,15 @@ class TestSendEvent:
             })
 
         channel_name = workspace["channel"]["name"]
+        join = client.post("/v1/events", json={
+            "type": "network.channel.join",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"channel": channel_name, "agent_name": "agent-gamma"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert join.status_code == 200
+
         resp = client.post("/v1/events", json={
             "type": "workspace.message.posted",
             "source": "openagents:agent-beta",

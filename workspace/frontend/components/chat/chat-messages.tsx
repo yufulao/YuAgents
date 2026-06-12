@@ -85,7 +85,9 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
   const loadingMessages = useMemo(() => messages.filter((m) => m.messageType === 'loading'), [messages]);
   const realMessages = useMemo(() => messages.filter((m) => m.messageType !== 'loading'), [messages]);
 
-  // Filter: skip empty status messages; when toggle is off, only show status messages after the last chat message
+  // Filter: skip empty status messages; when toggle is off, keep only
+  // the current trailing work block. Historical thinking/todos stay
+  // available via the all-steps toggle, but do not fill the chat.
   const filteredMessages = useMemo(() => {
     const isStep = (msg: WorkspaceMessage) => msg.messageType === 'status' || msg.messageType === 'thinking' || msg.messageType === 'todos';
 
@@ -120,17 +122,9 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
       }
     }
 
-    // Check if the very last message is a step (agent still working)
     const lastIsStep = nonEmpty.length > 0 && isStep(nonEmpty[nonEmpty.length - 1]);
-
-    // Keep: all non-step messages, all thinking messages (they persist),
-    // and trailing status only if agent is still actively working
     const trailing = nonEmpty.filter((msg, index) => {
       if (!isStep(msg)) return true;
-      // Always keep thinking and todos — they provide reasoning context
-      if (msg.messageType === 'thinking' || msg.messageType === 'todos') return true;
-      // Only keep trailing status if agent is still working
-      // (last message is a step, meaning no chat response yet)
       return lastIsStep && index > lastChatIndex;
     });
     // Find the last status-only message and keep only that one

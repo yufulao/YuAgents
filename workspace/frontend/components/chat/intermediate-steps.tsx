@@ -13,6 +13,7 @@ import {
   Clock,
   Users,
   ChevronRight,
+  ChevronDown,
   RefreshCw,
   ListTodo,
 } from 'lucide-react';
@@ -293,7 +294,26 @@ interface IntermediateStepsProps {
   isActive?: boolean;
 }
 
+function stepSummary(step: WorkspaceMessage): string {
+  if (step.messageType === 'todos') {
+    const todos = (step.metadata?.todos as Array<{ content: string; status: string; assignee?: string }>) || [];
+    return `To-do list${todos.length ? ` (${todos.length})` : ''}`;
+  }
+  const parsed = step.messageType === 'thinking'
+    ? { type: 'thinking' as const, text: step.content }
+    : parseStepContent(step.content);
+  if (parsed.type === 'tool_call') {
+    return [parsed.toolDisplay, parsed.summary].filter(Boolean).join(' › ');
+  }
+  if (parsed.type === 'thinking') {
+    return parsed.text && parsed.text !== 'thinking...' ? parsed.text : 'thinking';
+  }
+  if (parsed.type === 'compacting') return '整理上下文';
+  return parsed.text || step.content || step.messageType || '状态更新';
+}
+
 export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents, isActive = false }: IntermediateStepsProps) {
+  const [expanded, setExpanded] = useState(false);
   if (steps.length === 0) return null;
   const hasTerminalStatus = steps.some(isTerminalStatus);
 
@@ -308,28 +328,62 @@ export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents
       senderGroups.push({ sender: step.senderName, steps: [step] });
     }
   }
+  const latest = steps[steps.length - 1];
+  const latestSummary = stepSummary(latest).replace(/\s+/g, ' ').trim();
+  const latestAgent = agents?.find((agent) => agent.agentName === latest.senderName);
 
   return (
     <div className="flex items-start gap-3 py-1">
       {/* Spacer matching avatar width for alignment with chat messages */}
       <div className="size-8 shrink-0" />
       <div className="border-l-2 border-zinc-200 dark:border-zinc-700 pl-3 py-0.5 min-w-0 flex-1">
-        {senderGroups.map((group, gi) => (
-          <div key={`${group.sender}-${gi}`}>
-            {hasMultipleAgents && (
-              <div className="flex items-center gap-1.5 mb-0.5 mt-1 first:mt-0">
-                <AgentAvatar name={group.sender} size={14} />
-                <span className="text-[10px] font-medium text-muted-foreground/70">
-                  {group.sender}
-                </span>
-              </div>
-            )}
-            {group.steps.map((step) => (
-              <StepItem key={step.messageId} message={step} />
-            ))}
-          </div>
-        ))}
-        {isActive && !hasTerminalStatus && <ActivityIndicator />}
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="flex w-full items-center gap-2 rounded-md py-0.5 text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 -ml-1 pl-1 pr-1 transition-colors"
+        >
+          {expanded ? (
+            <ChevronDown className="size-3.5 shrink-0" />
+          ) : (
+            <ChevronRight className="size-3.5 shrink-0" />
+          )}
+          <AgentAvatar
+            name={latest.senderName}
+            avatar={latestAgent?.avatar}
+            avatarUrl={latestAgent?.avatarUrl}
+            size={14}
+          />
+          <span className="font-medium shrink-0">
+            {steps.length} 条过程
+          </span>
+          <span className="truncate text-muted-foreground/70">
+            {latest.senderName}: {latestSummary}
+          </span>
+        </button>
+        {expanded && senderGroups.map((group, gi) => {
+          const groupAgent = agents?.find((agent) => agent.agentName === group.sender);
+          return (
+            <div key={`${group.sender}-${gi}`}>
+              {hasMultipleAgents && (
+                <div className="flex items-center gap-1.5 mb-0.5 mt-1 first:mt-0">
+                  <AgentAvatar
+                    name={group.sender}
+                    avatar={groupAgent?.avatar}
+                    avatarUrl={groupAgent?.avatarUrl}
+                    size={14}
+                  />
+                  <span className="text-[10px] font-medium text-muted-foreground/70">
+                    {group.sender}
+                  </span>
+                </div>
+              )}
+              {group.steps.map((step) => (
+                <StepItem key={step.messageId} message={step} />
+              ))}
+            </div>
+          );
+        })}
+        {isActive && !hasTerminalStatus && !expanded && <ActivityIndicator />}
       </div>
     </div>
   );

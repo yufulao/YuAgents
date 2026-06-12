@@ -178,7 +178,14 @@ export function AgentActivityPanel({
                 className="mx-1.5 rounded-lg px-1.5 py-1.5 hover:bg-muted/60 transition-colors"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <AgentAvatar name={activity.agent.displayName || activity.agent.agentName} size={20} status={activity.agent.status} showStatus />
+                  <AgentAvatar
+                    name={activity.agent.displayName || activity.agent.agentName}
+                    avatar={activity.agent.avatar}
+                    avatarUrl={activity.agent.avatarUrl}
+                    size={20}
+                    status={activity.agent.status}
+                    showStatus
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[12px] font-medium truncate">

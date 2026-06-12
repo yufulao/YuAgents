@@ -110,8 +110,8 @@ class TestRouteWithLLM:
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
     @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
-    def test_router_multiple_agents_picks_first(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
-        """When the LLM returns comma-separated agents, only the first is used."""
+    def test_router_multiple_agents_fans_out(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
+        """When the LLM returns comma-separated agents, all valid agents are used."""
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_anthropic_response("next:agent-master,agent-worker")
         mock_get_client.return_value = (mock_client, "anthropic")
@@ -122,7 +122,7 @@ class TestRouteWithLLM:
         event = _make_event("human:user", "channel/session-test", "Both agents need to act")
 
         result = _run(_route_with_llm(ch, event, db, ws))
-        assert result == ["agent-master"]
+        assert result == ["agent-master", "agent-worker"]
 
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
@@ -210,6 +210,21 @@ class TestRouteWithLLM:
 
         result = _run(_route_with_llm(ch, event, db, ws))
         assert result == [], "self-loop must be rejected"
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_router_drops_self_but_keeps_parallel_targets(self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace):
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response("next:agent-master,agent-worker")
+        mock_get_client.return_value = (mock_client, "anthropic")
+
+        ws = multi_agent_workspace["workspace"]
+        ch = multi_agent_workspace["channel"]
+        event = _make_event("openagents:agent-master", "channel/session-test", "@agent-worker and I will split this")
+
+        result = _run(_route_with_llm(ch, event, db, ws))
+        assert result == ["agent-worker"]
 
 
 class TestRouteWithOpenAI:
@@ -322,6 +337,23 @@ class TestMessagePostedTargetAgents:
     @patch("app.mods.workspace_mod._get_llm_client")
     @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
     @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
+    def test_explicit_multi_mentions_bypass_router_and_fan_out(
+        self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
+    ):
+        from app.mods.workspace_mod import _handle_message_posted
+        from openagents.core.onm_mods import PipelineContext
+
+        ws = multi_agent_workspace["workspace"]
+        event = _make_event("human:user", "channel/session-test", "@agent-master @agent-worker 分别复核一下")
+        ctx = PipelineContext(network_id=str(ws.id), agent_address="human:user", db=db, workspace=ws)
+
+        out = _run(_handle_message_posted(event, ctx))
+        assert out.metadata["target_agents"] == ["agent-master", "agent-worker"]
+        mock_get_client.assert_not_called()
+
+    @patch("app.mods.workspace_mod._get_llm_client")
+    @patch("app.mods.workspace_mod._get_router_api_key", return_value="test-key")
+    @patch("app.mods.workspace_mod._get_router_model", return_value="claude-haiku-4-5-20251001")
     def test_human_message_routed_to_fallback_on_llm_failure(
         self, _mock_model, _mock_key, mock_get_client, db, multi_agent_workspace,
     ):
@@ -340,3 +372,22 @@ class TestMessagePostedTargetAgents:
 
         out = _run(_handle_message_posted(event, ctx))
         assert out.metadata.get("target_agents") == ["agent-master"]
+
+    def test_intermediate_agent_message_updates_activity_without_routing(self, db, multi_agent_workspace):
+        from app.mods.workspace_mod import _handle_message_posted
+        from openagents.core.onm_mods import PipelineContext
+
+        ws = multi_agent_workspace["workspace"]
+        event = _make_event(
+            "openagents:agent-worker",
+            "channel/session-test",
+            "**Running:** `npm test`",
+            message_type="status",
+        )
+        ctx = PipelineContext(network_id=str(ws.id), agent_address="openagents:agent-worker", db=db, workspace=ws)
+
+        out = _run(_handle_message_posted(event, ctx))
+        assert out.metadata.get("target_agents") is None
+
+        member = db.get(WorkspaceMember, (ws.id, "agent-worker"))
+        assert member.status == "running_command"
