@@ -12,6 +12,7 @@ set "WORKSPACE_CREATION_ENABLED=false"
 set "WORKSPACE_DIRECTORY_ENABLED=false"
 set "NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=false"
 set "NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=false"
+set "API_URL="
 
 docker compose version >nul 2>nul
 if errorlevel 1 (

@@ -35,6 +35,12 @@ Then in another terminal, from `workspace`:
 start.bat
 ```
 
+On Linux/macOS, run the equivalent shell script from `workspace`:
+
+```sh
+sh start.sh
+```
+
 Open:
 
 ```text
