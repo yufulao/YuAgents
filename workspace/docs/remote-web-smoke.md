@@ -8,6 +8,11 @@ It simulates the production relay mode locally:
 - existing workspace name/slug + token login only
 - frontend talks to a remote-mode backend URL
 
+This is an automated acceptance test. It intentionally creates a temporary
+workspace in a temporary SQLite database so the test can verify login behavior.
+For a pure Docker server deployment simulation with no automatic workspace
+creation, use `workspace\docs\remote-docker-deploy.md`.
+
 ## Windows
 
 From the repository root:
