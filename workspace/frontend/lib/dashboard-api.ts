@@ -102,6 +102,26 @@ async function localFetch<T>(path: string, options: RequestInit = {}): Promise<T
   return json.data;
 }
 
+function workspaceAccessErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (message.includes('Workspace not found') || message.includes('API error (404)')) {
+    return 'workspace 名称或 slug 不存在';
+  }
+  if (message.includes('Invalid workspace credentials') || message.includes('API error (401)')) {
+    return 'workspace token/password 不正确';
+  }
+  if (message.includes('Multiple workspaces')) {
+    return '有多个同名 workspace，请改用 workspace slug 登录';
+  }
+  if (message.includes('API error (500)')) {
+    return '远端 workspace 服务内部错误，请检查服务端是否已部署最新版本并查看后端日志';
+  }
+  if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+    return '无法连接远端 workspace 服务，请检查 API 地址和网络';
+  }
+  return message || '无法打开 workspace';
+}
+
 export function getLocalWorkspaceTokens(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   try {
@@ -124,11 +144,15 @@ export async function listLocalWorkspaces(): Promise<Workspace[]> {
 }
 
 export async function verifyWorkspaceAccess(workspace: string, token: string): Promise<Workspace> {
-  return localFetch<Workspace>('/v1/workspaces/resolve', {
-    method: 'POST',
-    headers: token ? { 'X-Workspace-Token': token } : {},
-    body: JSON.stringify({ workspace }),
-  });
+  try {
+    return await localFetch<Workspace>('/v1/workspaces/resolve', {
+      method: 'POST',
+      headers: token ? { 'X-Workspace-Token': token } : {},
+      body: JSON.stringify({ workspace }),
+    });
+  } catch (error) {
+    throw new Error(workspaceAccessErrorMessage(error));
+  }
 }
 
 export async function getLocalWorkspaceToken(slug: string): Promise<string> {

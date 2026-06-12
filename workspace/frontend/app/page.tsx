@@ -85,6 +85,7 @@ function LandingPage() {
   const [manageError, setManageError] = useState('');
   const [loadingToken, setLoadingToken] = useState(false);
   const [deletingWorkspace, setDeletingWorkspace] = useState(false);
+  const entryError = !workspaceDirectoryEnabled ? error : '';
 
   const loadLocalWorkspaces = useCallback(async () => {
     if (!workspaceDirectoryEnabled) {
@@ -407,6 +408,11 @@ function LandingPage() {
                   type="password"
                 />
               </div>
+              {entryError && (
+                <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {entryError}
+                </div>
+              )}
               <Button type="submit" disabled={!workspaceSlug.trim() || openingWorkspace} className="w-full">
                 {openingWorkspace ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
                 {openingWorkspace ? '验证中...' : '打开工作区'}
