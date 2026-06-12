@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   ArrowRight,
-  Check,
   Clock,
   Copy,
   Loader2,
@@ -30,33 +29,12 @@ import {
 import type { Workspace } from '@/lib/types';
 import { timeAgo } from '@/lib/helpers';
 import { workspaceCreationEnabled, workspaceDirectoryEnabled } from '@/lib/workspace-policy';
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-
-function EntryCodeBlock({ code }: { code: string }) {
-  const { isCopied, copyToClipboard } = useCopyToClipboard();
-
-  return (
-    <div className="group relative">
-      <pre className="overflow-x-auto rounded-lg bg-zinc-900 px-4 py-3 font-mono text-sm leading-relaxed text-zinc-100">
-        <code>{code}</code>
-      </pre>
-      <button
-        type="button"
-        className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md bg-zinc-700/80 text-zinc-300 opacity-100 transition-opacity hover:bg-zinc-600 hover:text-white lg:opacity-0 lg:group-hover:opacity-100"
-        title="复制"
-        onClick={() => copyToClipboard(code)}
-      >
-        {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      </button>
-    </div>
-  );
-}
 
 export default function HomePage() {
   const router = useRouter();
@@ -416,18 +394,6 @@ export default function HomePage() {
               </Button>
             </form>
 
-            <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-5">
-              <div>
-                <h2 className="text-sm font-semibold">访问关系</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  其他设备打开 Web；Agent 设备连接本机主控 API。
-                </p>
-              </div>
-              <EntryCodeBlock code={`Web: http://<你的入口>:3000\nAPI: http://<你的入口>:8000`} />
-              <div className="rounded-md bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
-                Linux/公网服务器只做入口或 relay；workspace 数据、token 和 Agent CLI 配置仍归本机主控。
-              </div>
-            </div>
           </section>
         </div>
       </main>

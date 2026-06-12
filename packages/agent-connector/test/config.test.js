@@ -81,6 +81,28 @@ describe('serializeYaml', () => {
     assert.ok(yaml.includes('agents: []'));
     assert.ok(yaml.includes('networks: []'));
   });
+
+  it('does not grow escaped Windows paths on repeated round trips', () => {
+    const config = {
+      version: 2,
+      agents: [{
+        name: 'codex',
+        type: 'codex',
+        role: 'member',
+        path: 'C:\\Users\\yufulao\\Desktop\\oa\\openagents',
+      }],
+      networks: [],
+    };
+
+    const firstYaml = serializeYaml(config);
+    const firstParsed = parseYaml(firstYaml);
+    const secondYaml = serializeYaml(firstParsed);
+    const secondParsed = parseYaml(secondYaml);
+
+    assert.equal(firstParsed.agents[0].path, config.agents[0].path);
+    assert.equal(secondParsed.agents[0].path, config.agents[0].path);
+    assert.equal(secondYaml.length, firstYaml.length);
+  });
 });
 
 describe('Config', () => {
@@ -141,6 +163,24 @@ describe('Config', () => {
 
     const cfg2 = new Config(tmpDir);
     assert.equal(cfg2.getAgent('persist').type, 'aider');
+  });
+
+  it('compacts over-escaped Windows drive paths when saving', () => {
+    const cfg = new Config(tmpDir);
+    cfg.save({
+      version: 2,
+      agents: [{
+        name: 'codex',
+        type: 'codex',
+        role: 'member',
+        path: 'C:\\\\\\\\Users\\\\\\\\yufulao\\\\\\\\Desktop',
+      }],
+      networks: [],
+    });
+
+    const loaded = cfg.load();
+    assert.equal(loaded.agents[0].path, 'C:\\Users\\yufulao\\Desktop');
+    assert.ok(fs.statSync(cfg.configFile).size < 200);
   });
 
   it('clearLogsInRange removes only timestamped lines in the selected window', () => {

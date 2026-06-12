@@ -146,17 +146,6 @@ export interface OnlineUser {
   lastSeen: number;
 }
 
-export interface WorkspaceInvitation {
-  invitationId: string;
-  workspaceId: string;
-  targetAgentName: string;
-  inviteToken: string;
-  workspaceName?: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'expired';
-  createdAt: string;
-  expiresAt: string;
-}
-
 export interface WorkspaceFile {
   id: string;
   filename: string;
@@ -204,36 +193,6 @@ export interface BrowserPersistentContext {
   sharedWith: string[];
   createdAt: string | null;
   lastUsedAt: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Shared conversation snapshots
-// ---------------------------------------------------------------------------
-
-export interface SharedSnapshotMessage {
-  sender_name: string;
-  sender_type: string;
-  content: string;
-  created_at: string | null;
-}
-
-export interface SharedSnapshot {
-  id: string;
-  title: string | null;
-  messages: SharedSnapshotMessage[];
-  messageCount: number;
-  createdAt: string | null;
-}
-
-export interface ShareSummary {
-  id: string;
-  workspaceId: string;
-  channelName: string;
-  title: string | null;
-  shareToken: string;
-  messageCount: number;
-  status: string;
-  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------

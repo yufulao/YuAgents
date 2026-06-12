@@ -17,8 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ListTree, UserPlus, MessageSquare, CalendarClock, Zap, Eye, Square, ChevronLeft, X, Plus, Globe, Share2 } from 'lucide-react';
-import { ShareDialog } from './share-dialog';
+import { ListTree, UserPlus, MessageSquare, CalendarClock, Zap, Eye, Square, ChevronLeft, X, Plus, Globe } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -151,7 +150,6 @@ export function ChatView() {
   });
   const { notifyFocus, notifyBlur, notifyTyping } = useComposingSignal(currentSessionId);
   const [showAllSteps, setShowAllSteps] = useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -590,17 +588,6 @@ export function ChatView() {
             </Button>
           )}
 
-          {/* Share conversation */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShareDialogOpen(true)}
-            className="gap-1.5 h-7 text-xs font-medium"
-            title="Share conversation"
-          >
-            <Share2 className="size-3.5" />
-          </Button>
-
           {/* Manage agents dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -724,13 +711,6 @@ export function ChatView() {
           onCreateRoutine={createRoutine}
         />
 
-        {currentSessionId && (
-          <ShareDialog
-            open={shareDialogOpen}
-            onOpenChange={setShareDialogOpen}
-            sessionId={currentSessionId}
-          />
-        )}
       </div>
     </div>
   );

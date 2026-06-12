@@ -47,7 +47,7 @@ class Config {
 
   save(config) {
     fs.mkdirSync(this.configDir, { recursive: true });
-    fs.writeFileSync(this.configFile, serializeYaml(config), 'utf-8');
+    fs.writeFileSync(this.configFile, serializeYaml(normalizeConfigForSave(config)), 'utf-8');
   }
 
   addAgent({ name, type, role, path: agentPath, env }) {
@@ -428,7 +428,11 @@ function parseYamlValue(val) {
   if (/^\d+$/.test(val)) return parseInt(val, 10);
   if ((val.startsWith("'") && val.endsWith("'")) ||
       (val.startsWith('"') && val.endsWith('"'))) {
-    return val.slice(1, -1);
+    if (val.startsWith('"')) {
+      try { return JSON.parse(val); } catch {}
+      return val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+    return val.slice(1, -1).replace(/''/g, "'");
   }
   if (val.startsWith('{') || val.startsWith('[')) {
     try { return JSON.parse(val); } catch { return val; }
@@ -472,6 +476,28 @@ function serializeYaml(config) {
   return lines.join('\n') + '\n';
 }
 
+function normalizeConfigForSave(config) {
+  const next = {
+    ...config,
+    agents: Array.isArray(config.agents) ? config.agents.map(normalizeAgentForSave) : [],
+    networks: Array.isArray(config.networks) ? config.networks : [],
+  };
+  return next;
+}
+
+function normalizeAgentForSave(agent) {
+  const next = { ...agent };
+  if (typeof next.path === 'string') {
+    next.path = normalizeWindowsDrivePath(next.path);
+  }
+  return next;
+}
+
+function normalizeWindowsDrivePath(value) {
+  if (!/^[A-Za-z]:\\+/.test(value)) return value;
+  return value.replace(/\\{2,}/g, '\\');
+}
+
 function serializeYamlValue(val) {
   if (val === null || val === undefined) return 'null';
   if (typeof val === 'boolean') return val ? 'true' : 'false';
@@ -482,7 +508,7 @@ function serializeYamlValue(val) {
   if (s.includes(':') || s.includes('#') || s.includes("'") || s.includes('"') ||
       s.includes('\n') || s.startsWith(' ') || s.endsWith(' ') ||
       s === 'true' || s === 'false' || s === 'null' || /^\d+$/.test(s)) {
-    return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    return JSON.stringify(s);
   }
   return s;
 }

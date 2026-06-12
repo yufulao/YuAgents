@@ -6,7 +6,6 @@ import {
   BookOpen,
   CalendarClock,
   Check,
-  Copy,
   FileText,
   Globe,
   Inbox,
@@ -18,7 +17,6 @@ import {
   Plus,
   PlusSquare,
   Settings,
-  Sparkles,
   Sun,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -41,7 +39,6 @@ import { workspaceApi } from '@/lib/api';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { AgentActivityPanel } from '@/components/agents/agent-activity-panel';
 import { cn } from '@/lib/utils';
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
 import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
 
@@ -264,7 +261,6 @@ export function SidebarContent() {
                   <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="知识库" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
                   <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="任务" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
                   <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="收件箱" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
-                  <NavButton active={viewMode === 'skills'} icon={<Sparkles className="size-[15px]" />} label="技能中心" onClick={() => setViewMode('skills')} />
                 </>
               )}
             </div>
@@ -346,8 +342,6 @@ function SettingsDialogPortal({
   const [name, setName] = useState(workspace?.name || '');
   const [monitorMode, setMonitorMode] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { isCopied: urlCopied, copyToClipboard: copyUrl } = useCopyToClipboard();
-  const { isCopied: slugCopied, copyToClipboard: copySlug } = useCopyToClipboard();
   const { notificationSound, setNotificationSound } = useWorkspace();
   const { splitBrowser, setSplitBrowser } = useLayout();
 
@@ -359,10 +353,6 @@ function SettingsDialogPortal({
   }, [open, workspace]);
 
   if (!workspace) return null;
-
-  const workspaceUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/${workspace.slug}${window.location.search}`
-    : '';
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -390,24 +380,6 @@ function SettingsDialogPortal({
           <div className="space-y-2">
             <Label>工作区名称</Label>
             <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="我的工作区" />
-          </div>
-          <div className="space-y-2">
-            <Label variant="secondary">工作区 URL</Label>
-            <div className="flex items-center gap-2">
-              <Input value={workspaceUrl} readOnly className="font-mono text-xs" />
-              <Button variant="outline" size="icon" onClick={() => copyUrl(workspaceUrl)}>
-                {urlCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label variant="secondary">工作区 slug</Label>
-            <div className="flex items-center gap-2">
-              <Input value={workspace.slug} readOnly className="font-mono text-xs" />
-              <Button variant="outline" size="icon" onClick={() => copySlug(workspace.slug)}>
-                {slugCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
-              </Button>
-            </div>
           </div>
 
           <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">

@@ -11,13 +11,11 @@ import type {
   NetworkProfile,
   NotificationItem,
   ONMEvent,
-  ShareSummary,
   TimerItem,
   TodoItem,
   Workspace,
   WorkspaceAgent,
   WorkspaceFile,
-  WorkspaceInvitation,
   WorkspaceSession,
 } from './types';
 import { eventToMessage } from './types';
@@ -739,18 +737,6 @@ class WorkspaceApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Invitations (stubs — not yet event-native)
-  // ---------------------------------------------------------------------------
-
-  async createInvitation(_targetAgentName: string, _expiresInHours = 168): Promise<WorkspaceInvitation> {
-    throw new Error('Invitations are not yet available in event-native mode');
-  }
-
-  async listInvitations(_status?: string): Promise<WorkspaceInvitation[]> {
-    return []; // Return empty list — invitations not yet migrated
-  }
-
-  // ---------------------------------------------------------------------------
   // Low-level ONM event API
   // ---------------------------------------------------------------------------
 
@@ -1030,37 +1016,6 @@ class WorkspaceApi {
 
   async dismissNotification(notificationId: string): Promise<void> {
     await this.request<unknown>(`/v1/notifications/${notificationId}`, { method: 'DELETE' });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Shares (conversation snapshots)
-  // ---------------------------------------------------------------------------
-
-  async createShare(channelName: string, createdBy?: string): Promise<ShareSummary> {
-    const raw = await this.request<Record<string, unknown>>('/v1/shares', {
-      method: 'POST',
-      body: JSON.stringify({
-        network: this.workspaceId,
-        channel: channelName,
-        created_by: createdBy || 'human:user',
-      }),
-    });
-    return {
-      id: raw.id as string,
-      workspaceId: (raw.workspace_id || '') as string,
-      channelName: (raw.channel_name || '') as string,
-      title: (raw.title || null) as string | null,
-      shareToken: raw.share_token as string,
-      messageCount: (raw.message_count || 0) as number,
-      status: (raw.status || 'active') as string,
-      createdAt: (raw.created_at || null) as string | null,
-    };
-  }
-
-  async deleteShare(shareId: string): Promise<void> {
-    await this.request<unknown>(`/v1/shares/${shareId}?network=${this.workspaceId}`, {
-      method: 'DELETE',
-    });
   }
 
   async cancelChannelTodos(channel: string, source: string): Promise<void> {
