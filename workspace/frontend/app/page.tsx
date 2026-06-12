@@ -24,6 +24,7 @@ import {
   getLocalWorkspaceToken,
   getLocalWorkspaceTokens,
   rememberLocalWorkspaceToken,
+  verifyWorkspaceAccess,
   type WorkspaceSummary,
 } from '@/lib/dashboard-api';
 import type { Workspace } from '@/lib/types';
@@ -74,6 +75,7 @@ function LandingPage() {
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [openingWorkspace, setOpeningWorkspace] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newAgent, setNewAgent] = useState('');
@@ -108,13 +110,26 @@ function LandingPage() {
     loadLocalWorkspaces();
   }, [loadLocalWorkspaces]);
 
-  const openWorkspace = (e: React.FormEvent) => {
+  const openWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     const slug = workspaceSlug.trim();
     const token = workspaceToken.trim();
     if (!slug) return;
-    if (token) rememberLocalWorkspaceToken(slug, token);
-    router.push(token ? `/${slug}?token=${encodeURIComponent(token)}` : `/${slug}`);
+    if (!workspaceDirectoryEnabled && !token) {
+      setError('远端入口必须填写 workspace token/password');
+      return;
+    }
+    setOpeningWorkspace(true);
+    setError('');
+    try {
+      await verifyWorkspaceAccess(slug, token);
+      if (token) rememberLocalWorkspaceToken(slug, token);
+      router.push(token ? `/${slug}?token=${encodeURIComponent(token)}` : `/${slug}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'workspace slug 或 token 不正确');
+    } finally {
+      setOpeningWorkspace(false);
+    }
   };
 
   const openListedWorkspace = (workspace: Workspace) => {
@@ -392,9 +407,10 @@ function LandingPage() {
                   type="password"
                 />
               </div>
-              <Button type="submit" disabled={!workspaceSlug.trim()} className="w-full">
-                打开工作区
-                <ArrowRight className="size-4 ml-1" />
+              <Button type="submit" disabled={!workspaceSlug.trim() || openingWorkspace} className="w-full">
+                {openingWorkspace ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
+                {openingWorkspace ? '验证中...' : '打开工作区'}
+                {!openingWorkspace && <ArrowRight className="size-4 ml-1" />}
               </Button>
             </form>
 

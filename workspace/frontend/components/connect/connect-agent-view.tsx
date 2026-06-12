@@ -315,6 +315,19 @@ function LocalAgentsTab({
   const nameInvalid = Boolean(trimmedName && !AGENT_HANDLE_RE.test(trimmedName));
   const nameExists = Boolean(trimmedName && existingNames.has(trimmedName));
   const nameProblem = nameInvalid || nameExists;
+  const codexModelOptions = useMemo(() => {
+    const bySlug = new Map<string, string>();
+    for (const model of codexCatalog?.models || []) {
+      bySlug.set(model.slug, model.display_name || model.slug);
+    }
+    if (codexCatalog?.config.model) {
+      bySlug.set(codexCatalog.config.model, bySlug.get(codexCatalog.config.model) || codexCatalog.config.model);
+    }
+    if (modelName) {
+      bySlug.set(modelName, bySlug.get(modelName) || modelName);
+    }
+    return Array.from(bySlug, ([slug, label]) => ({ slug, label }));
+  }, [codexCatalog, modelName]);
 
   useEffect(() => {
     if (!selectedEntry && catalog.length > 0) {
@@ -493,20 +506,20 @@ function LocalAgentsTab({
 
         <div className="space-y-1">
           <Label className="text-[11px]">模型</Label>
-          {selectedEntry?.name === 'codex' && codexCatalog?.models.length ? (
+          {selectedEntry?.name === 'codex' ? (
             <select
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
               className="w-full h-9 rounded-md border bg-background px-2 text-sm font-mono"
+              disabled={loadingCodexCatalog || codexModelOptions.length === 0}
             >
-              {codexCatalog.models.map((model) => (
+              {codexModelOptions.length === 0 ? (
+                <option value="">未读取到模型缓存</option>
+              ) : codexModelOptions.map((model) => (
                 <option key={model.slug} value={model.slug}>
-                  {model.display_name || model.slug}
+                  {model.label}
                 </option>
               ))}
-              {modelName && !codexCatalog.models.some((model) => model.slug === modelName) && (
-                <option value={modelName}>{modelName}</option>
-              )}
             </select>
           ) : (
             <Input

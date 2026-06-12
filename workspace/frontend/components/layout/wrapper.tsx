@@ -53,13 +53,39 @@ function WorkspaceLoadingScreen() {
   );
 }
 
+function WorkspaceErrorScreen({ error }: { error: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background px-6">
+      <div className="w-full max-w-md rounded-lg border bg-card p-5 text-center shadow-sm">
+        <h1 className="text-lg font-semibold text-destructive">无法进入工作区</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          workspace 名称不存在，或 token/password 不正确。
+        </p>
+        <p className="mt-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground break-words">
+          {error}
+        </p>
+        <a
+          href="/"
+          className="mt-4 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          返回入口
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export function Wrapper() {
   const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, isDetailExpanded, mobilePane, splitBrowser, showBrowserPreview } = useLayout();
-  const { monitorMode, agents, loading } = useWorkspace();
+  const { monitorMode, agents, loading, error } = useWorkspace();
   const hasAgents = agents.length > 0;
 
   if (loading) {
     return <WorkspaceLoadingScreen />;
+  }
+
+  if (error) {
+    return <WorkspaceErrorScreen error={error} />;
   }
 
   // ── Mobile layout: single-pane with list/detail switching ──

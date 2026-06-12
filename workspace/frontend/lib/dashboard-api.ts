@@ -123,6 +123,12 @@ export async function listLocalWorkspaces(): Promise<Workspace[]> {
   return localFetch<Workspace[]>('/v1/workspaces');
 }
 
+export async function verifyWorkspaceAccess(slug: string, token: string): Promise<Workspace> {
+  return localFetch<Workspace>(`/v1/workspaces/${encodeURIComponent(slug)}`, {
+    headers: token ? { 'X-Workspace-Token': token } : {},
+  });
+}
+
 export async function getLocalWorkspaceToken(slug: string): Promise<string> {
   const data = await localFetch<{ token: string }>(`/v1/workspaces/${encodeURIComponent(slug)}/local-token`);
   rememberLocalWorkspaceToken(slug, data.token);
