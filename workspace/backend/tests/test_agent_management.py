@@ -145,6 +145,44 @@ def test_managed_agent_accepts_execute_mode_and_xhigh_quality(client, workspace)
     assert data["quality"] == "xhigh"
 
 
+def test_control_managed_agent_starts_local_daemon_bridge(client, workspace, monkeypatch):
+    client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={
+            "agent_name": "local-runner",
+            "agent_type": "codex",
+            "working_dir": "C:/repo",
+        },
+    )
+
+    calls = []
+
+    def fake_control_local_agent(**kwargs):
+        calls.append(kwargs)
+        return {"ok": True, "command": "start:local-runner", "pid": 1234}
+
+    monkeypatch.setattr("app.routers.workspaces.control_local_agent", fake_control_local_agent)
+
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents/local-runner/control",
+        headers=_auth(workspace),
+        json={"action": "start"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["agent"]["agentName"] == "local-runner"
+    assert data["agent"]["status"] == "starting"
+    assert data["control"]["command"] == "start:local-runner"
+    assert calls[0]["action"] == "start"
+    assert calls[0]["agent"]["name"] == "local-runner"
+    assert calls[0]["agent"]["type"] == "codex"
+    assert calls[0]["agent"]["workingDir"] == "C:/repo"
+    assert calls[0]["workspace"]["token"] == workspace["token"]
+    assert calls[0]["endpoint"] == "http://testserver"
+
+
 def test_cloud_agent_allows_empty_api_key(client, workspace):
     resp = client.post(
         "/v1/cloud-agents",

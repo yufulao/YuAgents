@@ -90,6 +90,7 @@ export function AgentProfilePanel() {
   const [modeDraft, setModeDraft] = useState('execute');
   const [qualityDraft, setQualityDraft] = useState('medium');
   const [savingConfig, setSavingConfig] = useState(false);
+  const [controlBusy, setControlBusy] = useState<'start' | 'restart' | 'stop' | null>(null);
 
   useEffect(() => {
     if (!agent) return;
@@ -164,9 +165,25 @@ export function AgentProfilePanel() {
     setViewMode('threads');
   }, [agent, createSession, setSelectedAgentName, setViewMode]);
 
+  const handleLocalAgentControl = useCallback(async (action: 'start' | 'restart' | 'stop') => {
+    if (!agent) return;
+    setControlBusy(action);
+    try {
+      await workspaceApi.controlManagedAgent(agent.agentName, action);
+      await refreshWorkspace();
+      toast.success(action === 'restart' ? 'Agent 正在重启' : action === 'stop' ? 'Agent 已停止' : 'Agent 正在启动');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Agent 操作失败');
+    } finally {
+      setControlBusy(null);
+    }
+  }, [agent, refreshWorkspace]);
+
   if (!agent) return null;
 
   const isOnline = agent.status === 'online';
+  const isStarting = agent.status === 'starting';
+  const localPrimaryAction: 'start' | 'restart' = isOnline || isStarting ? 'restart' : 'start';
 
   // Capitalize agent type for display (e.g. "claude" → "Claude", "cloud:openai" → "Cloud: OpenAI")
   const displayType = isCloud
@@ -506,6 +523,17 @@ export function AgentProfilePanel() {
               <Plus className="size-3" />
               新建会话
             </button>
+            {!isCloud && !isDisabled && (
+              <button
+                onClick={() => handleLocalAgentControl(localPrimaryAction)}
+                disabled={controlBusy !== null}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-50 transition-colors"
+                title={localPrimaryAction === 'restart' ? '重启本机 Agent' : '启动本机 Agent'}
+              >
+                {controlBusy === localPrimaryAction ? <RefreshCw className="size-3 animate-spin" /> : <Power className="size-3" />}
+                {localPrimaryAction === 'restart' ? '重启' : '启动'}
+              </button>
+            )}
             {isCloud && (
               <button
                 onClick={handleToggleDisabled}

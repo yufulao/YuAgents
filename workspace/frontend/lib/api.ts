@@ -737,6 +737,16 @@ class WorkspaceApi {
     });
   }
 
+  async controlManagedAgent(agentName: string, action: 'start' | 'restart' | 'stop'): Promise<{ agent: WorkspaceAgent; control: Record<string, unknown> }> {
+    return this.request<{ agent: WorkspaceAgent; control: Record<string, unknown> }>(
+      `/v1/workspaces/${this.workspaceId}/agents/${agentName}/control`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      },
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Cloud agents
   // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -40,6 +40,7 @@ from app.models import (
 )
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _workspace_filter
+from app.services.local_agent_control import LocalAgentControlError, control_local_agent
 
 logger = logging.getLogger(__name__)
 
@@ -556,6 +557,10 @@ class ManagedAgentCreateRequest(BaseModel):
     managed_metadata: Optional[dict] = None
 
 
+class LocalAgentControlRequest(BaseModel):
+    action: str = Field(default="start", pattern=r"^(start|restart|stop)$")
+
+
 def _validate_agent_config(body) -> Optional[str]:
     if not AGENT_NAME_RE.match(body.agent_name):
         return "Agent name must be 1-64 chars and cannot contain whitespace, @, :, /, or \\"
@@ -658,6 +663,85 @@ def delete_managed_agent(
     authorization: Optional[str] = Header(None),
 ):
     return remove_member(workspace_id, agent_name, db, x_workspace_token, authorization)
+
+
+@router.post("/{workspace_id}/agents/{agent_name}/control")
+def control_managed_agent(
+    workspace_id: str,
+    agent_name: str,
+    body: LocalAgentControlRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Start, restart, or stop a Web-managed local agent through agent-connector."""
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member:
+        return json_response(ResponseCode.NOT_FOUND, "Member not found")
+
+    cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace.id,
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+
+    agent_type = (cfg.agent_type if cfg else member.agent_type) or "local"
+    if agent_type.startswith("cloud:"):
+        return json_response(ResponseCode.BAD_REQUEST, "Cloud agents are not controlled by the local daemon")
+
+    metadata = dict(cfg.config_metadata or {}) if cfg else {}
+    if metadata.get("disabled"):
+        return json_response(ResponseCode.BAD_REQUEST, "Agent is disabled; enable it before starting")
+
+    endpoint = str(request.base_url).rstrip("/")
+    try:
+        result = control_local_agent(
+            action=body.action,
+            endpoint=endpoint,
+            workspace={
+                "id": str(workspace.id),
+                "slug": workspace.slug,
+                "name": workspace.name,
+                "token": workspace.password_hash,
+            },
+            agent={
+                "name": member.agent_name,
+                "type": agent_type,
+                "role": member.role,
+                "workingDir": (cfg.working_dir if cfg and cfg.working_dir is not None else member.working_dir),
+            },
+        )
+    except LocalAgentControlError as exc:
+        return json_response(ResponseCode.BAD_REQUEST, str(exc))
+
+    if body.action == "stop":
+        member.status = "offline"
+    else:
+        member.status = "starting"
+    db.commit()
+
+    now = datetime.now(timezone.utc)
+    return success_response({
+        "agent": _format_member_agent(member, now, cfg),
+        "control": result,
+    })
 
 
 # ---------------------------------------------------------------------------
