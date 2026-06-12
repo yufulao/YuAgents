@@ -49,6 +49,10 @@ if not exist "%FRONTEND_DIR%\package.json" (
   exit /b 1
 )
 
+echo Stopping existing local Web processes on ports 8000 and 3001...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "foreach ($port in 8000,3001) { Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }" >nul 2>nul
+timeout /t 1 /nobreak >nul
+
 echo Starting backend on http://127.0.0.1:8000
 (
   echo @echo off
@@ -61,6 +65,15 @@ echo Starting backend on http://127.0.0.1:8000
 ) > "%BACKEND_CMD%"
 start "OpenAgents backend :8000" cmd /k call "%BACKEND_CMD%"
 
+echo Waiting for backend API...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; for ($i=0; $i -lt 60; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8000/v1/workspaces' -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ok=$true; break } } catch {}; Start-Sleep -Seconds 1 }; if (-not $ok) { exit 1 }"
+if errorlevel 1 (
+  echo [ERROR] Backend did not become ready on http://127.0.0.1:8000.
+  echo Check the "OpenAgents backend :8000" window for the real error.
+  pause
+  exit /b 1
+)
+
 echo Starting frontend on http://localhost:3001
 (
   echo @echo off
@@ -72,12 +85,20 @@ echo Starting frontend on http://localhost:3001
 ) > "%FRONTEND_CMD%"
 start "OpenAgents frontend :3001" cmd /k call "%FRONTEND_CMD%"
 
+echo Waiting for frontend Web page...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; for ($i=0; $i -lt 90; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3001' -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ok=$true; break } } catch {}; Start-Sleep -Seconds 1 }; if (-not $ok) { exit 1 }"
+if errorlevel 1 (
+  echo [ERROR] Frontend did not become ready on http://localhost:3001.
+  echo Check the "OpenAgents frontend :3001" window for the real error.
+  pause
+  exit /b 1
+)
+
 echo.
-echo Two terminal windows were opened. Keep them open while using OpenAgents.
-echo Browser will open shortly:
+echo OpenAgents local Web is ready.
+echo Keep the backend and frontend windows open while using OpenAgents.
 echo http://localhost:3001
 echo.
-timeout /t 4 /nobreak >nul
 start "" "http://localhost:3001"
 
 endlocal
