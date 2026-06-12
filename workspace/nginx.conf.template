@@ -19,11 +19,23 @@ server {
     # local control plane reached through LOCAL_CONTROL_API_URL.
     location /v1/ {
         proxy_pass ${LOCAL_CONTROL_API_URL};
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @local_control_unavailable;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location @local_control_unavailable {
+        default_type application/json;
+        return 502 '{"code":502,"message":"Remote relay cannot reach the local control API. Set LOCAL_CONTROL_API_URL to a reachable local-control endpoint or SSH reverse tunnel. Current upstream: ${LOCAL_CONTROL_API_URL}","data":null}';
+    }
+
+    location = /relay-health {
+        default_type application/json;
+        return 200 '{"ok":true,"role":"remote-relay"}';
     }
 
     location / {

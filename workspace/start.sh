@@ -8,6 +8,16 @@ cd "$SCRIPT_DIR"
 : "${REMOTE_WEB_BIND:=127.0.0.1}"
 : "${PUBLIC_URL:=http://localhost:${REMOTE_WEB_PORT}}"
 : "${LOCAL_CONTROL_API_URL:=http://host.docker.internal:8000}"
+: "${CONTROL_CHECK_URL:=${LOCAL_CONTROL_API_URL}}"
+
+case "$CONTROL_CHECK_URL" in
+  http://host.docker.internal:*)
+    CONTROL_CHECK_URL="http://127.0.0.1:${CONTROL_CHECK_URL##*:}"
+    ;;
+  http://host.docker.internal/*)
+    CONTROL_CHECK_URL="http://127.0.0.1/${CONTROL_CHECK_URL#http://host.docker.internal/}"
+    ;;
+esac
 
 export REMOTE_WEB_PORT
 export REMOTE_WEB_BIND
@@ -27,6 +37,7 @@ echo "Starting OpenAgents prod-style local stack..."
 echo "URL: ${PUBLIC_URL}"
 echo "Bind: ${REMOTE_WEB_BIND}:${REMOTE_WEB_PORT}"
 echo "Local control API from Docker: ${LOCAL_CONTROL_API_URL}"
+echo "Local control API preflight from host: ${CONTROL_CHECK_URL}"
 echo "Workspace creation: disabled"
 echo "Workspace directory: disabled"
 echo "Workspace authority: local control plane"
@@ -44,6 +55,19 @@ fetch_ok() {
 }
 
 echo
+echo "Checking local control plane at ${CONTROL_CHECK_URL} ..."
+if ! fetch_ok "${CONTROL_CHECK_URL%/}/v1/agent-catalog"; then
+  echo "[ERROR] Local control plane is not reachable from the server host at ${CONTROL_CHECK_URL}." >&2
+  echo "Start the local control plane first, or create an SSH reverse tunnel to this server." >&2
+  echo "Example from your local machine:" >&2
+  echo "  ssh -N -R 8000:127.0.0.1:8000 root@YOUR_SERVER" >&2
+  echo "Then rerun with:" >&2
+  echo "  LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 bash start.sh" >&2
+  echo "If your tunnel listens on a different server port, set both LOCAL_CONTROL_API_URL and CONTROL_CHECK_URL." >&2
+  exit 1
+fi
+
+echo
 echo "Running: docker compose -f docker-compose.prod.yml up -d --build --remove-orphans --force-recreate"
 docker compose -f docker-compose.prod.yml up -d --build --remove-orphans --force-recreate
 
@@ -51,7 +75,7 @@ echo
 echo "Waiting for remote relay at ${PUBLIC_URL} ..."
 i=0
 while [ "$i" -lt 60 ]; do
-  if fetch_ok "${PUBLIC_URL}/v1/agent-catalog"; then
+  if fetch_ok "${PUBLIC_URL}/relay-health"; then
     break
   fi
   i=$((i + 1))
@@ -61,6 +85,14 @@ done
 if [ "$i" -ge 60 ]; then
   echo "[ERROR] Remote relay did not become ready at ${PUBLIC_URL}." >&2
   echo "Check Docker logs with: docker compose -f docker-compose.prod.yml logs" >&2
+  exit 1
+fi
+
+if ! fetch_ok "${PUBLIC_URL}/v1/agent-catalog"; then
+  echo "[ERROR] Remote relay is running, but /v1 cannot reach the local control API." >&2
+  echo "Upstream configured for nginx: ${LOCAL_CONTROL_API_URL}" >&2
+  echo "Host preflight URL: ${CONTROL_CHECK_URL}" >&2
+  echo "Check Docker logs with: docker compose -f docker-compose.prod.yml logs nginx" >&2
   exit 1
 fi
 

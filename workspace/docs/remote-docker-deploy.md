@@ -19,7 +19,17 @@ http://host.docker.internal:8000
 ```
 
 For a real Linux server, point `LOCAL_CONTROL_API_URL` at an SSH reverse tunnel
-or another private path back to the local control plane.
+or another private path back to the local control plane. The relay container
+must be able to reach this URL; otherwise `/v1/*` will return a clear 502.
+
+The default Linux setup assumes an SSH reverse tunnel listens on the server
+host at `127.0.0.1:8000`, and Docker reaches that host port as
+`host.docker.internal:8000`:
+
+```text
+server host preflight:  http://127.0.0.1:8000
+nginx container upstream: http://host.docker.internal:8000
+```
 
 ## Start
 
@@ -39,6 +49,28 @@ On Linux/macOS, run the equivalent shell script from `workspace`:
 
 ```sh
 sh start.sh
+```
+
+For a real remote Linux server, first create the reverse tunnel from the local
+machine that runs the authoritative control plane:
+
+```sh
+ssh -N -R 8000:127.0.0.1:8000 root@YOUR_SERVER
+```
+
+Then start the relay on the server:
+
+```sh
+cd /home/OpenAgents/workspace
+LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 bash start.sh
+```
+
+If your reverse tunnel uses a different server port, set both URLs:
+
+```sh
+LOCAL_CONTROL_API_URL=http://host.docker.internal:18000 \
+CONTROL_CHECK_URL=http://127.0.0.1:18000 \
+bash start.sh
 ```
 
 Open:
@@ -69,6 +101,14 @@ Point the relay at a different local-control URL:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\start-remote-docker.ps1 -LocalControlApiUrl http://host.docker.internal:8000 -Build
 ```
+
+On Linux `start.sh` performs two checks:
+
+- `CONTROL_CHECK_URL/v1/agent-catalog` from the server host before Docker build.
+- `PUBLIC_URL/v1/agent-catalog` through nginx after the relay starts.
+
+If the first check fails, the local control plane or reverse tunnel is missing.
+If the second check fails, the container cannot reach `LOCAL_CONTROL_API_URL`.
 
 Check containers:
 
