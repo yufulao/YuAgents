@@ -58,7 +58,7 @@ echo Starting backend on http://127.0.0.1:8000
   echo @echo off
   echo cd /d "%BACKEND_DIR%"
   echo set "DATABASE_URL=sqlite:///./workspace_dev.db"
-  echo set "CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001,http://localhost:3000,http://127.0.0.1:3000"
+  echo set "CORS_ORIGINS=*"
   echo set "WORKSPACE_CREATION_ENABLED=true"
   echo set "WORKSPACE_DIRECTORY_ENABLED=true"
   echo python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
