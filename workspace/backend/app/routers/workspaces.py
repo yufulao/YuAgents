@@ -731,13 +731,14 @@ def control_managed_agent(
     except LocalAgentControlError as exc:
         return json_response(ResponseCode.BAD_REQUEST, str(exc))
 
+    now = datetime.now(timezone.utc)
     if body.action == "stop":
         member.status = "offline"
     else:
         member.status = "starting"
+        member.last_heartbeat = now
     db.commit()
 
-    now = datetime.now(timezone.utc)
     return success_response({
         "agent": _format_member_agent(member, now, cfg),
         "control": result,

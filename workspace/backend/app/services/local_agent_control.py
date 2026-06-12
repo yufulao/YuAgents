@@ -49,7 +49,7 @@ def control_local_agent(
     script = r"""
 const path = require('path');
 const input = JSON.parse(process.env.OA_LOCAL_AGENT_CONTROL || '{}');
-const { AgentConnector } = require(path.join(input.connectorDir, 'src', 'index.js'));
+const { AgentConnector, Daemon } = require(path.join(input.connectorDir, 'src', 'index.js'));
 
 const connector = new AgentConnector({ workspaceEndpoint: input.endpoint });
 const config = connector.config.load();
@@ -85,15 +85,16 @@ else delete agent.path;
 connector.config.save(config);
 
 let pid = connector.getDaemonPid();
+let livePid = Daemon.runningDaemonPid(connector._configDir);
 let daemonStarted = false;
 let command = null;
 const messages = [];
 if (input.action === 'stop') {
-  if (pid) {
+  if (livePid) {
     connector.sendDaemonCommand(`stop:${ag.name}`);
     command = `stop:${ag.name}`;
   }
-} else if (!pid) {
+} else if (!livePid) {
   const originalLog = console.log;
   const originalError = console.error;
   console.log = (...args) => messages.push(args.join(' '));
@@ -107,6 +108,7 @@ if (input.action === 'stop') {
   daemonStarted = true;
   command = 'daemon:start';
   pid = connector.getDaemonPid();
+  livePid = Daemon.runningDaemonPid(connector._configDir) || pid;
 } else {
   const verb = input.action === 'restart' ? 'restart' : 'start';
   connector.sendDaemonCommand(`${verb}:${ag.name}`);
@@ -118,6 +120,7 @@ process.stdout.write(JSON.stringify({
   ok: true,
   action: input.action,
   pid,
+  livePid,
   daemonStarted,
   command,
   messages,
