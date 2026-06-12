@@ -104,6 +104,18 @@ describe('WorkspaceClient', () => {
       });
   });
 
+  it('disconnect includes session_id when provided', () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedBody = null;
+    client._post = async (_path, body) => { capturedBody = body; return { data: {} }; };
+    return client.disconnect('ws-1', 'bary-bot', 'tok', 'sess-leave')
+      .then(() => {
+        assert.equal(capturedBody.agent_name, 'bary-bot');
+        assert.equal(capturedBody.network, 'ws-1');
+        assert.equal(capturedBody.session_id, 'sess-leave');
+      });
+  });
+
   it('pollPending includes session_id when provided', () => {
     const client = new WorkspaceClient('http://127.0.0.1:19999');
     let capturedPath = null;

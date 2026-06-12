@@ -187,15 +187,17 @@ class TestLeaveNetwork:
     def test_leave_online_agent(self, client, workspace):
         """Online agent goes offline after leaving."""
         # Join first
-        client.post("/v1/join", json={
+        joined = client.post("/v1/join", json={
             "agent_name": "agent-beta",
             "token": workspace["token"],
             "network": workspace["id"],
         })
+        sid = joined.json()["data"]["session_id"]
         # Leave
         resp = client.post("/v1/leave", json={
             "agent_name": "agent-beta",
             "network": workspace["id"],
+            "session_id": sid,
         })
         assert resp.status_code == 200
         assert resp.json()["data"]["status"] == "offline"
@@ -419,6 +421,84 @@ class TestSessionEnforcement:
             # no session_id
         })
         assert hb.status_code == 200
+
+    def test_leave_with_current_session_marks_offline(self, client, workspace):
+        """The current session can explicitly leave and mark itself offline."""
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-sess-leave-current",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        sid = joined.json()["data"]["session_id"]
+
+        leave = client.post("/v1/leave", json={
+            "agent_name": "agent-sess-leave-current",
+            "network": workspace["id"],
+            "session_id": sid,
+        })
+        assert leave.status_code == 200
+        assert leave.json()["data"]["status"] == "offline"
+
+        ws = client.get(
+            f"/v1/workspaces/{workspace['id']}",
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        agent = next(a for a in ws.json()["data"]["agents"] if a["agentName"] == "agent-sess-leave-current")
+        assert agent["status"] == "offline"
+
+    def test_stale_leave_does_not_offline_new_session(self, client, workspace):
+        """A previous session's leave cannot clobber a newer online join."""
+        first = client.post("/v1/join", json={
+            "agent_name": "agent-sess-leave-stale",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        stale_sid = first.json()["data"]["session_id"]
+
+        client.post("/v1/join", json={
+            "agent_name": "agent-sess-leave-stale",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+
+        leave = client.post("/v1/leave", json={
+            "agent_name": "agent-sess-leave-stale",
+            "network": workspace["id"],
+            "session_id": stale_sid,
+        })
+        assert leave.status_code == 200
+        assert leave.json()["data"]["status"] == "online"
+        assert leave.json()["data"]["ignored"] is True
+
+        ws = client.get(
+            f"/v1/workspaces/{workspace['id']}",
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        agent = next(a for a in ws.json()["data"]["agents"] if a["agentName"] == "agent-sess-leave-stale")
+        assert agent["status"] == "online"
+
+    def test_legacy_leave_without_session_does_not_offline_sessioned_agent(self, client, workspace):
+        """A pre-session client leave is treated as stale once a session exists."""
+        client.post("/v1/join", json={
+            "agent_name": "agent-sess-leave-legacy",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+
+        leave = client.post("/v1/leave", json={
+            "agent_name": "agent-sess-leave-legacy",
+            "network": workspace["id"],
+        })
+        assert leave.status_code == 200
+        assert leave.json()["data"]["status"] == "online"
+        assert leave.json()["data"]["ignored"] is True
+
+        ws = client.get(
+            f"/v1/workspaces/{workspace['id']}",
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        agent = next(a for a in ws.json()["data"]["agents"] if a["agentName"] == "agent-sess-leave-legacy")
+        assert agent["status"] == "online"
 
     def test_message_post_with_stale_session_is_rejected(self, client, workspace):
         """Events posted with a stale session_id are rejected."""

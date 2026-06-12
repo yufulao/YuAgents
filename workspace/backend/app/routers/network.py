@@ -59,6 +59,7 @@ class JoinRequest(BaseModel):
 class LeaveRequest(BaseModel):
     agent_name: str
     network: str
+    session_id: Optional[str] = None  # issued by /v1/join; stale leave must not offline a newer session
 
 class RemoveRequest(BaseModel):
     agent_name: str
@@ -218,6 +219,7 @@ async def leave_network(
         target="core",
         payload={
             "agent_name": body.agent_name,
+            "session_id": body.session_id,
         },
     )
 
@@ -225,6 +227,9 @@ async def leave_network(
     result = await _emit_event(event, workspace, db, token=workspace.password_hash)
     if result is None:
         return json_response(ResponseCode.NOT_FOUND, "Agent not in network")
+
+    if result.metadata.get("session_error") == "session_revoked":
+        return success_response({"agent_name": body.agent_name, "status": "online", "ignored": True})
 
     return success_response({"agent_name": body.agent_name, "status": "offline"})
 

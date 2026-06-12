@@ -153,7 +153,7 @@ def _validate_session(db, workspace_id, agent_name: str, claimed_session: Option
 
 
 async def _handle_agent_leave(event: Event, ctx: PipelineContext) -> Optional[Event]:
-    """network.agent.leave → set member offline."""
+    """network.agent.leave → set member offline for the current session."""
     from app.models import WorkspaceMember
 
     db = ctx.extra["db"]
@@ -171,6 +171,16 @@ async def _handle_agent_leave(event: Event, ctx: PipelineContext) -> Optional[Ev
 
     if not member:
         return None
+
+    claimed_session = (event.payload or {}).get("session_id")
+    if member.session_id and claimed_session != member.session_id:
+        logger.info(
+            "workspace_mod: ignored stale leave for %s in %s",
+            agent_name,
+            workspace.id,
+        )
+        event.metadata["session_error"] = "session_revoked"
+        return event
 
     member.status = "offline"
     db.flush()

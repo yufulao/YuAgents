@@ -127,12 +127,14 @@ class WorkspaceClient {
   /**
    * Disconnect agent via POST /v1/leave. Best-effort (ignores errors).
    */
-  async disconnect(workspaceId, agentName, token) {
+  async disconnect(workspaceId, agentName, token, sessionId) {
     try {
-      await this._post('/v1/leave', {
+      const body = {
         agent_name: agentName,
         network: workspaceId,
-      }, this._wsHeaders(token));
+      };
+      if (sessionId) body.session_id = sessionId;
+      await this._post('/v1/leave', body, this._wsHeaders(token));
     } catch {}
   }
 

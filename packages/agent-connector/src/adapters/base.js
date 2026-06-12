@@ -130,7 +130,7 @@ class BaseAdapter {
       clearInterval(heartbeatInterval);
       try { await controlPoller; } catch {}
       try {
-        await this.client.disconnect(this.workspaceId, this.agentName, this.token);
+        await this.client.disconnect(this.workspaceId, this.agentName, this.token, this._sessionId);
       } catch {}
     }
   }
