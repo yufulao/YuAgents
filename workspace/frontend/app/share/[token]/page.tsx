@@ -6,8 +6,7 @@ import Avatar from 'boring-avatars';
 import { MarkdownContent } from '@/components/chat/markdown-content';
 import { Loader2 } from 'lucide-react';
 import type { SharedSnapshotMessage } from '@/lib/types';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org';
+import { getApiUrl } from '@/lib/api-url';
 
 const OA_PALETTE = ['#6C5CE7', '#A29BFE', '#74B9FF', '#0984E3', '#00CEC9'];
 
@@ -69,7 +68,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`${API_URL}/v1/shares/public/${token}`);
+        const res = await fetch(`${getApiUrl()}/v1/shares/public/${token}`);
         if (!res.ok) {
           setError('This shared conversation could not be found or has been removed.');
           return;

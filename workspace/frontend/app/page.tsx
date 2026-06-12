@@ -68,6 +68,7 @@ function LandingPage() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newAgent, setNewAgent] = useState('');
+  const [createdWorkspace, setCreatedWorkspace] = useState<{ workspaceId: string; slug: string; name: string; token: string } | null>(null);
 
   const loadLocalWorkspaces = useCallback(async () => {
     setLoading(true);
@@ -118,7 +119,11 @@ function LandingPage() {
         agentName: newAgent.trim() || undefined,
         agentType: newAgent.trim() ? 'codex' : undefined,
       });
-      router.push(`/${ws.slug}?token=${encodeURIComponent(ws.token)}`);
+      setCreatedWorkspace(ws);
+      setWorkspaceSlug(ws.slug);
+      setWorkspaceToken(ws.token);
+      setTokens(getLocalWorkspaceTokens());
+      await loadLocalWorkspaces();
     } catch (err) {
       setError(err instanceof Error ? err.message : '创建本机工作区失败');
     } finally {
@@ -226,7 +231,7 @@ function LandingPage() {
             <form onSubmit={createLocal} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold">创建 Workspace</h2>
-                <p className="text-xs text-muted-foreground mt-1">创建后 token 会保存在当前浏览器，用于下次直接进入。</p>
+                <p className="text-xs text-muted-foreground mt-1">创建后会显示 token，并保存在当前浏览器。</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="new-workspace-name">名称</Label>
@@ -248,8 +253,42 @@ function LandingPage() {
               </div>
               <Button type="submit" disabled={!newName.trim() || creating} className="w-full">
                 {creating ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
-                创建并进入
+                创建 Workspace
               </Button>
+              {createdWorkspace && (
+                <div className="rounded-md border bg-muted/40 p-3 space-y-3">
+                  <div>
+                    <p className="text-xs font-medium">已创建：{createdWorkspace.name}</p>
+                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{createdWorkspace.slug}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">管理 Token</Label>
+                    <div className="flex gap-2">
+                      <Input value={createdWorkspace.token} readOnly className="h-8 text-xs font-mono" />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="size-8 shrink-0"
+                        title="复制 token"
+                        onClick={() => navigator.clipboard?.writeText(createdWorkspace.token)}
+                      >
+                        <Copy className="size-3.5" />
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">如果自动进入失败，用这个 slug/token 在下方打开。</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => router.push(`/${createdWorkspace.slug}?token=${encodeURIComponent(createdWorkspace.token)}`)}
+                  >
+                    进入工作区
+                    <ArrowRight className="size-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </form>
 
             <form onSubmit={openWorkspace} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">

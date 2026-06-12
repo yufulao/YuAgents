@@ -24,8 +24,7 @@ import type {
   WorkspaceSession,
 } from './types';
 import { eventToMessage } from './types';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org';
+import { getApiUrl } from './api-url';
 
 /** Map snake_case file response from backend to camelCase WorkspaceFile. */
 function mapFileResponse(raw: Record<string, unknown>): WorkspaceFile {
@@ -62,7 +61,7 @@ class WorkspaceApi {
       channel: channelName,
     });
     if (this.token) params.set('token', this.token);
-    return `${API_URL}/v1/events/stream?${params}`;
+    return `${getApiUrl()}/v1/events/stream?${params}`;
   }
 
   /** Whether configure() has run with a non-empty workspace id. */
@@ -93,7 +92,7 @@ class WorkspaceApi {
       authHeaders['Authorization'] = `Bearer ${this.bearerToken}`;
     }
 
-    const url = `${API_URL}${path}`;
+    const url = `${getApiUrl()}${path}`;
     const res = await fetch(url, {
       ...options,
       cache: 'no-store',
@@ -341,7 +340,7 @@ class WorkspaceApi {
     if (this.token) authHeaders['X-Workspace-Token'] = this.token;
     if (this.bearerToken) authHeaders['Authorization'] = `Bearer ${this.bearerToken}`;
 
-    const url = `${API_URL}/v1/files`;
+    const url = `${getApiUrl()}/v1/files`;
     const res = await fetch(url, {
       method: 'POST',
       headers: authHeaders,
@@ -373,7 +372,7 @@ class WorkspaceApi {
     const params = new URLSearchParams();
     if (this.token) params.set('token', this.token);
     const qs = params.toString();
-    return `${API_URL}/v1/files/${fileId}${qs ? `?${qs}` : ''}`;
+    return `${getApiUrl()}/v1/files/${fileId}${qs ? `?${qs}` : ''}`;
   }
 
   /** Delete a file. */
@@ -567,7 +566,7 @@ class WorkspaceApi {
 
   /** Get screenshot URL for a browser tab. */
   getBrowserScreenshotUrl(tabId: string): string {
-    return `${API_URL}/v1/browser/tabs/${tabId}/screenshot`;
+    return `${getApiUrl()}/v1/browser/tabs/${tabId}/screenshot`;
   }
 
   /** Remove persistent state from a browser tab (revert to temporal). */

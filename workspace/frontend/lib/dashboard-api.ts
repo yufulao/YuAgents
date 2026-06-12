@@ -1,7 +1,6 @@
 import { getStoredAuth, refreshAccessToken } from './auth';
+import { getApiUrl } from './api-url';
 import type { Workspace } from './types';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org';
 
 export interface WorkspaceSummary {
   workspaceId: string;
@@ -32,7 +31,7 @@ async function authFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   const { accessToken } = getStoredAuth();
 
   const doFetch = async (token: string) =>
-    fetch(`${API_URL}${path}`, {
+    fetch(`${getApiUrl()}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -85,7 +84,7 @@ export async function createWorkspace(
 }
 
 async function localFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     cache: 'no-store',
     headers: {

@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://workspace-endpoint.openagents.org';
+import { getApiUrl } from './api-url';
 
 const STORAGE_KEYS = {
   accessToken: 'oa_access_token',
@@ -42,7 +42,7 @@ export function clearAuth() {
 }
 
 export async function login(email: string, password: string): Promise<AuthState> {
-  const res = await fetch(`${API_URL}/v1/auth/login`, {
+  const res = await fetch(`${getApiUrl()}/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -59,7 +59,7 @@ export async function login(email: string, password: string): Promise<AuthState>
 export async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken } = getStoredAuth();
   if (!refreshToken) return null;
-  const res = await fetch(`${API_URL}/v1/auth/refresh`, {
+  const res = await fetch(`${getApiUrl()}/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken }),
