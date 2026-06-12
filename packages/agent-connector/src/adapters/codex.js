@@ -314,31 +314,7 @@ class CodexAdapter extends BaseAdapter {
 
     // Run up to 2 attempts: first with resume, then fresh if stale
     for (let attempt = 0; attempt < 2; attempt++) {
-      const cmd = [this._codexBin, 'exec'];
-
-      // Resume existing thread for this channel
-      const threadId = this._channelThreads[msgChannel];
-      if (threadId && attempt === 0) {
-        cmd.push('resume', threadId);
-      }
-
-      cmd.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check');
-
-      // Model override
-      if (this._directModel) {
-        cmd.push('-m', this._directModel);
-      }
-      if (this._reasoningEffort) {
-        cmd.push('-c', `model_reasoning_effort="${this._reasoningEffort}"`);
-      }
-      if (this._serviceTier && this._serviceTier !== 'default') {
-        cmd.push('-c', `model_service_tier="${this._serviceTier}"`);
-      }
-
-      // Working directory
-      if (this.workingDir) {
-        cmd.push('-C', this.workingDir);
-      }
+      const { cmd, threadId } = this._buildCodexExecCommand(msgChannel, attempt);
 
       this._log(`Spawning: codex exec ${threadId && attempt === 0 ? `resume ${threadId} ` : ''}--json --full-auto -m ${this._directModel || 'default'}`);
 
@@ -364,6 +340,36 @@ class CodexAdapter extends BaseAdapter {
         return;
       }
     }
+  }
+
+  _buildCodexExecCommand(msgChannel, attempt = 0) {
+    const cmd = [this._codexBin, 'exec'];
+
+    // Resume existing thread for this channel
+    const threadId = this._channelThreads[msgChannel];
+    if (threadId && attempt === 0) {
+      cmd.push('resume', threadId);
+    }
+
+    cmd.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check');
+
+    // Model override
+    if (this._directModel) {
+      cmd.push('-m', this._directModel);
+    }
+    if (this._reasoningEffort) {
+      cmd.push('-c', `model_reasoning_effort="${this._reasoningEffort}"`);
+    }
+    if (this._serviceTier && this._serviceTier !== 'default') {
+      cmd.push('-c', `service_tier="${this._serviceTier}"`);
+    }
+
+    // Working directory
+    if (this.workingDir) {
+      cmd.push('-C', this.workingDir);
+    }
+
+    return { cmd, threadId };
   }
 
   async _spawnCodex(cmd, env, msgChannel, prompt) {
