@@ -20,7 +20,7 @@ const http = require('http');
 const https = require('https');
 
 const BaseAdapter = require('./base');
-const { buildOpenclawSystemPrompt } = require('./workspace-prompt');
+const { buildCodexSystemPrompt } = require('./workspace-prompt');
 
 const IS_WINDOWS = process.platform === 'win32';
 const MAX_HISTORY_ENTRIES = 50;
@@ -185,7 +185,7 @@ class CodexAdapter extends BaseAdapter {
   }
 
   _buildSystemContext(channelName) {
-    const base = buildOpenclawSystemPrompt({
+    const base = buildCodexSystemPrompt({
       agentName: this.agentName,
       workspaceId: this.workspaceId,
       channelName,

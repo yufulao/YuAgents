@@ -424,6 +424,69 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
 }
 
 /**
+ * Compact workspace API reference for adapters that already have strong native
+ * tool use and pay for every prompt turn. It preserves the capability map and
+ * auth details without repeating long curl examples unless the agent actually
+ * needs to inspect an endpoint.
+ */
+function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode = 'execute' }) {
+  const disabled = disabledModules || new Set();
+  const baseUrl = endpoint.replace(/\/+$/, '');
+  const isPlan = mode === 'plan';
+  const lines = [
+    '## Workspace API',
+    'Use workspace APIs only when the task needs shared workspace state; ordinary answers do not need API calls.',
+    `Base URL: ${baseUrl}`,
+    `Auth: X-Workspace-Token: ${token}`,
+    `Workspace/network: ${workspaceId}`,
+    `Current channel: ${channelName}`,
+    `Source for your events: openagents:${agentName}`,
+    '',
+    'Common read endpoints:',
+    `- History: GET /v1/events?network=${workspaceId}&channel=${channelName}&type=workspace.message&sort=desc&limit=20`,
+    `- Agents: GET /v1/discover?network=${workspaceId}`,
+  ];
+
+  if (!disabled.has('files')) {
+    lines.push('- Files: GET /v1/files?network=...; GET /v1/files/{id}; GET /v1/files/{id}/info');
+  }
+  if (!disabled.has('browser')) {
+    lines.push('- Shared browser: GET /v1/browser/tabs?network=...; GET /v1/browser/tabs/{id}/snapshot; GET /v1/browser/tabs/{id}/screenshot');
+  }
+  if (!disabled.has('knowledge')) {
+    lines.push('- Knowledge: GET /v1/knowledge?network=...; GET /v1/knowledge/by-slug/{slug}?network=...');
+  }
+  if (!disabled.has('todos')) {
+    lines.push('- Todos: GET /v1/todos?network=...&channel=...');
+  }
+  if (!disabled.has('timers')) {
+    lines.push('- Timers: GET /v1/timers?network=...&channel=...');
+  }
+  if (!disabled.has('routines')) {
+    lines.push('- Routines: GET /v1/routines?network=...');
+  }
+
+  if (!isPlan) {
+    lines.push(
+      '',
+      'Common write endpoints:',
+      '- Post status/chat: POST /v1/events with type=workspace.message.posted, target=channel/<name>, payload.content, payload.message_type.',
+    );
+    if (!disabled.has('files')) lines.push('- Upload file: POST /v1/files/base64 with filename, content_base64, content_type, network, source, channel_name.');
+    if (!disabled.has('browser')) lines.push('- Browser actions: POST /v1/browser/tabs, /tabs/{id}/navigate, /click, /type; DELETE /tabs/{id}.');
+    if (!disabled.has('todos')) lines.push('- Update todos: PUT /v1/todos with todos[], network, channel, source.');
+    if (!disabled.has('timers')) lines.push('- Create/cancel timer: POST /v1/timers; DELETE /v1/timers/{id}.');
+    if (!disabled.has('routines')) lines.push('- Create/cancel routine: POST /v1/routines; DELETE /v1/routines/{id}.');
+  }
+
+  lines.push(
+    '',
+    'For JSON requests, use your shell/curl tool with Content-Type: application/json and the auth header above.',
+  );
+  return lines.join('\n') + '\n';
+}
+
+/**
  * Guardrails shared across all adapter prompt builders.
  */
 function buildGuardrails() {
@@ -447,7 +510,7 @@ function buildGuardrails() {
  * Build the system prompt for Claude adapter (MCP-based).
  * Claude gets identity + collaboration instructions but NOT API skills.
  */
-function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = 'execute', browserEnabled = false }) {
+function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = 'execute', browserEnabled = false, includeA2UI = false }) {
   const parts = [];
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
   parts.push(
@@ -462,7 +525,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
   );
   parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());
-  parts.push(buildA2UIPrompt());
+  if (includeA2UI) parts.push(buildA2UIPrompt());
 
   if (mode === 'plan') {
     parts.push(
@@ -473,6 +536,24 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
 
   parts.push(buildGuardrails());
 
+  return parts.join('\n');
+}
+
+/**
+ * Build the system prompt for Codex CLI. Codex receives this on every turn,
+ * including resumed threads, so keep it compact and high-signal.
+ */
+function buildCodexSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules, browserEnabled = false, includeA2UI = false }) {
+  const parts = [];
+  parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
+  parts.push(buildBrowserDirective(browserEnabled));
+  parts.push(buildCollaborationPrompt());
+  if (includeA2UI) parts.push(buildA2UIPrompt());
+  parts.push(buildModePrompt(mode));
+  parts.push(buildCompactApiSkillsPrompt({
+    endpoint, workspaceId, token, agentName, channelName, disabledModules, mode,
+  }));
+  parts.push(buildGuardrails());
   return parts.join('\n');
 }
 
@@ -705,7 +786,9 @@ module.exports = {
   buildModePrompt,
   buildGuardrails,
   buildApiSkillsPrompt,
+  buildCompactApiSkillsPrompt,
   buildClaudeSystemPrompt,
+  buildCodexSystemPrompt,
   buildOpenclawSystemPrompt,
   buildOpenclawSkillMd,
   buildOpenCodeSystemPrompt,
