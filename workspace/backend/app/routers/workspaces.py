@@ -121,6 +121,10 @@ class PresencePingRequest(BaseModel):
     senderDisplayName: Optional[str] = None
 
 
+class WorkspaceResolveRequest(BaseModel):
+    workspace: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -360,6 +364,58 @@ async def skill_catalog():
     """Return the full skill catalog (public, static data)."""
     from app.skill_catalog import get_catalog
     return success_response(get_catalog())
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/workspaces/resolve — Resolve entry input to canonical workspace slug
+# ---------------------------------------------------------------------------
+
+@router.post("/resolve")
+def resolve_workspace(
+    body: WorkspaceResolveRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Resolve a user-entered workspace slug/id/name to canonical workspace data.
+
+    The workbench should run on canonical slugs after this point because many
+    realtime/event endpoints use the network id as an exact id/slug. Names are
+    accepted only here, and only when they uniquely identify one active
+    workspace.
+    """
+    value = body.workspace.strip()
+    if not value:
+        return json_response(ResponseCode.BAD_REQUEST, "Workspace name or slug is required")
+
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(value))
+    ).scalar_one_or_none()
+
+    if not workspace:
+        matches = db.execute(
+            select(Workspace).where(
+                Workspace.status != "deleted",
+                Workspace.name == value,
+            )
+        ).scalars().all()
+        if len(matches) > 1:
+            return json_response(ResponseCode.BAD_REQUEST, "Multiple workspaces have this name; use the workspace slug")
+        workspace = matches[0] if matches else None
+
+    if not workspace or workspace.status == "deleted":
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+
+    members = db.execute(
+        select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
+    ).scalars().all()
+    _attach_agent_configs(db, str(workspace.id), members)
+
+    now = datetime.now(timezone.utc)
+    return success_response(_format_workspace(workspace, members, now))
 
 
 # ---------------------------------------------------------------------------

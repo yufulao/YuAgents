@@ -122,9 +122,9 @@ function LandingPage() {
     setOpeningWorkspace(true);
     setError('');
     try {
-      await verifyWorkspaceAccess(slug, token);
-      if (token) rememberLocalWorkspaceToken(slug, token);
-      router.push(token ? `/${slug}?token=${encodeURIComponent(token)}` : `/${slug}`);
+      const workspace = await verifyWorkspaceAccess(slug, token);
+      if (token) rememberLocalWorkspaceToken(workspace.slug, token);
+      router.push(token ? `/${workspace.slug}?token=${encodeURIComponent(token)}` : `/${workspace.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'workspace slug 或 token 不正确');
     } finally {

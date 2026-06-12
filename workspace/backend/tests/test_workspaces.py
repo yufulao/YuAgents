@@ -118,6 +118,51 @@ class TestGetWorkspace:
         resp = client.get("/v1/workspaces/nonexistent")
         assert resp.status_code == 404
 
+    def test_resolve_workspace_by_name_returns_canonical_slug(self, client, workspace):
+        """Entry form can accept a unique workspace display name."""
+        resp = client.post(
+            "/v1/workspaces/resolve",
+            headers={"X-Workspace-Token": workspace["token"]},
+            json={"workspace": workspace["name"]},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["workspaceId"] == workspace["id"]
+        assert data["slug"] == workspace["slug"]
+
+    def test_resolve_workspace_name_requires_valid_token(self, client, workspace):
+        """A matching name is not enough without the workspace token."""
+        resp = client.post(
+            "/v1/workspaces/resolve",
+            headers={"X-Workspace-Token": "wrong"},
+            json={"workspace": workspace["name"]},
+        )
+
+        assert resp.status_code == 401
+
+    def test_resolve_workspace_rejects_ambiguous_active_name(self, client):
+        """Names are accepted only when they identify one active workspace."""
+        one = client.post("/v1/workspaces", json={"name": "DuplicateName"}).json()["data"]
+        two = client.post("/v1/workspaces", json={"name": "DuplicateName"}).json()["data"]
+
+        resp = client.post(
+            "/v1/workspaces/resolve",
+            headers={"X-Workspace-Token": one["token"]},
+            json={"workspace": "DuplicateName"},
+        )
+
+        assert resp.status_code == 400
+        assert "Multiple workspaces" in resp.json()["message"]
+
+        by_slug = client.post(
+            "/v1/workspaces/resolve",
+            headers={"X-Workspace-Token": two["token"]},
+            json={"workspace": two["slug"]},
+        )
+        assert by_slug.status_code == 200
+        assert by_slug.json()["data"]["workspaceId"] == two["workspaceId"]
+
 
 class TestUpdateWorkspace:
     """PATCH /v1/workspaces/{id} — update workspace."""

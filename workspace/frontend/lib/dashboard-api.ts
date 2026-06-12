@@ -123,9 +123,11 @@ export async function listLocalWorkspaces(): Promise<Workspace[]> {
   return localFetch<Workspace[]>('/v1/workspaces');
 }
 
-export async function verifyWorkspaceAccess(slug: string, token: string): Promise<Workspace> {
-  return localFetch<Workspace>(`/v1/workspaces/${encodeURIComponent(slug)}`, {
+export async function verifyWorkspaceAccess(workspace: string, token: string): Promise<Workspace> {
+  return localFetch<Workspace>('/v1/workspaces/resolve', {
+    method: 'POST',
     headers: token ? { 'X-Workspace-Token': token } : {},
+    body: JSON.stringify({ workspace }),
   });
 }
 
