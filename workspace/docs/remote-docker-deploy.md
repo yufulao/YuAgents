@@ -63,6 +63,14 @@ It is commonly `172.17.0.1`. Then create the reverse tunnel from the local
 machine that runs the authoritative control plane, binding the server side to
 that gateway address:
 
+The local machine does not need a public inbound IP. It only needs outbound SSH
+access to the server. If the server firewall blocks port 22, allow TCP 22 only
+from the local machine's current egress IP, which can be checked with:
+
+```sh
+curl https://ifconfig.me
+```
+
 ```sh
 ssh -N -R 172.17.0.1:8000:127.0.0.1:8000 root@YOUR_SERVER
 ```
