@@ -2,9 +2,8 @@ param(
   [int]$Port = 18080,
   [string]$Bind = "127.0.0.1",
   [string]$PublicUrl = "",
+  [string]$LocalControlApiUrl = "http://host.docker.internal:8000",
   [string]$ProjectName = "openagents-remote-sim",
-  [string]$DbPassword = "remote-sim-dev",
-  [switch]$ImportLocalWorkspaces,
   [switch]$Build,
   [switch]$Down,
   [switch]$Logs,
@@ -15,7 +14,6 @@ $ErrorActionPreference = "Stop"
 
 $WorkspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ComposeFile = Join-Path $WorkspaceRoot "docker-compose.prod.yml"
-$ImportScript = Join-Path $PSScriptRoot "import-local-workspaces-to-docker.ps1"
 
 function Quote-Cmd([string]$Value) {
   return '"' + ($Value -replace '"', '\"') + '"'
@@ -35,9 +33,9 @@ function Set-RemoteEnv {
 
   $env:REMOTE_WEB_BIND = $Bind
   $env:REMOTE_WEB_PORT = [string]$Port
-  $env:DB_PASSWORD = $DbPassword
   $env:API_URL = $PublicUrl
   $env:CORS_ORIGINS = $PublicUrl
+  $env:LOCAL_CONTROL_API_URL = $LocalControlApiUrl
   $env:WORKSPACE_CREATION_ENABLED = "false"
   $env:WORKSPACE_DIRECTORY_ENABLED = "false"
   $env:NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED = "false"
@@ -74,19 +72,12 @@ if ($Status) {
   return
 }
 
-$upArgs = @("up", "-d")
+$upArgs = @("up", "-d", "--remove-orphans", "--force-recreate")
 if ($Build) {
   $upArgs += "--build"
 }
 
 Invoke-Compose $upArgs
-
-if ($ImportLocalWorkspaces) {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File $ImportScript -ProjectName $ProjectName
-  if ($LASTEXITCODE -ne 0) {
-    throw "Local workspace import failed"
-  }
-}
 
 $deadline = (Get-Date).AddSeconds(120)
 $healthUrl = "$PublicUrl/v1/agent-catalog"
@@ -99,7 +90,8 @@ while ((Get-Date) -lt $deadline) {
       Write-Host "Project: $ProjectName"
       Write-Host "Workspace creation: disabled"
       Write-Host "Workspace directory: disabled"
-      Write-Host "No workspace was created or seeded by this script."
+      Write-Host "Local control API: $LocalControlApiUrl"
+      Write-Host "No workspace data is stored or synced on the remote Docker stack."
       return
     }
   } catch {}

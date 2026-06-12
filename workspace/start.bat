@@ -7,9 +7,7 @@ if not defined REMOTE_WEB_PORT set "REMOTE_WEB_PORT=18080"
 if not defined REMOTE_WEB_BIND set "REMOTE_WEB_BIND=127.0.0.1"
 if not defined PUBLIC_URL set "PUBLIC_URL=http://localhost:%REMOTE_WEB_PORT%"
 if not defined API_URL set "API_URL=%PUBLIC_URL%"
-if not defined CORS_ORIGINS set "CORS_ORIGINS=%PUBLIC_URL%"
-if not defined DB_PASSWORD set "DB_PASSWORD=changeme"
-if not defined SYNC_LOCAL_WORKSPACES set "SYNC_LOCAL_WORKSPACES=1"
+if not defined LOCAL_CONTROL_API_URL set "LOCAL_CONTROL_API_URL=http://host.docker.internal:8000"
 
 set "WORKSPACE_CREATION_ENABLED=false"
 set "WORKSPACE_DIRECTORY_ENABLED=false"
@@ -25,37 +23,27 @@ if errorlevel 1 (
 echo Starting OpenAgents prod-style local stack...
 echo URL: %API_URL%
 echo Bind: %REMOTE_WEB_BIND%:%REMOTE_WEB_PORT%
+echo Local control API from Docker: %LOCAL_CONTROL_API_URL%
 echo Workspace creation: disabled
 echo Workspace directory: disabled
-
-if /I "%SKIP_MIGRATIONS%"=="1" goto start_stack
-
-echo.
-echo Preparing database schema...
-docker compose -f docker-compose.prod.yml up -d db
-if errorlevel 1 exit /b %errorlevel%
-
-docker compose -f docker-compose.prod.yml run --rm --build --entrypoint alembic backend upgrade head
-if errorlevel 1 exit /b %errorlevel%
-
-:start_stack
-echo.
-echo Running: docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml up -d --build
-if errorlevel 1 exit /b %errorlevel%
-
-if /I "%SYNC_LOCAL_WORKSPACES%"=="0" goto skip_import
-if /I "%SYNC_LOCAL_WORKSPACES%"=="false" goto skip_import
-if not exist "backend\workspace_dev.db" goto skip_import
+echo Workspace authority: local control plane
 
 echo.
-echo Importing existing active local workspaces into the Docker database...
-echo This does not generate new workspace tokens.
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\import-local-workspaces-to-docker.ps1
+echo Checking local control plane at http://127.0.0.1:8000 ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8000/v1/agent-catalog' -TimeoutSec 3; if ($r.StatusCode -eq 200) { $ok=$true } } catch {}; if (-not $ok) { exit 1 }"
+if errorlevel 1 (
+  echo [ERROR] Local control plane is not reachable on http://127.0.0.1:8000.
+  echo Start the local control plane first with ..\start.bat, then run this script again.
+  exit /b 1
+)
+
+echo.
+echo Running: docker compose -f docker-compose.prod.yml up -d --build --remove-orphans --force-recreate
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans --force-recreate
 if errorlevel 1 exit /b %errorlevel%
 
-:skip_import
 echo.
 echo OpenAgents is running at %API_URL%
 echo Use an existing workspace slug/name and token/password.
+echo The server forwards /v1 requests to the local control plane; it does not store workspace authority.
 echo To stop: docker compose -f docker-compose.prod.yml down

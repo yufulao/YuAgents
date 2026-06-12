@@ -1,7 +1,8 @@
 # Remote Docker Deployment Simulation
 
 This is the local "remote server" flow. It uses the production Docker Compose
-stack and does not create, seed, or enumerate workspaces.
+stack as a relay. It does not create, seed, sync, or enumerate workspaces.
+Workspace authority stays on the local control plane.
 
 Remote mode keeps these controls disabled:
 
@@ -10,12 +11,28 @@ Remote mode keeps these controls disabled:
 - `NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=false`
 - `NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=false`
 
+Remote nginx forwards `/v1/*` to `LOCAL_CONTROL_API_URL`. In the local Docker
+simulation that defaults to:
+
+```text
+http://host.docker.internal:8000
+```
+
+For a real Linux server, point `LOCAL_CONTROL_API_URL` at an SSH reverse tunnel
+or another private path back to the local control plane.
+
 ## Start
 
 From the repository root:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\start-remote-docker.ps1 -Build
+start.bat
+```
+
+Then in another terminal, from `workspace`:
+
+```bat
+start.bat
 ```
 
 Open:
@@ -24,18 +41,8 @@ Open:
 http://localhost:18080
 ```
 
-Use an existing workspace name/slug and token/password. A fresh empty Docker
-database has no workspace to enter until you restore, import, or provide one
-through the server-side database.
-
-On this Windows development machine, `workspace\start.bat` runs the same Docker
-stack and imports existing active workspaces from `backend\workspace_dev.db` by
-default. This does not generate new workspace tokens. To disable that import:
-
-```bat
-set SYNC_LOCAL_WORKSPACES=0
-start.bat
-```
+Use an existing workspace name/slug and token/password. The Docker stack does
+not have a workspace database; login is verified by the local control plane.
 
 ## Options
 
@@ -49,6 +56,12 @@ Bind to all interfaces for a LAN/server-style check:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\start-remote-docker.ps1 -Bind 0.0.0.0 -PublicUrl http://YOUR_HOST_OR_IP:18080 -Build
+```
+
+Point the relay at a different local-control URL:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\start-remote-docker.ps1 -LocalControlApiUrl http://host.docker.internal:8000 -Build
 ```
 
 Check containers:
@@ -67,13 +80,6 @@ Stop:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\start-remote-docker.ps1 -Down
-```
-
-Import existing active local workspaces into the Docker database without
-creating new tokens:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File workspace\scripts\import-local-workspaces-to-docker.ps1
 ```
 
 ## Smoke Test

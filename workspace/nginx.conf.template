@@ -1,0 +1,35 @@
+upstream frontend {
+    server frontend:3000;
+}
+
+server {
+    listen 80;
+
+    location = /v1/workspaces {
+        default_type application/json;
+        return 403 '{"code":403,"message":"Workspace directory and creation are disabled on the remote relay","data":null}';
+    }
+
+    location ~ ^/v1/workspaces/[^/]+/local-token$ {
+        default_type application/json;
+        return 403 '{"code":403,"message":"Workspace token discovery is disabled on the remote relay","data":null}';
+    }
+
+    # Public/remote server is a relay only. Workspace authority stays on the
+    # local control plane reached through LOCAL_CONTROL_API_URL.
+    location /v1/ {
+        proxy_pass ${LOCAL_CONTROL_API_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
