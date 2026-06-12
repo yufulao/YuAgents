@@ -145,7 +145,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
     const atIndex = textBefore.lastIndexOf('@');
     if (atIndex === -1) return;
 
-    const newText = textBefore.slice(0, atIndex) + `@${mentionText} ` + textAfter;
+    const newText = textBefore.slice(0, atIndex) + `@${mentionText}` + textAfter;
     setMessage(newText);
     onDraftChange?.(newText);
     setShowMentions(false);
@@ -153,7 +153,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
 
     setTimeout(() => {
       textarea.focus();
-      const newCursorPos = atIndex + mentionText.length + 2;
+      const newCursorPos = atIndex + mentionText.length + 1;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
     }, 0);
   };

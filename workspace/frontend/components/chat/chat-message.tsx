@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { getAgentColor } from '@/lib/helpers';
 import { Button } from '@/components/ui/button';
 import {
   Check,
@@ -261,8 +262,34 @@ function MessageBody({
 }) {
   if (!content) return null;
   return isHuman
-    ? <div className="whitespace-pre-wrap break-words">{content}</div>
+    ? <div className="whitespace-pre-wrap break-words"><MentionText content={content} agentNames={agentNames} /></div>
     : <MarkdownContent content={content} agentNames={agentNames} />;
+}
+
+function MentionText({ content, agentNames }: { content: string; agentNames: string[] }) {
+  if (agentNames.length === 0) return <>{content}</>;
+
+  const escaped = agentNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const mentionRegex = new RegExp(`(@(?:${escaped.join('|')}))(?=$|\\s|[.,!?;:，。！？；：、)\\]）】])`, 'g');
+  const parts = content.split(mentionRegex);
+
+  if (parts.length === 1) return <>{content}</>;
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.startsWith('@') && agentNames.includes(part.slice(1))) {
+          const color = getAgentColor(part.slice(1), agentNames);
+          return (
+            <span key={index} className={cn('font-medium rounded px-0.5', color.text)}>
+              {part}
+            </span>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
 }
 
 function ThreadSummary({ thread }: { thread: ThreadInfo }) {
