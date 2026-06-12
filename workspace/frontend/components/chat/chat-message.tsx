@@ -41,6 +41,29 @@ function humanColor(seed: string): string {
   return `hsl(${hash % 360} 55% 82%)`;
 }
 
+function HumanAvatar({
+  name,
+  avatarUrl,
+  seed,
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  seed: string;
+}) {
+  return (
+    <div
+      className="size-9 rounded-lg shrink-0 flex items-center justify-center mt-0.5 overflow-hidden"
+      style={{ backgroundColor: avatarUrl ? undefined : humanColor(seed) }}
+    >
+      {avatarUrl ? (
+        <img src={avatarUrl} alt={name} className="h-full w-full object-cover" />
+      ) : (
+        <User className="size-4 text-zinc-700" />
+      )}
+    </div>
+  );
+}
+
 function isPreviewable(contentType: string, filename: string): boolean {
   if (contentType?.startsWith('image/')) return true;
   if (contentType === 'text/html' || /\.html?$/i.test(filename)) return true;
@@ -399,21 +422,26 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [] }: C
     ? isCurrentUser
       ? '我'
       : (message.senderName && message.senderName !== 'user' ? message.senderName : '用户')
-    : message.senderName;
+    : (agent?.displayName || message.senderName);
   const seed = message.senderId || message.senderName || 'human';
+  const humanAvatarUrl = isCurrentUser
+    ? currentUser.avatarUrl || message.senderAvatarUrl || null
+    : message.senderAvatarUrl || null;
 
   return (
     <div className="py-1.5 group/message">
       <div className="flex items-start gap-2">
         {isHuman ? (
-          <div
-            className="size-9 rounded-lg shrink-0 flex items-center justify-center mt-0.5"
-            style={{ backgroundColor: humanColor(seed) }}
-          >
-            <User className="size-4 text-zinc-700" />
-          </div>
+          <HumanAvatar name={displayName} avatarUrl={humanAvatarUrl} seed={seed} />
         ) : (
-          <AgentAvatar name={message.senderName} size={36} square className="mt-0.5" />
+          <AgentAvatar
+            name={message.senderName}
+            avatar={agent?.avatar}
+            avatarUrl={agent?.avatarUrl}
+            size={36}
+            square
+            className="mt-0.5"
+          />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">

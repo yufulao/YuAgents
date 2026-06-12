@@ -105,6 +105,7 @@ function LocalAgentForm({
 }) {
   const { agents, refreshWorkspace } = useWorkspace();
   const [agentName, setAgentName] = useState('');
+  const [description, setDescription] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [modelName, setModelName] = useState('');
   const [quality, setQuality] = useState('medium');
@@ -213,6 +214,7 @@ function LocalAgentForm({
         agentName: trimmedName,
         agentType: selectedEntry.name,
         displayName: trimmedName,
+        description: description.trim() || undefined,
         workingDir: workingDir.trim() || undefined,
         modelProvider: selectedEntry.name === 'codex' ? 'openai' : 'anthropic',
         modelName: modelName.trim() || undefined,
@@ -230,6 +232,7 @@ function LocalAgentForm({
       const message = `已创建 Agent "@${trimmedName}" 配置；启动本机 ${selectedEntry.label} 后会变为在线。`;
       setCreateSuccess(message);
       setAgentName('');
+      setDescription('');
       toast.success(message);
     } catch (err) {
       const message = err instanceof Error ? err.message : '创建 Agent 失败';
@@ -298,13 +301,23 @@ function LocalAgentForm({
               setCreateSuccess('');
             }}
             className={cn((nameInvalid || nameExists) && 'border-destructive focus-visible:ring-destructive/30')}
-            placeholder="例如 紫、蓝、魔理沙"
+            placeholder="输入 Agent 名称"
           />
           <p className={cn('text-[10px]', nameInvalid || nameExists ? 'text-destructive' : 'text-muted-foreground')}>
             {nameExists
               ? '这个名称已经存在，请换一个。'
               : '名称就是 @ 提及时使用的名字，支持中文；不要包含空格、斜杠、@ 或冒号。'}
           </p>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">描述</Label>
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="说明这个 Agent 负责什么"
+            className="min-h-16 w-full resize-none rounded-md border bg-background px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+          />
         </div>
 
         <div className="space-y-1">
@@ -328,7 +341,7 @@ function LocalAgentForm({
             <Input
               value={modelName}
               onChange={(event) => setModelName(event.target.value)}
-              placeholder="例如 claude-sonnet-4-5"
+              placeholder="Claude 模型名（可选）"
               className="h-9 font-mono text-xs"
             />
           )}
@@ -343,36 +356,43 @@ function LocalAgentForm({
 
         {selectedEntry?.name === 'codex' && (
           <div className={cn(
-            'flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5',
+            'space-y-2 rounded-lg border px-3 py-2.5',
             codexFastMode ? 'border-primary/40 bg-primary/5' : 'border-input',
             !codexFastAvailable && 'opacity-60',
           )}>
             <div className="space-y-0.5">
               <div className="flex items-center gap-1.5 text-sm font-medium">
                 <Zap className="size-3.5 text-amber-500" />
-                Codex Fast mode
+                Codex 速度档位
               </div>
               <p className="text-[10px] text-muted-foreground">
                 {codexFastAvailable ? '使用当前 Codex 模型的 fast speed tier。' : '当前模型没有本机可用的 fast tier。'}
               </p>
             </div>
-            <button
-              type="button"
-              disabled={!codexFastAvailable}
-              onClick={() => setCodexFastMode((value) => !value)}
-              className={cn(
-                'relative h-6 w-10 rounded-full border transition-colors',
-                codexFastMode ? 'border-primary bg-primary' : 'border-input bg-muted',
-              )}
-              aria-pressed={codexFastMode}
-            >
-              <span
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+              <button
+                type="button"
+                onClick={() => setCodexFastMode(false)}
                 className={cn(
-                  'absolute top-0.5 size-5 rounded-full bg-background shadow transition-transform',
-                  codexFastMode ? 'translate-x-4' : 'translate-x-0.5',
+                  'h-8 rounded px-2 text-xs font-medium transition-colors',
+                  !codexFastMode ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
-              />
-            </button>
+              >
+                默认
+              </button>
+              <button
+                type="button"
+                disabled={!codexFastAvailable}
+                onClick={() => setCodexFastMode(true)}
+                className={cn(
+                  'h-8 rounded px-2 text-xs font-medium transition-colors',
+                  codexFastMode ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  !codexFastAvailable && 'cursor-not-allowed opacity-50 hover:text-muted-foreground',
+                )}
+              >
+                Fast
+              </button>
+            </div>
           </div>
         )}
 

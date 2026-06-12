@@ -10,24 +10,34 @@ function useWorkspaceIdentity() {
   const [localIdentity, setLocalIdentity] = useState<WorkspaceIdentity>(() => {
     const stored = typeof window !== 'undefined' ? getStoredIdentity() : null;
     const id = stored?.id || (typeof window !== 'undefined' ? generateUserId() : '');
-    return { id, name: stored?.name || '', isAuthenticated: false };
+    return { id, name: stored?.name || '', avatarUrl: stored?.avatarUrl || null, isAuthenticated: false };
   });
 
   useEffect(() => {
     if (localIdentity.id && localIdentity.name) {
-      storeIdentity(localIdentity.id, localIdentity.name);
+      storeIdentity(localIdentity.id, localIdentity.name, localIdentity.avatarUrl || null);
     }
-  }, [localIdentity.id, localIdentity.name]);
+  }, [localIdentity.id, localIdentity.name, localIdentity.avatarUrl]);
 
   const setUserName = useCallback((name: string) => {
     setLocalIdentity((prev) => {
       const id = prev.id || generateUserId();
-      storeIdentity(id, name);
-      return { id, name, isAuthenticated: false };
+      storeIdentity(id, name, prev.avatarUrl || null);
+      return { id, name, avatarUrl: prev.avatarUrl || null, isAuthenticated: false };
     });
   }, []);
 
-  return { currentUser: localIdentity, setUserName };
+  const setUserProfile = useCallback((updates: { name?: string; avatarUrl?: string | null }) => {
+    setLocalIdentity((prev) => {
+      const id = prev.id || generateUserId();
+      const name = updates.name !== undefined ? updates.name : prev.name;
+      const avatarUrl = updates.avatarUrl !== undefined ? updates.avatarUrl : (prev.avatarUrl || null);
+      storeIdentity(id, name, avatarUrl || '');
+      return { id, name, avatarUrl: avatarUrl || null, isAuthenticated: false };
+    });
+  }, []);
+
+  return { currentUser: localIdentity, setUserName, setUserProfile };
 }
 
 interface LastMessageInfo {
@@ -42,6 +52,7 @@ interface WorkspaceContextValue {
   agents: WorkspaceAgent[];
   currentUser: WorkspaceIdentity;
   setUserName: (name: string) => void;
+  setUserProfile: (updates: { name?: string; avatarUrl?: string | null }) => void;
   onlineUsers: OnlineUser[];
   sessions: WorkspaceSession[];
   files: WorkspaceFile[];
@@ -149,7 +160,7 @@ export function WorkspaceProvider({
 }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
-  const { currentUser, setUserName } = useWorkspaceIdentity();
+  const { currentUser, setUserName, setUserProfile } = useWorkspaceIdentity();
   const onlineUsers: OnlineUser[] = [];
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
@@ -1012,6 +1023,7 @@ export function WorkspaceProvider({
         agents,
         currentUser,
         setUserName,
+        setUserProfile,
         onlineUsers,
         sessions,
         files,

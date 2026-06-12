@@ -1,5 +1,6 @@
 const USER_ID_COOKIE = 'oa_user_id';
 const USER_NAME_COOKIE = 'oa_user_name';
+const USER_AVATAR_KEY = 'oa_user_avatar_url';
 const MAX_AGE = 365 * 24 * 60 * 60; // 1 year in seconds
 
 function setCookie(name: string, value: string) {
@@ -18,21 +19,27 @@ export function generateUserId(): string {
   return `user-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function getStoredIdentity(): { id: string; name: string } | null {
+export function getStoredIdentity(): { id: string; name: string; avatarUrl?: string | null } | null {
   try {
     const id = getCookie(USER_ID_COOKIE);
     const name = getCookie(USER_NAME_COOKIE);
-    if (id && name) return { id, name };
+    const avatarUrl = window.localStorage.getItem(USER_AVATAR_KEY);
+    if (id && name) return { id, name, avatarUrl: avatarUrl || null };
   } catch {
     // SSR or cookie access blocked
   }
   return null;
 }
 
-export function storeIdentity(id: string, name: string) {
+export function storeIdentity(id: string, name: string, avatarUrl?: string | null) {
   try {
     setCookie(USER_ID_COOKIE, id);
     setCookie(USER_NAME_COOKIE, name);
+    if (avatarUrl) {
+      window.localStorage.setItem(USER_AVATAR_KEY, avatarUrl);
+    } else if (avatarUrl === '') {
+      window.localStorage.removeItem(USER_AVATAR_KEY);
+    }
   } catch {
     // cookie access blocked
   }

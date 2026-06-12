@@ -341,26 +341,34 @@ function SettingsDialogPortal({
 }) {
   const [name, setName] = useState(workspace?.name || '');
   const [monitorMode, setMonitorMode] = useState(false);
+  const [userName, setUserNameDraft] = useState('');
+  const [userAvatar, setUserAvatar] = useState('');
   const [saving, setSaving] = useState(false);
-  const { notificationSound, setNotificationSound } = useWorkspace();
+  const { currentUser, setUserProfile, notificationSound, setNotificationSound } = useWorkspace();
   const { splitBrowser, setSplitBrowser } = useLayout();
 
   useEffect(() => {
     if (open && workspace) {
       setName(workspace.name);
       setMonitorMode(!!workspace.settings?.monitorMode);
+      setUserNameDraft(currentUser.name || '');
+      setUserAvatar(currentUser.avatarUrl || '');
     }
-  }, [open, workspace]);
+  }, [open, workspace, currentUser.name, currentUser.avatarUrl]);
 
   if (!workspace) return null;
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !userName.trim()) return;
     setSaving(true);
     try {
       await workspaceApi.updateWorkspace({
         name: name.trim(),
         settings: { ...workspace.settings, monitorMode },
+      });
+      setUserProfile({
+        name: userName.trim(),
+        avatarUrl: userAvatar.trim() || null,
       });
       await refreshWorkspace();
       toast.success('设置已保存');
@@ -372,6 +380,18 @@ function SettingsDialogPortal({
     }
   };
 
+  const handleAvatarFile = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('请选择图片文件');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setUserAvatar(String(reader.result || ''));
+    reader.onerror = () => toast.error('读取头像失败');
+    reader.readAsDataURL(file);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
@@ -380,6 +400,46 @@ function SettingsDialogPortal({
           <div className="space-y-2">
             <Label>工作区名称</Label>
             <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="我的工作区" />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-input px-4 py-3">
+            <div className="space-y-0.5">
+              <Label>本人资料</Label>
+              <p className="text-xs text-muted-foreground">用于本机发送的消息显示。</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <AgentAvatar
+                name={userName || currentUser.name || '我'}
+                avatar={userAvatar ? { type: 'upload', value: userAvatar } : null}
+                size={40}
+                square
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Input value={userName} onChange={(event) => setUserNameDraft(event.target.value)} placeholder="显示名称" />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={userAvatar}
+                    onChange={(event) => setUserAvatar(event.target.value)}
+                    placeholder="头像图片 URL 或 data URL"
+                    className="font-mono text-xs"
+                  />
+                  <label className="inline-flex h-9 shrink-0 cursor-pointer items-center rounded-md border px-3 text-xs hover:bg-muted">
+                    选择图片
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => handleAvatarFile(event.target.files?.[0] || null)}
+                    />
+                  </label>
+                </div>
+                {userAvatar && (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setUserAvatar('')}>
+                    清除头像
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-4 py-3">
@@ -408,7 +468,7 @@ function SettingsDialogPortal({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={handleSave} disabled={saving || !name.trim()}>{saving ? '保存中...' : '保存'}</Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim() || !userName.trim()}>{saving ? '保存中...' : '保存'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

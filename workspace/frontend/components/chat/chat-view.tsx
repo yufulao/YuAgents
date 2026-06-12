@@ -328,6 +328,7 @@ export function ChatView() {
         sessionId: currentSessionId,
         senderId: currentUser.id,
         senderName: currentUser.name,
+        senderAvatarUrl: currentUser.avatarUrl || null,
         senderType: 'human',
         content: userContent,
         messageType: 'chat',
@@ -375,6 +376,7 @@ export function ChatView() {
           mentions.length > 0 ? mentions : undefined,
           attachments,
           currentUser.id,
+          currentUser.avatarUrl || null,
         );
         forceRefresh();
       } catch {
@@ -383,7 +385,7 @@ export function ChatView() {
         setOptimisticMessages([]);
       }
     },
-    [currentSessionId, currentUser.id, currentUser.name, forceRefresh, agents]
+    [currentSessionId, currentUser.id, currentUser.name, currentUser.avatarUrl, forceRefresh, agents]
   );
 
   const hasStatusMessages = displayMessages.some((m) => m.messageType === 'status' || m.messageType === 'thinking');
@@ -472,7 +474,7 @@ export function ChatView() {
                     key={agent.agentName}
                     className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted border shrink-0"
                   >
-                    <AgentAvatar name={agent.agentName} size={16} />
+                    <AgentAvatar name={agent.agentName} avatar={agent.avatar} avatarUrl={agent.avatarUrl} size={16} />
                     <span className="text-[11px] font-medium">{agent.agentName.split('-')[0]}</span>
                     {isMaster && (
                       <span className="text-[8px] px-1 py-0 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-semibold">
@@ -494,7 +496,7 @@ export function ChatView() {
               <div className="flex -space-x-1.5">
                 {sessionAgents.slice(0, 3).map((agent) => (
                   <div key={agent.agentName} className="border-2 border-background rounded-full">
-                    <AgentAvatar name={agent.agentName} size={18} />
+                    <AgentAvatar name={agent.agentName} avatar={agent.avatar} avatarUrl={agent.avatarUrl} size={18} />
                   </div>
                 ))}
                 {sessionAgents.length > 3 && (
@@ -614,7 +616,7 @@ export function ChatView() {
                               key={agent.agentName}
                               className="flex items-center gap-2 px-2 py-1.5 rounded-md group"
                             >
-                              <AgentAvatar name={agent.agentName} size={20} />
+                              <AgentAvatar name={agent.agentName} avatar={agent.avatar} avatarUrl={agent.avatarUrl} size={20} />
                               <span className="text-sm flex-1 truncate">{agent.agentName}</span>
                               {inThread.length > 1 && (
                                 <button
@@ -639,7 +641,7 @@ export function ChatView() {
                               onClick={() => currentSessionId && addParticipant(currentSessionId, agent.agentName)}
                               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors"
                             >
-                              <AgentAvatar name={agent.agentName} size={20} />
+                              <AgentAvatar name={agent.agentName} avatar={agent.avatar} avatarUrl={agent.avatarUrl} size={20} />
                               <span className="text-sm flex-1 truncate text-left">{agent.agentName}</span>
                               <Plus className="size-3 text-muted-foreground shrink-0" />
                             </button>

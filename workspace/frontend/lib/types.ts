@@ -122,6 +122,7 @@ export interface WorkspaceMessage {
   senderId?: string | null;
   senderType: string;
   senderName: string;
+  senderAvatarUrl?: string | null;
   content: string;
   summary?: string | null;
   body?: string | null;
@@ -136,6 +137,7 @@ export interface WorkspaceMessage {
 export interface WorkspaceIdentity {
   id: string;
   name: string;
+  avatarUrl?: string | null;
   isAuthenticated: boolean;
 }
 
@@ -406,6 +408,7 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
     sessionId: event.target.replace(/^channel\//, ''),
     senderType: isHuman ? 'human' : 'agent',
     senderName,
+    senderAvatarUrl: (payload.sender_avatar_url as string) || null,
     content: (payload.content as string) || '',
     summary: (payload.summary as string) || null,
     body: (payload.body as string) || null,
