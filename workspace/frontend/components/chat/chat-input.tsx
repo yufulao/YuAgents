@@ -75,10 +75,8 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
       .filter((name) => agentNames.includes(name));
   };
 
-  // Only suggest online agents — mentioning offline ones never resolves and
-  // just clutters the picker on long-lived workspaces.
   const filteredAgents = agents.filter(
-    (a) => a.status === 'online' && a.agentName.toLocaleLowerCase().includes(mentionFilter.toLocaleLowerCase())
+    (a) => a.agentName.toLocaleLowerCase().includes(mentionFilter.toLocaleLowerCase())
   );
 
   const filteredKnowledge = knowledge.filter(
@@ -220,7 +218,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
     const cursorPos = textarea.selectionStart;
     const textBefore = value.slice(0, cursorPos);
     const atMatch = textBefore.match(/@([^\s@]*)$/);
-    if (atMatch && (agents.length > 1 || knowledge.length > 0)) {
+    if (atMatch && (agents.length > 0 || knowledge.length > 0)) {
       setMentionFilter(atMatch[1]);
       setMentionIndex(0);
       setShowMentions(true);

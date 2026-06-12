@@ -355,7 +355,7 @@ function LocalAgentsTab({
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
-      const message = `已创建 Agent "@${trimmedName}"`;
+      const message = `已创建 Agent "@${trimmedName}" 配置；启动本机 ${selectedEntry.label} 后会变为在线。`;
       setCreateSuccess(message);
       setAgentName(nextAvailableAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝', new Set([...Array.from(existingNames), trimmedName])));
       toast.success(message);

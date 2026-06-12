@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useLayout, type ViewMode } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
-import { isRecentAgent, timeAgo } from '@/lib/helpers';
+import { timeAgo } from '@/lib/helpers';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { AgentActivityPanel } from '@/components/agents/agent-activity-panel';
 import { cn } from '@/lib/utils';
@@ -116,10 +116,10 @@ export function SidebarContent() {
     }
   };
 
-  // Filter sidebar to only show online + recently-seen agents
-  const recentAgents = useMemo(() => agents.filter(isRecentAgent), [agents]);
+  // Show configured agents even when they are offline. Local-first workspaces
+  // need the created config to remain visible before the CLI process starts.
+  const visibleAgents = agents;
   const onlineCount = agents.filter((a) => a.status === 'online').length;
-  const agentNames = agents.map((a) => a.agentName);
 
   const isUnclaimed = workspace && !workspace.creatorEmail;
   const isOwnedByUser = workspace && user && workspace.creatorEmail === user.email;
@@ -156,7 +156,7 @@ export function SidebarContent() {
         </div>
 
         <div className="flex-1 flex flex-col items-center py-3 gap-2">
-          {recentAgents.map((agent) => (
+          {visibleAgents.map((agent) => (
             <Tooltip key={agent.agentName}>
               <TooltipTrigger asChild>
                 <button
@@ -234,10 +234,10 @@ export function SidebarContent() {
           {/* Agents */}
           <div className="px-2.5">
             <p className="text-xs font-normal text-muted-foreground px-2 py-1.5 mb-0.5">
-              Agents（{onlineCount}/{recentAgents.length}）
+              Agents（{onlineCount}/{visibleAgents.length}）
             </p>
             <div className="space-y-0.5 max-h-48 overflow-y-auto">
-              {recentAgents.map((agent) => (
+              {visibleAgents.map((agent) => (
                 <button
                   key={agent.agentName}
                   onClick={() => setSelectedAgentName(agent.agentName)}
@@ -252,7 +252,7 @@ export function SidebarContent() {
             </div>
 
             <AgentActivityPanel
-              agents={recentAgents}
+              agents={visibleAgents}
               sessions={sessions}
               activeSessionIds={activeSessionIds}
               onRefresh={refreshWorkspace}
@@ -287,7 +287,7 @@ export function SidebarContent() {
             </p>
             <div className="space-y-0.5">
               <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="会话" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
-              {recentAgents.length > 0 && (
+              {visibleAgents.length > 0 && (
                 <>
                   <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="文件" count={files.length} onClick={() => setViewMode('files')} />
                   <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="浏览器" count={browserTabs.length} onClick={() => setViewMode('browser')} />
@@ -305,7 +305,7 @@ export function SidebarContent() {
 
         {/* Bottom section — pinned to bottom */}
         <div className="shrink-0 px-2.5 pb-1">
-          {recentAgents.length === 0 ? (
+          {visibleAgents.length === 0 ? (
             <button
               onClick={() => setViewMode('connect')}
               className={cn(
