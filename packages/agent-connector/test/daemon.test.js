@@ -9,6 +9,7 @@ const { Daemon } = require('../src/daemon');
 const { Config } = require('../src/config');
 const { EnvManager } = require('../src/env');
 const { Registry } = require('../src/registry');
+const BaseAdapter = require('../src/adapters/base');
 
 let tmpDir;
 
@@ -199,6 +200,40 @@ describe('Daemon', () => {
     daemon._processCommands();
 
     assert.equal(restarted, 's-agent', 'start: must launch an agent that is not running');
+  });
+
+  it('_configuredAgents honors OPENAGENTS_START_ONLY', () => {
+    const previous = process.env.OPENAGENTS_START_ONLY;
+    process.env.OPENAGENTS_START_ONLY = JSON.stringify(['target']);
+    try {
+      const config = new Config(tmpDir);
+      config.addAgent({ name: 'target', type: 'codex', role: 'worker' });
+      config.addAgent({ name: 'old-agent', type: 'codex', role: 'worker' });
+      const daemon = new Daemon(config, new EnvManager(tmpDir), new Registry(tmpDir));
+
+      assert.deepEqual(daemon._configuredAgents().map((agent) => agent.name), ['target']);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENAGENTS_START_ONLY;
+      } else {
+        process.env.OPENAGENTS_START_ONLY = previous;
+      }
+    }
+  });
+
+  it('BaseAdapter records session_revoked as stop reason', () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+
+    adapter._onSessionRevoked();
+
+    assert.equal(adapter.stopReason, 'session_revoked');
   });
 
   it('readDaemonPid returns null when no pid file', () => {

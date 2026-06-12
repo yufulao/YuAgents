@@ -95,6 +95,7 @@ if (input.action === 'stop') {
     command = `stop:${ag.name}`;
   }
 } else if (!livePid) {
+  process.env.OPENAGENTS_START_ONLY = JSON.stringify([ag.name]);
   const originalLog = console.log;
   const originalError = console.error;
   console.log = (...args) => messages.push(args.join(' '));

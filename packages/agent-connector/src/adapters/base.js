@@ -45,6 +45,7 @@ class BaseAdapter {
     this._lastEventId = null;
     this._lastToolResultId = null;
     this._running = false;
+    this._stopReason = null;
     this._sessionId = null;  // issued by server on /v1/join; used to prove liveness
     this._processedIds = new Set();
     this._titledSessions = new Set();
@@ -76,6 +77,7 @@ class BaseAdapter {
 
   async run() {
     this._running = true;
+    this._stopReason = null;
 
     // Announce agent to workspace
     try {
@@ -137,6 +139,10 @@ class BaseAdapter {
     this._running = false;
   }
 
+  get stopReason() {
+    return this._stopReason;
+  }
+
   // ------------------------------------------------------------------
   // Event cursor / skip existing
   // ------------------------------------------------------------------
@@ -163,8 +169,7 @@ class BaseAdapter {
       await this.client.heartbeat(this.workspaceId, this.agentName, this.token, this._sessionId);
     } catch (e) {
       if (e instanceof SessionRevokedError) {
-        this._log(`SESSION REVOKED: another client joined as '${this.agentName}'. Stopping adapter.`);
-        this._running = false;
+        this._onSessionRevoked();
         return;
       }
       this._log(`Heartbeat failed: ${e.message}`);
@@ -819,6 +824,7 @@ class BaseAdapter {
 
   _onSessionRevoked() {
     this._log(`SESSION REVOKED: another client joined as '${this.agentName}'. Stopping adapter.`);
+    this._stopReason = 'session_revoked';
     this._running = false;
   }
 

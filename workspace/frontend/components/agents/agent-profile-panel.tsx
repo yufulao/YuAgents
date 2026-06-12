@@ -171,6 +171,11 @@ export function AgentProfilePanel() {
     try {
       await workspaceApi.controlManagedAgent(agent.agentName, action);
       await refreshWorkspace();
+      [1000, 3000, 6000, 10000, 20000].forEach((delay) => {
+        window.setTimeout(() => {
+          refreshWorkspace().catch(() => undefined);
+        }, delay);
+      });
       toast.success(action === 'restart' ? 'Agent 正在重启' : action === 'stop' ? 'Agent 已停止' : 'Agent 正在启动');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Agent 操作失败');

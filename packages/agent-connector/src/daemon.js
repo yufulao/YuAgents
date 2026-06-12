@@ -31,6 +31,7 @@ class Daemon {
     this._statusInterval = null;
     this._cmdInterval = null;
     this._reloadInFlight = null;  // serialize concurrent _reload() calls
+    this._startupAgentFilter = Daemon._parseStartupAgentFilter(process.env.OPENAGENTS_START_ONLY);
   }
 
   // ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ class Daemon {
    * Call this from the foreground daemon process.
    */
   async start() {
-    const agents = this.config.getAgents();
+    const agents = this._configuredAgents();
     for (const agent of agents) {
       this._launchAgent(agent);
     }
@@ -205,6 +206,27 @@ class Daemon {
       };
     }
     return result;
+  }
+
+  _configuredAgents() {
+    const agents = this.config.getAgents();
+    if (!this._startupAgentFilter || this._startupAgentFilter.size === 0) {
+      return agents;
+    }
+    return agents.filter((agent) => this._startupAgentFilter.has(agent.name));
+  }
+
+  static _parseStartupAgentFilter(value) {
+    if (!value || typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.map((item) => String(item)).filter(Boolean));
+      }
+    } catch {}
+    return new Set(trimmed.split(',').map((item) => item.trim()).filter(Boolean));
   }
 
   // ---------------------------------------------------------------------------
@@ -517,10 +539,13 @@ class Daemon {
       this._log(`${name} adapter error: ${info.lastError}`);
     }
 
+    if (adapter && adapter.stopReason === 'session_revoked') {
+      info.lastError = `session_revoked: another client joined as '${name}'`;
+    }
     delete this._adapters[name];
     info.state = 'stopped';
     this._writeStatus();
-    this._log(`${name} adapter stopped`);
+    this._log(`${name} adapter stopped${info.lastError ? ` (${info.lastError})` : ''}`);
   }
 
   // NOTE: Adapter-specific message handling (openclaw, claude, codex)
@@ -753,7 +778,7 @@ class Daemon {
     const oldConfigs = this._cachedAgentConfigs || {};
     // Re-read config from disk
     this.config.load();
-    const newAgents = this.config.getAgents();
+    const newAgents = this._configuredAgents();
     const newNames = new Set(newAgents.map(a => a.name));
     const newConfigs = {};
     for (const a of newAgents) newConfigs[a.name] = this._agentConfigFingerprint(a);
