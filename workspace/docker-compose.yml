@@ -24,6 +24,8 @@ services:
       AUTH_MODE: workspace_token
       IDENTITY_MODE: standalone
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      WORKSPACE_CREATION_ENABLED: ${WORKSPACE_CREATION_ENABLED:-true}
+      WORKSPACE_DIRECTORY_ENABLED: ${WORKSPACE_DIRECTORY_ENABLED:-true}
     ports:
       - "8000:8000"
     depends_on:
@@ -38,6 +40,8 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED: ${NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED:-true}
+        NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED: ${NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED:-true}
     ports:
       - "3000:3000"
     depends_on:

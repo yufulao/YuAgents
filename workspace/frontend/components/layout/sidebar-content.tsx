@@ -33,6 +33,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { toast } from 'sonner';
 import type { WorkspaceCollaborator } from '@/lib/types';
 import { useOpenAgentsAuth } from '@/lib/openagents-auth-context';
+import { workspaceCreationEnabled, workspaceDirectoryEnabled } from '@/lib/workspace-policy';
 import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
 import {
   createLocalWorkspace,
@@ -456,6 +457,12 @@ function WorkspaceSwitcherDialog({
   const [creating, setCreating] = useState(false);
 
   const load = useMemo(() => async () => {
+    if (!workspaceDirectoryEnabled) {
+      setWorkspaces([]);
+      setTokens(getLocalWorkspaceTokens());
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const items = await listLocalWorkspaces();
@@ -508,9 +515,12 @@ function WorkspaceSwitcherDialog({
         </DialogHeader>
         <div className="space-y-5 py-2">
           <div className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-            这里列出的是当前本机主控里的 workspace。服务器和 Web 只是访问入口；选择 workspace 后仍然连接本机 backend。
+            {workspaceDirectoryEnabled
+              ? '这里列出的是当前本机主控里的 workspace。服务器和 Web 只是访问入口；选择 workspace 后仍然连接本机 backend。'
+              : '远端 Web 只作为访问入口。请输入已有 workspace slug 和 token/password 进入。'}
           </div>
 
+          {workspaceDirectoryEnabled && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>本机 Workspace</Label>
@@ -559,8 +569,10 @@ function WorkspaceSwitcherDialog({
               )}
             </div>
           </div>
+          )}
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={cn('grid gap-3', workspaceCreationEnabled ? 'sm:grid-cols-2' : 'sm:grid-cols-1')}>
+            {workspaceCreationEnabled && (
             <div className="space-y-2 rounded-md border p-3">
               <Label>创建 Workspace</Label>
               <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="名称" />
@@ -569,6 +581,7 @@ function WorkspaceSwitcherDialog({
                 {creating ? '创建中...' : '创建并进入'}
               </Button>
             </div>
+            )}
 
             <div className="space-y-2 rounded-md border p-3">
               <Label>用 Token 打开</Label>

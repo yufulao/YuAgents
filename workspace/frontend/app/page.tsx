@@ -28,6 +28,7 @@ import type { Workspace } from '@/lib/types';
 import { timeAgo } from '@/lib/helpers';
 import { capture } from '@/lib/analytics';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import { workspaceCreationEnabled, workspaceDirectoryEnabled } from '@/lib/workspace-policy';
 
 // ---------------------------------------------------------------------------
 // Copyable Code Block
@@ -71,6 +72,12 @@ function LandingPage() {
   const [createdWorkspace, setCreatedWorkspace] = useState<{ workspaceId: string; slug: string; name: string; token: string } | null>(null);
 
   const loadLocalWorkspaces = useCallback(async () => {
+    if (!workspaceDirectoryEnabled) {
+      setWorkspaces([]);
+      setTokens(getLocalWorkspaceTokens());
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -154,15 +161,18 @@ function LandingPage() {
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] items-start">
           <section className="space-y-6">
             <div className="space-y-3">
-              <Badge variant="secondary" className="w-fit">本机主控</Badge>
+              <Badge variant="secondary" className="w-fit">{workspaceDirectoryEnabled ? '本机主控' : '远端入口'}</Badge>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                本机 Workspace
+                {workspaceDirectoryEnabled ? '本机 Workspace' : '打开 Workspace'}
               </h1>
               <p className="text-muted-foreground leading-relaxed max-w-2xl">
-                Workspace 由本机主控保存和管理。服务器、Web 页面、其他设备只是通过网络入口或 SSH 转发访问本机主控，不把 workspace 放到云端。
+                {workspaceDirectoryEnabled
+                  ? 'Workspace 由本机主控保存和管理。服务器、Web 页面、其他设备只是通过网络入口或 SSH 转发访问本机主控，不把 workspace 放到云端。'
+                  : '远端 Web 只作为访问入口。请输入已有 workspace slug 和 token/password 进入，不在公开入口创建或枚举 workspace。'}
               </p>
             </div>
 
+            {workspaceDirectoryEnabled && (
             <div className="rounded-lg border bg-card">
               <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
                 <div>
@@ -188,7 +198,7 @@ function LandingPage() {
                 ) : workspaces.length === 0 ? (
                   <div className="rounded-md border border-dashed px-4 py-8 text-center">
                     <p className="text-sm font-medium">还没有本机 workspace</p>
-                    <p className="text-xs text-muted-foreground mt-1">在右侧创建一个，或填入已有 slug/token 打开。</p>
+                    <p className="text-xs text-muted-foreground mt-1">{workspaceCreationEnabled ? '在右侧创建一个，或填入已有 slug/token 打开。' : '填入已有 slug/token 打开。'}</p>
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -225,9 +235,11 @@ function LandingPage() {
                 )}
               </div>
             </div>
+            )}
           </section>
 
           <section className="space-y-4">
+            {workspaceCreationEnabled && (
             <form onSubmit={createLocal} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold">创建 Workspace</h2>
@@ -290,11 +302,14 @@ function LandingPage() {
                 </div>
               )}
             </form>
+            )}
 
             <form onSubmit={openWorkspace} className="rounded-lg border bg-card p-4 sm:p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold">打开指定 Workspace</h2>
-                <p className="text-xs text-muted-foreground mt-1">选择左侧无 token 的 workspace 时，也会填到这里。</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {workspaceDirectoryEnabled ? '选择左侧无 token 的 workspace 时，也会填到这里。' : '远端入口只接受已有 workspace slug 和 token/password。'}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="workspace-slug">工作区 slug</Label>
@@ -529,7 +544,7 @@ function Dashboard() {
           <p className="text-sm text-muted-foreground">
             {loading ? '加载中...' : `${workspaces.length} 个工作区`}
           </p>
-          {!showCreate && (
+          {workspaceCreationEnabled && !showCreate && (
             <Button size="sm" onClick={() => setShowCreate(true)}>
               <Plus className="size-4 mr-1" />
               新建工作区
@@ -544,7 +559,7 @@ function Dashboard() {
         )}
 
         {/* Create form */}
-        {showCreate && (
+        {workspaceCreationEnabled && showCreate && (
           <div className="mb-6">
             <CreateWorkspaceForm
               onCreated={() => {

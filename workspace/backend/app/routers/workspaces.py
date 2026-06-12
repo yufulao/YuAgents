@@ -245,6 +245,12 @@ def create_workspace(
     db: Session = Depends(get_db),
 ):
     """Create a new workspace (= ONM network)."""
+    if not config.WORKSPACE_CREATION_ENABLED:
+        return json_response(
+            ResponseCode.FORBIDDEN,
+            "Workspace creation is disabled on this deployment; use an existing workspace slug and token",
+        )
+
     # Generate slug and token
     slug = secrets.token_hex(4)
     token = secrets.token_urlsafe(32)
@@ -317,6 +323,12 @@ def list_workspaces(
     db: Session = Depends(get_db),
 ):
     """List workspaces, optionally filtered by creator or agent membership."""
+    if not config.WORKSPACE_DIRECTORY_ENABLED:
+        return json_response(
+            ResponseCode.FORBIDDEN,
+            "Workspace directory is disabled on this deployment; open by workspace slug and token",
+        )
+
     query = select(Workspace).where(Workspace.status != "deleted")
 
     if creator_email:

@@ -4,6 +4,7 @@ Tests for workspace CRUD endpoints.
 """
 
 import pytest
+from app.config import config
 
 
 class TestCreateWorkspace:
@@ -46,6 +47,18 @@ class TestCreateWorkspace:
                             headers={"X-Workspace-Token": data["token"]})
         assert detail.json()["data"]["creatorEmail"] == "user@example.com"
 
+    def test_create_workspace_can_be_disabled(self, client, monkeypatch):
+        """Remote relay deployments can require existing slug/token only."""
+        monkeypatch.setattr(config, "WORKSPACE_CREATION_ENABLED", False)
+
+        resp = client.post("/v1/workspaces", json={
+            "name": "Should Not Create",
+            "agent_name": "test-agent",
+        })
+
+        assert resp.status_code == 403
+        assert "disabled" in resp.json()["message"]
+
 
 class TestGetWorkspace:
     """GET /v1/workspaces/{id} — get workspace details."""
@@ -65,6 +78,21 @@ class TestGetWorkspace:
                           headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         assert resp.json()["data"]["workspaceId"] == workspace["id"]
+
+    def test_workspace_directory_can_be_disabled(self, client, workspace, monkeypatch):
+        """Remote relay deployments can hide workspace enumeration."""
+        monkeypatch.setattr(config, "WORKSPACE_DIRECTORY_ENABLED", False)
+
+        listing = client.get("/v1/workspaces")
+        assert listing.status_code == 403
+        assert "directory is disabled" in listing.json()["message"]
+
+        detail = client.get(
+            f"/v1/workspaces/{workspace['slug']}",
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        assert detail.status_code == 200
+        assert detail.json()["data"]["workspaceId"] == workspace["id"]
 
     def test_get_workspace_includes_agents(self, client, workspace):
         """Workspace detail includes agent list."""

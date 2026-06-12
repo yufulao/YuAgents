@@ -46,6 +46,12 @@ class Config:
     # Agent offline timeout in seconds
     AGENT_TIMEOUT_SECONDS: int = int(os.environ.get("AGENT_TIMEOUT_SECONDS", "60"))
 
+    # Public workspace entry policy. Local control-plane deployments can create
+    # and list workspaces; remote/public relay deployments should require users
+    # to already know the workspace slug and token.
+    WORKSPACE_CREATION_ENABLED: bool = os.environ.get("WORKSPACE_CREATION_ENABLED", "true").lower() in ("true", "1", "yes")
+    WORKSPACE_DIRECTORY_ENABLED: bool = os.environ.get("WORKSPACE_DIRECTORY_ENABLED", "true").lower() in ("true", "1", "yes")
+
     # CORS origins (comma-separated)
     CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
 
