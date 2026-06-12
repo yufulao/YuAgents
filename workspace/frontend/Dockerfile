@@ -1,24 +1,38 @@
-FROM node:20-alpine
+FROM node:20-alpine AS deps
 
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
 
-ARG NEXT_PUBLIC_API_URL=https://workspace-endpoint.openagents.org
-ARG NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=true
-ARG NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=true
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+ARG NEXT_PUBLIC_API_URL=
+ARG NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=false
+ARG NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=false
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=${NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED}
+ENV NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=${NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED}
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ARG NEXT_PUBLIC_API_URL=
+ARG NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=false
+ARG NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=false
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=${NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED}
 ENV NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=${NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED}
 
-# Install dependencies
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
-# Copy application code
-COPY . .
-
-# Build
-RUN npm run build
-
-# Run
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

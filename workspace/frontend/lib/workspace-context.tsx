@@ -2,14 +2,11 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from './api';
-import { capture } from './analytics';
-import { useOpenAgentsAuth } from './openagents-auth-context';
 import { generateUserId, getStoredIdentity, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
 import type { BrowserPersistentContext, BrowserTab, DMConversation, KnowledgeEntry, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
 
 function useWorkspaceIdentity() {
-  const { user } = useOpenAgentsAuth();
   const [localIdentity, setLocalIdentity] = useState<WorkspaceIdentity>(() => {
     const stored = typeof window !== 'undefined' ? getStoredIdentity() : null;
     const id = stored?.id || (typeof window !== 'undefined' ? generateUserId() : '');
@@ -17,10 +14,10 @@ function useWorkspaceIdentity() {
   });
 
   useEffect(() => {
-    if (!user && localIdentity.id && localIdentity.name) {
+    if (localIdentity.id && localIdentity.name) {
       storeIdentity(localIdentity.id, localIdentity.name);
     }
-  }, [user, localIdentity.id, localIdentity.name]);
+  }, [localIdentity.id, localIdentity.name]);
 
   const setUserName = useCallback((name: string) => {
     setLocalIdentity((prev) => {
@@ -29,14 +26,6 @@ function useWorkspaceIdentity() {
       return { id, name, isAuthenticated: false };
     });
   }, []);
-
-  if (user) {
-    const name = (user.displayName || user.email || '').trim();
-    return {
-      currentUser: { id: user.email || name, name, isAuthenticated: true } as WorkspaceIdentity,
-      setUserName: () => {},
-    };
-  }
 
   return { currentUser: localIdentity, setUserName };
 }
@@ -152,20 +141,16 @@ export function useWorkspace() {
 export function WorkspaceProvider({
   workspaceId,
   token,
-  bearerToken,
   children,
 }: {
   workspaceId: string;
   token: string;
-  bearerToken?: string;
   children: React.ReactNode;
 }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
   const { currentUser, setUserName } = useWorkspaceIdentity();
-  const currentUserRef = useRef(currentUser);
-  currentUserRef.current = currentUser;
-  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const onlineUsers: OnlineUser[] = [];
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
   // Set by setCurrentSessionId({ skipFocus: true }) and consumed by ChatView's
@@ -253,71 +238,6 @@ export function WorkspaceProvider({
     _setNotificationSound(enabled);
     try { localStorage.setItem('oa_notification_sound', String(enabled)); } catch {}
   }, []);
-
-  // Presence heartbeat
-  useEffect(() => {
-    if (!currentUser.id || !currentUser.name.trim()) return;
-
-    let cancelled = false;
-    const sendPresence = (type: string) =>
-      workspaceApi.sendEvent({
-        type,
-        source: `human:${currentUser.id}`,
-        target: 'core',
-        payload: { user_id: currentUser.id, user_name: currentUser.name, sender_type: 'human' },
-        visibility: 'network',
-      }).catch(() => {});
-
-    const applyPresenceEvents = async () => {
-      try {
-        const result = await workspaceApi.pollEvents({ type: 'workspace.user', sort: 'desc', limit: 200 });
-        if (cancelled) return;
-        const cutoff = Date.now() - 45_000;
-        const map = new Map<string, OnlineUser>();
-        for (const event of [...result.events].reverse()) {
-          const payload = (event.payload || {}) as Record<string, string>;
-          const userId = payload.user_id || payload.sender_id;
-          if (!userId) continue;
-          if (event.type === 'workspace.user.left') {
-            map.delete(userId);
-            continue;
-          }
-          const userName = payload.user_name || payload.sender_name || 'User';
-          map.set(userId, { id: userId, name: userName, status: 'online', lastSeen: event.timestamp });
-        }
-        const users = Array.from(map.values())
-          .filter((u) => u.id === currentUserRef.current.id || u.lastSeen >= cutoff)
-          .sort((a, b) => {
-            if (a.id === currentUserRef.current.id) return -1;
-            if (b.id === currentUserRef.current.id) return 1;
-            return a.name.localeCompare(b.name);
-          });
-        setOnlineUsers(users);
-      } catch {
-        // non-critical
-      }
-    };
-
-    void sendPresence('workspace.user.joined');
-    void applyPresenceEvents();
-
-    const heartbeat = window.setInterval(() => {
-      void sendPresence('workspace.user.heartbeat');
-      void applyPresenceEvents();
-    }, 15_000);
-
-    const handlePageHide = () => void sendPresence('workspace.user.left');
-    window.addEventListener('pagehide', handlePageHide);
-    window.addEventListener('beforeunload', handlePageHide);
-
-    return () => {
-      cancelled = true;
-      clearInterval(heartbeat);
-      window.removeEventListener('pagehide', handlePageHide);
-      window.removeEventListener('beforeunload', handlePageHide);
-      void sendPresence('workspace.user.left');
-    };
-  }, [currentUser.id, currentUser.name]);
 
   const updateLastMessage = useCallback((sessionId: string, senderName: string, content: string, isStatus?: boolean) => {
     if (!isStatus || /stopped|stopping failed/i.test(content)) {
@@ -421,8 +341,8 @@ export function WorkspaceProvider({
 
   // Configure API client on mount
   useEffect(() => {
-    workspaceApi.configure(workspaceId, token, bearerToken || undefined);
-  }, [workspaceId, token, bearerToken]);
+    workspaceApi.configure(workspaceId, token);
+  }, [workspaceId, token]);
 
   const refreshWorkspace = useCallback(async () => {
     try {
@@ -843,11 +763,6 @@ export function WorkspaceProvider({
         setWorkspace(ws);
         const wsAgents = discovery.agents.map(networkAgentToWorkspaceAgent);
         setAgents(wsAgents);
-        capture('workspace_opened', {
-          workspace_id: workspaceId,
-          agent_count: wsAgents.length,
-          agent_types: wsAgents.map((a) => a.agentName),
-        });
 
         const channelSessions = discovery.channels.map((ch) =>
           networkChannelToSession(ch, workspaceId)
@@ -954,7 +869,6 @@ export function WorkspaceProvider({
       visibility: opts?.visibility,
       mentionPolicy: opts?.mentionPolicy,
     });
-    capture('thread_created', { participant_count: participants.length, has_resume: !!opts?.resumeFrom });
     setSessions((prev) => [session, ...prev]);
     setCurrentSessionId(session.sessionId);
     return session;

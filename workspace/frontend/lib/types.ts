@@ -146,13 +146,6 @@ export interface OnlineUser {
   lastSeen: number;
 }
 
-export interface WorkspaceCollaborator {
-  email: string;
-  role: 'editor' | 'viewer';
-  addedBy: string | null;
-  addedAt: string | null;
-}
-
 export interface WorkspaceInvitation {
   invitationId: string;
   workspaceId: string;
@@ -320,35 +313,6 @@ export interface AgentCatalogEntry {
   homepage: string;
   tags: string[];
   builtin: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Cloud agents
-// ---------------------------------------------------------------------------
-
-export interface CloudAgentProvider {
-  name: string;
-  label: string;
-  models: CloudAgentModel[];
-}
-
-export interface CloudAgentModel {
-  id: string;
-  category: 'chat' | 'image' | 'audio';
-  label: string;
-}
-
-export interface CloudAgentConfig {
-  agentName: string;
-  provider: string;
-  model: string;
-  category: 'chat' | 'image' | 'audio';
-  apiKeyMasked: string | null;
-  baseUrl: string | null;
-  systemPrompt: string | null;
-  maxTokens: number | null;
-  status: string;
-  createdAt: string | null;
 }
 
 // ---------------------------------------------------------------------------

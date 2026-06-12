@@ -44,7 +44,3 @@ function IconWrapper({ name, size = 20, className }: { name: string } & IconProp
 export function AgentIcon({ name, className, size = 20 }: { name: string } & IconProps) {
   return <IconWrapper name={name} size={size} className={className} />;
 }
-
-export function ProviderIcon({ name, className, size = 20 }: { name: string } & IconProps) {
-  return <IconWrapper name={name} size={size} className={className} />;
-}

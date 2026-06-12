@@ -33,7 +33,7 @@ function cleanEnvValue(value) {
 }
 
 function dropEmptyCodexEnv(env) {
-  for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'CODEX_MODEL', 'OPENCLAW_MODEL']) {
+  for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'CODEX_MODEL', 'OPENCLAW_MODEL', 'CODEX_REASONING_EFFORT', 'CODEX_SERVICE_TIER', 'OPENAI_SERVICE_TIER']) {
     if (Object.prototype.hasOwnProperty.call(env, key) && !cleanEnvValue(env[key])) {
       delete env[key];
     }
@@ -53,6 +53,8 @@ class CodexAdapter extends BaseAdapter {
     this._directApiKey = cleanEnvValue(env.OPENAI_API_KEY);
     this._directBaseUrl = cleanEnvValue(env.OPENAI_BASE_URL).replace(/\/+$/, '');
     this._directModel = cleanEnvValue(env.CODEX_MODEL) || cleanEnvValue(env.OPENCLAW_MODEL);
+    this._reasoningEffort = cleanEnvValue(env.CODEX_REASONING_EFFORT);
+    this._serviceTier = cleanEnvValue(env.CODEX_SERVICE_TIER) || cleanEnvValue(env.OPENAI_SERVICE_TIER);
 
     // Per-channel thread tracking (like Claude's session IDs)
     this._channelThreads = {};
@@ -299,6 +301,11 @@ class CodexAdapter extends BaseAdapter {
 
     // Set model via env if configured
     if (this._directModel) env.CODEX_MODEL = this._directModel;
+    if (this._reasoningEffort) env.CODEX_REASONING_EFFORT = this._reasoningEffort;
+    if (this._serviceTier) {
+      env.CODEX_SERVICE_TIER = this._serviceTier;
+      env.OPENAI_SERVICE_TIER = this._serviceTier;
+    }
     if (this._directApiKey) env.OPENAI_API_KEY = this._directApiKey;
     if (this._directBaseUrl) env.OPENAI_BASE_URL = this._directBaseUrl;
 
@@ -320,6 +327,12 @@ class CodexAdapter extends BaseAdapter {
       // Model override
       if (this._directModel) {
         cmd.push('-m', this._directModel);
+      }
+      if (this._reasoningEffort) {
+        cmd.push('-c', `model_reasoning_effort="${this._reasoningEffort}"`);
+      }
+      if (this._serviceTier && this._serviceTier !== 'default') {
+        cmd.push('-c', `model_service_tier="${this._serviceTier}"`);
       }
 
       // Working directory

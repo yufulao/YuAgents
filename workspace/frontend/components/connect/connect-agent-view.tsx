@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { X, ExternalLink, Loader2, Terminal, Cloud, Trash2, MessageSquare, Image as ImageIcon, Volume2, ChevronRight } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Loader2, Terminal, X, Zap } from 'lucide-react';
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
@@ -9,273 +9,82 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider, CodexLocalCatalog } from '@/lib/types';
-import { AgentIcon, ProviderIcon } from '@/components/icons/agent-icons';
+import type { AgentCatalogEntry, CodexLocalCatalog } from '@/lib/types';
+import { AgentIcon } from '@/components/icons/agent-icons';
 import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
-import { getApiUrl } from '@/lib/api-url';
-
-// ---------------------------------------------------------------------------
-// Brand colors for local agents and cloud providers
-// ---------------------------------------------------------------------------
-
-const PROVIDER_BRANDS: Record<string, { bg: string; text: string; accent: string }> = {
-  openai:    { bg: 'bg-zinc-900 dark:bg-zinc-100', text: 'text-white dark:text-zinc-900', accent: 'border-zinc-300 dark:border-zinc-600' },
-  google:    { bg: 'bg-blue-500',    text: 'text-white', accent: 'border-blue-300 dark:border-blue-700' },
-  xai:       { bg: 'bg-zinc-700 dark:bg-zinc-300', text: 'text-white dark:text-zinc-900', accent: 'border-zinc-300 dark:border-zinc-600' },
-  deepseek:  { bg: 'bg-blue-700',    text: 'text-white', accent: 'border-blue-300 dark:border-blue-700' },
-};
 
 const AGENT_HANDLE_RE = /^[^\s@:/\\]{1,64}$/;
 const AGENT_HANDLE_HINT = '名称用于 @mention，支持中文；不要包含空格、@、冒号或斜杠。';
 const LOCAL_RUNTIME_ORDER = ['codex', 'claude'];
 
-function nextAvailableAgentName(base: string, existingNames: Set<string>) {
-  if (!existingNames.has(base)) return base;
-  let i = 2;
-  while (existingNames.has(`${base}${i}`)) i += 1;
-  return `${base}${i}`;
-}
-
-function getProviderBrand(name: string) {
-  return PROVIDER_BRANDS[name] || { bg: 'bg-zinc-500', text: 'text-white', accent: 'border-zinc-300' };
-}
-
-function CategoryIcon({ category, className }: { category: string; className?: string }) {
-  if (category === 'image') return <ImageIcon className={cn('text-violet-500', className)} />;
-  if (category === 'audio') return <Volume2 className={cn('text-amber-500', className)} />;
-  return <MessageSquare className={cn('text-blue-500', className)} />;
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export function ConnectAgentView() {
   const { setViewMode } = useLayout();
-  const { workspace, refreshWorkspace } = useWorkspace();
-
-  const [activeTab, setActiveTab] = useState<'local' | 'cloud'>('local');
   const [loading, setLoading] = useState(true);
-
-  // Local agents
   const [catalog, setCatalog] = useState<AgentCatalogEntry[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-
-  // Cloud agents
-  const [cloudProviders, setCloudProviders] = useState<CloudAgentProvider[]>([]);
-  const [cloudAgents, setCloudAgents] = useState<CloudAgentConfig[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-
-  // Cloud config form
-  const [cfgModel, setCfgModel] = useState('');
-  const [cfgName, setCfgName] = useState('');
-  const [cfgKey, setCfgKey] = useState('');
-  const [cfgBaseUrl, setCfgBaseUrl] = useState('');
-  const [cfgPrompt, setCfgPrompt] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const loadCloudAgents = () => {
-    workspaceApi.listCloudAgents().then(setCloudAgents).catch(() => {});
-  };
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.allSettled([
-      workspaceApi.getAgentCatalog(),
-      workspaceApi.getCloudProviders(),
-      workspaceApi.listCloudAgents(),
-    ])
-      .then(([catalogResult, providersResult, agentsResult]) => {
+    workspaceApi
+      .getAgentCatalog()
+      .then((entries) => {
         if (cancelled) return;
-        setCatalog(catalogResult.status === 'fulfilled'
-          ? withDefaultAgentCatalog(catalogResult.value)
-          : DEFAULT_AGENT_CATALOG);
-        setCloudProviders(providersResult.status === 'fulfilled' ? providersResult.value : []);
-        setCloudAgents(agentsResult.status === 'fulfilled' ? agentsResult.value : []);
+        setCatalog(withDefaultAgentCatalog(entries));
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch(() => {
+        if (cancelled) return;
+        setCatalog(DEFAULT_AGENT_CATALOG);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => { cancelled = true; };
   }, []);
 
-  // Selected local agent detail
   const localCatalog = useMemo(() => {
     return LOCAL_RUNTIME_ORDER
       .map((name) => catalog.find((entry) => entry.name === name) || DEFAULT_AGENT_CATALOG.find((entry) => entry.name === name))
       .filter((entry): entry is AgentCatalogEntry => Boolean(entry));
   }, [catalog]);
 
-  const selectedCatalogEntry = useMemo(
-    () => localCatalog.find((e) => e.name === selectedAgent),
+  const selectedEntry = useMemo(
+    () => localCatalog.find((entry) => entry.name === selectedAgent),
     [localCatalog, selectedAgent],
   );
 
-  // Selected cloud provider detail
-  const selectedProviderInfo = useMemo(
-    () => cloudProviders.find((p) => p.name === selectedProvider),
-    [cloudProviders, selectedProvider],
-  );
-
-  const isCustomProvider = selectedProvider === 'custom';
-
-  // Auto-select first model and generate name when provider changes
   useEffect(() => {
-    if (isCustomProvider) {
-      setCfgModel('');
-      setCfgName('');
-    } else if (selectedProviderInfo && selectedProviderInfo.models.length > 0) {
-      setCfgModel(selectedProviderInfo.models[0].id);
-      const base = selectedProviderInfo.models[0].label
-        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      setCfgName(base);
+    if (!selectedAgent && localCatalog.length > 0) {
+      setSelectedAgent(localCatalog[0].name);
     }
-    setCfgKey('');
-    setCfgBaseUrl('');
-    setCfgPrompt('');
-    setShowAdvanced(false);
-  }, [selectedProviderInfo, isCustomProvider]);
-
-  // Update name when model changes
-  useEffect(() => {
-    if (!selectedProviderInfo) return;
-    const model = selectedProviderInfo.models.find((m) => m.id === cfgModel);
-    if (model) {
-      setCfgName(model.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
-    }
-  }, [cfgModel, selectedProviderInfo]);
-
-  const handleAddCloudAgent = async () => {
-    if (!selectedProvider || !cfgModel || !cfgName) {
-      toast.error('请填写必填项');
-      return;
-    }
-    if (isCustomProvider && !cfgBaseUrl) {
-      toast.error('自定义端点需要 Base URL');
-      return;
-    }
-    setSaving(true);
-    try {
-      await workspaceApi.addCloudAgent({
-        agentName: cfgName,
-        provider: selectedProvider,
-        model: cfgModel,
-        apiKey: cfgKey,
-        baseUrl: cfgBaseUrl || undefined,
-        systemPrompt: cfgPrompt || undefined,
-      });
-      toast.success(`已添加云端 Agent "@${cfgName}"`);
-      refreshWorkspace();
-      loadCloudAgents();
-      setSelectedProvider(null);
-      setCfgKey('');
-      setCfgPrompt('');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : '添加云端 Agent 失败');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemoveCloudAgent = async (agentName: string) => {
-    try {
-      await workspaceApi.removeCloudAgent(agentName);
-      toast.success(`已移除 "@${agentName}"`);
-      loadCloudAgents();
-      refreshWorkspace();
-    } catch {
-      toast.error('移除云端 Agent 失败');
-    }
-  };
+  }, [localCatalog, selectedAgent]);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-        <h2 className="text-sm font-semibold">连接 Agent</h2>
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
+        <h2 className="text-sm font-semibold">创建 Agent</h2>
         <button
           onClick={() => setViewMode('threads')}
-          className="size-7 flex items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground transition-colors"
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
           title="关闭"
         >
           <X className="size-4" />
         </button>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex border-b shrink-0">
-        <button
-          onClick={() => setActiveTab('local')}
-          className={cn(
-            'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors relative',
-            activeTab === 'local'
-              ? 'text-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Terminal className="size-3.5" />
-          本地 Agent
-          {activeTab === 'local' && (
-            <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-foreground rounded-full" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('cloud')}
-          className={cn(
-            'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors relative',
-            activeTab === 'cloud'
-              ? 'text-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Cloud className="size-3.5" />
-          云端 Agent
-          {activeTab === 'cloud' && (
-            <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-foreground rounded-full" />
-          )}
-        </button>
-      </div>
-
-      {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
-            <Loader2 className="size-4 animate-spin mr-2" />
+            <Loader2 className="mr-2 size-4 animate-spin" />
             <span className="text-xs">加载中...</span>
           </div>
-        ) : activeTab === 'local' ? (
-          <LocalAgentsTab
+        ) : (
+          <LocalAgentForm
             catalog={localCatalog}
             selectedAgent={selectedAgent}
-            selectedEntry={selectedCatalogEntry}
+            selectedEntry={selectedEntry}
             onSelectAgent={setSelectedAgent}
-          />
-        ) : (
-          <CloudAgentsTab
-            providers={cloudProviders}
-            cloudAgents={cloudAgents}
-            selectedProvider={selectedProvider}
-            selectedProviderInfo={selectedProviderInfo}
-            isCustomProvider={isCustomProvider}
-            workspaceId={workspace?.workspaceId || ''}
-            onSelectProvider={setSelectedProvider}
-            cfgModel={cfgModel}
-            setCfgModel={setCfgModel}
-            cfgName={cfgName}
-            setCfgName={setCfgName}
-            cfgKey={cfgKey}
-            setCfgKey={setCfgKey}
-            cfgBaseUrl={cfgBaseUrl}
-            setCfgBaseUrl={setCfgBaseUrl}
-            cfgPrompt={cfgPrompt}
-            setCfgPrompt={setCfgPrompt}
-            showAdvanced={showAdvanced}
-            setShowAdvanced={setShowAdvanced}
-            saving={saving}
-            onAdd={handleAddCloudAgent}
-            onRemove={handleRemoveCloudAgent}
           />
         )}
       </div>
@@ -283,11 +92,7 @@ export function ConnectAgentView() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Local Agents Tab
-// ---------------------------------------------------------------------------
-
-function LocalAgentsTab({
+function LocalAgentForm({
   catalog,
   selectedAgent,
   selectedEntry,
@@ -302,19 +107,20 @@ function LocalAgentsTab({
   const [agentName, setAgentName] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [modelName, setModelName] = useState('');
-  const [mode, setMode] = useState('execute');
   const [quality, setQuality] = useState('medium');
+  const [codexFastMode, setCodexFastMode] = useState(false);
   const [codexCatalog, setCodexCatalog] = useState<CodexLocalCatalog | null>(null);
   const [loadingCodexCatalog, setLoadingCodexCatalog] = useState(false);
   const [codexCatalogError, setCodexCatalogError] = useState('');
   const [createError, setCreateError] = useState('');
   const [createSuccess, setCreateSuccess] = useState('');
   const [creating, setCreating] = useState(false);
+
   const trimmedName = agentName.trim();
   const existingNames = useMemo(() => new Set(agents.map((agent) => agent.agentName)), [agents]);
   const nameInvalid = Boolean(trimmedName && !AGENT_HANDLE_RE.test(trimmedName));
   const nameExists = Boolean(trimmedName && existingNames.has(trimmedName));
-  const nameProblem = nameInvalid || nameExists;
+
   const codexModelOptions = useMemo(() => {
     const bySlug = new Map<string, string>();
     for (const model of codexCatalog?.models || []) {
@@ -329,23 +135,34 @@ function LocalAgentsTab({
     return Array.from(bySlug, ([slug, label]) => ({ slug, label }));
   }, [codexCatalog, modelName]);
 
+  const selectedCodexModel = useMemo(
+    () => codexCatalog?.models.find((model) => model.slug === modelName),
+    [codexCatalog, modelName],
+  );
+
+  const codexFastAvailable = Boolean(
+    selectedEntry?.name === 'codex'
+    && (
+      selectedCodexModel?.additional_speed_tiers?.includes('fast')
+      || selectedCodexModel?.service_tiers?.some((tier) => tier.id === 'fast')
+    ),
+  );
+
   useEffect(() => {
-    if (!selectedEntry && catalog.length > 0) {
-      onSelectAgent(catalog[0].name);
-      return;
-    }
     if (!selectedEntry) return;
-    setAgentName(nextAvailableAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝', existingNames));
-    setModelName(selectedEntry.name === 'codex' ? (codexCatalog?.config.model || codexCatalog?.models[0]?.slug || '') : '');
-    setMode('execute');
-    setQuality(selectedEntry.name === 'codex' ? (codexCatalog?.config.model_reasoning_effort || 'medium') : 'medium');
     setCreateError('');
     setCreateSuccess('');
-  }, [selectedEntry, catalog, existingNames, onSelectAgent, codexCatalog]);
+    setCodexFastMode(false);
+    if (selectedEntry.name !== 'codex') {
+      setModelName('');
+      setQuality('medium');
+    }
+  }, [selectedEntry]);
 
   useEffect(() => {
     if (selectedEntry?.name !== 'codex') {
       setCodexCatalogError('');
+      setCodexCatalog(null);
       return;
     }
     let cancelled = false;
@@ -368,6 +185,12 @@ function LocalAgentsTab({
       });
     return () => { cancelled = true; };
   }, [selectedEntry?.name]);
+
+  useEffect(() => {
+    if (!codexFastAvailable) {
+      setCodexFastMode(false);
+    }
+  }, [codexFastAvailable]);
 
   const handleCreateLocalConfig = async () => {
     if (!selectedEntry || !trimmedName) return;
@@ -393,19 +216,20 @@ function LocalAgentsTab({
         workingDir: workingDir.trim() || undefined,
         modelProvider: selectedEntry.name === 'codex' ? 'openai' : 'anthropic',
         modelName: modelName.trim() || undefined,
-        mode,
+        mode: 'execute',
         quality,
         managedMetadata: {
           local_runtime: selectedEntry.name === 'codex' ? 'codex-cli' : 'claude-code',
           local_config_source: selectedEntry.name === 'codex' ? '~/.codex' : '~/.claude',
           model_source: selectedEntry.name === 'codex' ? 'local-codex-config' : 'local-cli-config',
+          codex_service_tier: selectedEntry.name === 'codex' && codexFastMode ? 'fast' : 'default',
         },
         lifecycleStatus: 'active',
       });
       await refreshWorkspace();
       const message = `已创建 Agent "@${trimmedName}" 配置；启动本机 ${selectedEntry.label} 后会变为在线。`;
       setCreateSuccess(message);
-      setAgentName(nextAvailableAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝', new Set([...Array.from(existingNames), trimmedName])));
+      setAgentName('');
       toast.success(message);
     } catch (err) {
       const message = err instanceof Error ? err.message : '创建 Agent 失败';
@@ -417,12 +241,12 @@ function LocalAgentsTab({
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="rounded-lg border bg-background p-3 space-y-4">
+    <div className="space-y-4 p-4">
+      <div className="space-y-4 rounded-lg border bg-background p-3">
         <div>
           <h4 className="text-xs font-semibold">创建本地 Agent</h4>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            本地 Agent 使用同一套创建参数；入口页是否远端不影响这里的模型、模式和工作目录配置。
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            只创建本机 Agent 配置；启动时使用本机 CLI、登录态和工作目录。
           </p>
         </div>
 
@@ -430,8 +254,8 @@ function LocalAgentsTab({
           <Label className="text-[11px]">本地外壳</Label>
           <select
             value={selectedEntry?.name || selectedAgent || ''}
-            onChange={(e) => onSelectAgent(e.target.value || null)}
-            className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+            onChange={(event) => onSelectAgent(event.target.value || null)}
+            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           >
             {catalog.map((entry) => (
               <option key={entry.name} value={entry.name}>{entry.label}</option>
@@ -441,7 +265,7 @@ function LocalAgentsTab({
 
         {selectedEntry && (
           <div className="rounded-md bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">
-            <div className="flex items-center gap-2 text-foreground font-medium">
+            <div className="flex items-center gap-2 font-medium text-foreground">
               <AgentIcon name={selectedEntry.name} size={18} />
               <span>{selectedEntry.label}</span>
               {selectedEntry.homepage && (
@@ -449,7 +273,7 @@ function LocalAgentsTab({
                   href={selectedEntry.homepage}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                  className="text-muted-foreground/60 transition-colors hover:text-foreground"
                   aria-label="打开官网"
                 >
                   <ExternalLink className="size-3" />
@@ -459,7 +283,7 @@ function LocalAgentsTab({
             <p className="mt-1">
               {selectedEntry.name === 'codex'
                 ? '启动时走本机 Codex CLI，读取本机 ~/.codex/config.toml 和登录态。'
-                : '启动时走本机 Claude Code，读取本机 Claude 配置和登录态；DeepSeek 等模型源也配置在 Claude 外壳内。'}
+                : '启动时走本机 Claude Code，读取本机 Claude 配置和登录态。'}
             </p>
           </div>
         )}
@@ -468,40 +292,19 @@ function LocalAgentsTab({
           <Label className="text-[11px]">Agent 名称</Label>
           <Input
             value={agentName}
-            onChange={(e) => setAgentName(e.target.value)}
-            className={cn('h-9 text-sm', nameProblem && 'border-destructive focus-visible:ring-destructive/30')}
+            onChange={(event) => {
+              setAgentName(event.target.value);
+              setCreateError('');
+              setCreateSuccess('');
+            }}
+            className={cn((nameInvalid || nameExists) && 'border-destructive focus-visible:ring-destructive/30')}
             placeholder="例如 紫、蓝、魔理沙"
           />
-          <p className={cn('text-[10px]', nameProblem ? 'text-destructive' : 'text-muted-foreground')}>
+          <p className={cn('text-[10px]', nameInvalid || nameExists ? 'text-destructive' : 'text-muted-foreground')}>
             {nameExists
               ? '这个名称已经存在，请换一个。'
               : '名称就是 @ 提及时使用的名字，支持中文；不要包含空格、斜杠、@ 或冒号。'}
           </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-[11px]">运行模式 mode</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { value: 'execute', label: '执行', hint: '允许执行工具' },
-              { value: 'plan', label: '计划', hint: '只做方案' },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setMode(option.value)}
-                className={cn(
-                  'rounded-md border px-3 py-2 text-left transition-colors',
-                  mode === option.value
-                    ? 'border-primary/50 bg-primary/10 text-foreground'
-                    : 'bg-background hover:bg-accent',
-                )}
-              >
-                <div className="text-sm font-medium">{option.label}</div>
-                <div className="mt-0.5 text-[10px] text-muted-foreground">{option.hint}</div>
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="space-y-1">
@@ -509,8 +312,8 @@ function LocalAgentsTab({
           {selectedEntry?.name === 'codex' ? (
             <select
               value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              className="w-full h-9 rounded-md border bg-background px-2 text-sm font-mono"
+              onChange={(event) => setModelName(event.target.value)}
+              className="h-9 w-full rounded-md border bg-background px-2 font-mono text-sm"
               disabled={loadingCodexCatalog || codexModelOptions.length === 0}
             >
               {codexModelOptions.length === 0 ? (
@@ -524,9 +327,9 @@ function LocalAgentsTab({
           ) : (
             <Input
               value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              placeholder={selectedEntry?.name === 'codex' ? '例如 gpt-5' : '例如 claude-sonnet-4-5'}
-              className="h-9 text-xs font-mono"
+              onChange={(event) => setModelName(event.target.value)}
+              placeholder="例如 claude-sonnet-4-5"
+              className="h-9 font-mono text-xs"
             />
           )}
           <p className="text-[10px] text-muted-foreground">
@@ -538,12 +341,47 @@ function LocalAgentsTab({
           </p>
         </div>
 
+        {selectedEntry?.name === 'codex' && (
+          <div className={cn(
+            'flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5',
+            codexFastMode ? 'border-primary/40 bg-primary/5' : 'border-input',
+            !codexFastAvailable && 'opacity-60',
+          )}>
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Zap className="size-3.5 text-amber-500" />
+                Codex Fast mode
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {codexFastAvailable ? '使用当前 Codex 模型的 fast speed tier。' : '当前模型没有本机可用的 fast tier。'}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!codexFastAvailable}
+              onClick={() => setCodexFastMode((value) => !value)}
+              className={cn(
+                'relative h-6 w-10 rounded-full border transition-colors',
+                codexFastMode ? 'border-primary bg-primary' : 'border-input bg-muted',
+              )}
+              aria-pressed={codexFastMode}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 size-5 rounded-full bg-background shadow transition-transform',
+                  codexFastMode ? 'translate-x-4' : 'translate-x-0.5',
+                )}
+              />
+            </button>
+          </div>
+        )}
+
         <div className="space-y-1">
           <Label className="text-[11px]">推理强度</Label>
           <select
             value={quality}
-            onChange={(e) => setQuality(e.target.value)}
-            className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+            onChange={(event) => setQuality(event.target.value)}
+            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           >
             {['low', 'medium', 'high', 'xhigh', 'max'].map((value) => (
               <option key={value} value={value}>{value}</option>
@@ -553,7 +391,7 @@ function LocalAgentsTab({
 
         <div className="space-y-1">
           <Label className="text-[11px]">工作目录</Label>
-          <Input value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="C:\\path\\to\\project" className="h-9 text-xs font-mono" />
+          <Input value={workingDir} onChange={(event) => setWorkingDir(event.target.value)} placeholder="C:\\path\\to\\project" className="h-9 font-mono text-xs" />
         </div>
 
         {createError && (
@@ -568,315 +406,10 @@ function LocalAgentsTab({
         )}
 
         <Button size="sm" onClick={handleCreateLocalConfig} disabled={creating || !selectedEntry || !trimmedName || nameInvalid || nameExists} className="w-full">
-          {creating && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+          {creating && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
           {creating ? '创建中...' : '创建 Agent'}
         </Button>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Cloud Agents Tab
-// ---------------------------------------------------------------------------
-
-function CloudAgentsTab({
-  providers,
-  cloudAgents,
-  selectedProvider,
-  selectedProviderInfo,
-  isCustomProvider,
-  workspaceId,
-  onSelectProvider,
-  cfgModel,
-  setCfgModel,
-  cfgName,
-  setCfgName,
-  cfgKey,
-  setCfgKey,
-  cfgBaseUrl,
-  setCfgBaseUrl,
-  cfgPrompt,
-  setCfgPrompt,
-  showAdvanced,
-  setShowAdvanced,
-  saving,
-  onAdd,
-  onRemove,
-}: {
-  providers: CloudAgentProvider[];
-  cloudAgents: CloudAgentConfig[];
-  selectedProvider: string | null;
-  selectedProviderInfo: CloudAgentProvider | undefined;
-  isCustomProvider: boolean;
-  workspaceId: string;
-  onSelectProvider: (name: string | null) => void;
-  cfgModel: string;
-  setCfgModel: (v: string) => void;
-  cfgName: string;
-  setCfgName: (v: string) => void;
-  cfgKey: string;
-  setCfgKey: (v: string) => void;
-  cfgBaseUrl: string;
-  setCfgBaseUrl: (v: string) => void;
-  cfgPrompt: string;
-  setCfgPrompt: (v: string) => void;
-  showAdvanced: boolean;
-  setShowAdvanced: (v: boolean) => void;
-  saving: boolean;
-  onAdd: () => void;
-  onRemove: (name: string) => void;
-}) {
-  const providerGroups = [
-    { label: '对话模型', names: ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'mistral', 'sensenova'] },
-    { label: '搜索与 Agent', names: ['perplexity', 'manus'] },
-    { label: '高速推理', names: ['groq', 'together', 'fireworks', 'openrouter', 'sambanova', 'cerebras'] },
-    { label: '图像与媒体', names: ['stability', 'replicate', 'fal', 'elevenlabs'] },
-    { label: '自定义', names: ['custom'] },
-  ];
-
-  // When a provider is selected, show config view instead of grid
-  if (selectedProviderInfo) {
-    return (
-      <div className="p-4 space-y-4">
-        {/* Back button */}
-        <button
-          onClick={() => onSelectProvider(null)}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className="size-3 rotate-180" />
-          所有提供方
-        </button>
-
-        <div className="rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="px-4 py-3 border-b bg-background">
-            <div className="flex items-center gap-2.5">
-              <div className="size-8 flex items-center justify-center shrink-0">
-                <ProviderIcon name={selectedProviderInfo.name} size={32} />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold">{selectedProviderInfo.label}</h3>
-                <p className="text-[11px] text-muted-foreground">
-                  {isCustomProvider ? '连接任意 OpenAI 兼容端点' : '配置并添加云端 Agent'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 space-y-3">
-            {/* Custom endpoint: Base URL */}
-            {isCustomProvider && (
-              <div className="space-y-1.5">
-                <Label htmlFor="cloud-base-url" className="text-xs">端点 URL</Label>
-                <Input
-                  id="cloud-base-url"
-                  value={cfgBaseUrl}
-                  onChange={(e) => setCfgBaseUrl(e.target.value)}
-                  placeholder="https://api.example.com"
-                  className="text-sm font-mono h-9"
-                />
-                <p className="text-[10px] text-muted-foreground">需要时会自动补全 /v1</p>
-              </div>
-            )}
-
-            {/* Model selector — list for known providers, text input for custom */}
-            {isCustomProvider ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="cloud-model" className="text-xs">模型名称</Label>
-                <Input
-                  id="cloud-model"
-                  value={cfgModel}
-                  onChange={(e) => setCfgModel(e.target.value)}
-                  placeholder="e.g. gpt-4o, deepseek-chat, qwen-turbo"
-                  className="text-sm font-mono h-9"
-                />
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <Label className="text-xs">模型</Label>
-                <div className="grid grid-cols-1 gap-1">
-                  {selectedProviderInfo.models.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setCfgModel(m.id)}
-                      className={cn(
-                        'flex items-center gap-2.5 px-3 py-2 rounded-md border text-xs text-left transition-colors',
-                        cfgModel === m.id
-                          ? 'border-foreground/20 bg-background ring-1 ring-foreground/5'
-                          : 'border-transparent hover:bg-background/60',
-                      )}
-                    >
-                      <CategoryIcon category={m.category} className="size-3.5 shrink-0" />
-                      <span className="font-medium flex-1">{m.label}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                        {m.category}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Google OAuth option */}
-            {selectedProvider === 'google' && (
-              <>
-                <a
-                  href={`${getApiUrl()}/v1/cloud-agents/google/auth?network=${encodeURIComponent(workspaceId)}&agent_name=${encodeURIComponent(cfgName || 'gemini')}&model=${encodeURIComponent(cfgModel || 'gemini-3.5-flash')}`}
-                  className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg border-2 border-blue-200 dark:border-blue-800 bg-white dark:bg-zinc-900 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors text-sm font-medium"
-                >
-                  <svg viewBox="0 0 24 24" className="size-4" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                  </svg>
-                  使用 Google 登录
-                </a>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 border-t" />
-                  <span className="text-[10px] text-muted-foreground">或使用 API Key</span>
-                  <div className="flex-1 border-t" />
-                </div>
-              </>
-            )}
-
-            {/* Agent name */}
-            <div className="space-y-1.5">
-              <Label htmlFor="cloud-name" className="text-xs">Agent 名称</Label>
-              <Input
-                id="cloud-name"
-                value={cfgName}
-                onChange={(e) => setCfgName(e.target.value)}
-                placeholder="e.g. chatgpt"
-                className="text-sm h-9"
-              />
-              <p className="text-[10px] text-muted-foreground">聊天中用这个名称 @mention Agent</p>
-            </div>
-
-            {/* API Key */}
-            <div className="space-y-1.5">
-              <Label htmlFor="cloud-key" className="text-xs">API Key</Label>
-              <Input
-                id="cloud-key"
-                type="password"
-                value={cfgKey}
-                onChange={(e) => setCfgKey(e.target.value)}
-                placeholder="sk-...（官方登录时可留空）"
-                className="text-sm font-mono h-9"
-              />
-              <p className="text-[10px] text-muted-foreground">工作区使用官方登录或本地凭据配置时可留空。</p>
-            </div>
-
-            {/* Advanced */}
-            <div>
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showAdvanced ? '收起' : '显示'}高级选项
-              </button>
-              {showAdvanced && (
-                <div className="mt-2">
-                  <Label htmlFor="cloud-prompt" className="text-xs">系统提示词</Label>
-                  <Textarea
-                    id="cloud-prompt"
-                    value={cfgPrompt}
-                    onChange={(e) => setCfgPrompt(e.target.value)}
-                    placeholder="这个 Agent 的自定义指令..."
-                    className="text-sm min-h-[50px] mt-1.5"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Add button */}
-            <Button
-              onClick={onAdd}
-              disabled={saving || !cfgName || !cfgModel || (isCustomProvider && !cfgBaseUrl)}
-              className="w-full"
-              size="sm"
-            >
-              {saving && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
-              添加 Agent
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Grid view — no provider selected
-  return (
-    <div className="p-4 space-y-3">
-      {providerGroups.map((group) => {
-        const groupProviders = group.names
-          .map((n) => providers.find((p) => p.name === n))
-          .filter(Boolean) as typeof providers;
-        if (groupProviders.length === 0) return null;
-        return (
-          <div key={group.label}>
-            <div className="flex items-center gap-2 mb-1.5 px-0.5">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{group.label}</span>
-              <div className="flex-1 border-t" />
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {groupProviders.map((p) => {
-                const brand = getProviderBrand(p.name);
-                return (
-                  <button
-                    key={p.name}
-                    onClick={() => onSelectProvider(p.name)}
-                    className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 text-left transition-all"
-                  >
-                    <div className="size-6 shrink-0 flex items-center justify-center">
-                      <ProviderIcon name={p.name} size={22} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium leading-tight truncate">{p.label}</div>
-                      <div className="text-[9px] text-muted-foreground">{p.models.length} 个模型</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Connected cloud agents */}
-      {cloudAgents.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">已连接</span>
-            <div className="flex-1 border-t" />
-          </div>
-          {cloudAgents.map((agent) => (
-            <div
-              key={agent.agentName}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-background"
-            >
-              <div className="size-7 flex items-center justify-center shrink-0">
-                <ProviderIcon name={agent.provider} size={28} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium">@{agent.agentName}</span>
-                  <CategoryIcon category={agent.category} className="size-2.5" />
-                </div>
-                <div className="text-[10px] text-muted-foreground">{agent.model}</div>
-              </div>
-              <span className="text-[10px] text-muted-foreground font-mono">{agent.apiKeyMasked}</span>
-              <button
-                onClick={() => onRemove(agent.agentName)}
-                className="size-6 flex items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 transition-colors"
-                title="移除"
-              >
-                <Trash2 className="size-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

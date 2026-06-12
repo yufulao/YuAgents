@@ -239,6 +239,20 @@ def _format_channel(ch: Channel) -> dict:
     }
 
 
+def _normalize_workspace_name(name: str | None) -> str:
+    return (name or "").strip()
+
+
+def _workspace_name_exists(db: Session, name: str, *, exclude_id: UUID | None = None) -> bool:
+    query = select(Workspace).where(
+        Workspace.status != "deleted",
+        Workspace.name == name,
+    )
+    if exclude_id is not None:
+        query = query.where(Workspace.id != exclude_id)
+    return db.execute(query).scalar_one_or_none() is not None
+
+
 # ---------------------------------------------------------------------------
 # POST /v1/workspaces — Create workspace
 # ---------------------------------------------------------------------------
@@ -255,6 +269,12 @@ def create_workspace(
             "Workspace creation is disabled on this deployment; use an existing workspace slug and token",
         )
 
+    workspace_name = _normalize_workspace_name(body.name)
+    if not workspace_name:
+        return json_response(ResponseCode.BAD_REQUEST, "Workspace name is required")
+    if _workspace_name_exists(db, workspace_name):
+        return json_response(ResponseCode.BAD_REQUEST, f"Workspace '{workspace_name}' already exists")
+
     # Generate slug and token
     slug = secrets.token_hex(4)
     token = secrets.token_urlsafe(32)
@@ -263,7 +283,7 @@ def create_workspace(
 
     workspace = Workspace(
         slug=slug,
-        name=body.name,
+        name=workspace_name,
         creator_email=body.creator_email,
         password_hash=token,
         settings={},
@@ -473,7 +493,12 @@ def update_workspace(
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
     if body.name is not None:
-        workspace.name = body.name
+        next_name = _normalize_workspace_name(body.name)
+        if not next_name:
+            return json_response(ResponseCode.BAD_REQUEST, "Workspace name is required")
+        if _workspace_name_exists(db, next_name, exclude_id=workspace.id):
+            return json_response(ResponseCode.BAD_REQUEST, f"Workspace '{next_name}' already exists")
+        workspace.name = next_name
     if body.settings is not None:
         workspace.settings = body.settings
     if body.browser_enabled is not None:
@@ -834,6 +859,9 @@ def control_managed_agent(
                 "type": agent_type,
                 "role": member.role,
                 "workingDir": (cfg.working_dir if cfg and cfg.working_dir is not None else member.working_dir),
+                "model": cfg.model if cfg else None,
+                "quality": cfg.quality if cfg else None,
+                "metadata": metadata,
             },
         )
     except LocalAgentControlError as exc:

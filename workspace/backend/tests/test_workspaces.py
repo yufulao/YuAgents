@@ -59,6 +59,15 @@ class TestCreateWorkspace:
         assert resp.status_code == 403
         assert "disabled" in resp.json()["message"]
 
+    def test_create_workspace_rejects_duplicate_active_name(self, client):
+        """Workspace display names are unique so name-based login is unambiguous."""
+        first = client.post("/v1/workspaces", json={"name": "UniqueRoom"})
+        assert first.status_code == 200
+
+        duplicate = client.post("/v1/workspaces", json={"name": "UniqueRoom"})
+        assert duplicate.status_code == 400
+        assert "already exists" in duplicate.json()["message"]
+
 
 class TestGetWorkspace:
     """GET /v1/workspaces/{id} — get workspace details."""
@@ -141,10 +150,11 @@ class TestGetWorkspace:
 
         assert resp.status_code == 401
 
-    def test_resolve_workspace_rejects_ambiguous_active_name(self, client):
-        """Names are accepted only when they identify one active workspace."""
+    def test_resolve_workspace_name_stays_unambiguous(self, client):
+        """Duplicate names are rejected before name-based entry can become ambiguous."""
         one = client.post("/v1/workspaces", json={"name": "DuplicateName"}).json()["data"]
-        two = client.post("/v1/workspaces", json={"name": "DuplicateName"}).json()["data"]
+        duplicate = client.post("/v1/workspaces", json={"name": "DuplicateName"})
+        assert duplicate.status_code == 400
 
         resp = client.post(
             "/v1/workspaces/resolve",
@@ -152,16 +162,16 @@ class TestGetWorkspace:
             json={"workspace": "DuplicateName"},
         )
 
-        assert resp.status_code == 400
-        assert "Multiple workspaces" in resp.json()["message"]
+        assert resp.status_code == 200
+        assert resp.json()["data"]["workspaceId"] == one["workspaceId"]
 
         by_slug = client.post(
             "/v1/workspaces/resolve",
-            headers={"X-Workspace-Token": two["token"]},
-            json={"workspace": two["slug"]},
+            headers={"X-Workspace-Token": one["token"]},
+            json={"workspace": one["slug"]},
         )
         assert by_slug.status_code == 200
-        assert by_slug.json()["data"]["workspaceId"] == two["workspaceId"]
+        assert by_slug.json()["data"]["workspaceId"] == one["workspaceId"]
 
 
 class TestUpdateWorkspace:
@@ -174,6 +184,31 @@ class TestUpdateWorkspace:
         }, headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 200
         assert resp.json()["data"]["name"] == "Updated Name"
+
+    def test_update_name_rejects_duplicate_active_name(self, client, workspace):
+        """Renaming cannot create ambiguous workspace names."""
+        other = client.post("/v1/workspaces", json={"name": "Taken Name"}).json()["data"]
+
+        resp = client.patch(
+            f"/v1/workspaces/{workspace['id']}",
+            json={"name": "Taken Name"},
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+
+        assert resp.status_code == 400
+        assert "already exists" in resp.json()["message"]
+
+        unchanged = client.get(
+            f"/v1/workspaces/{workspace['id']}",
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        assert unchanged.json()["data"]["name"] == workspace["name"]
+
+        delete_other = client.delete(
+            f"/v1/workspaces/{other['slug']}",
+            headers={"X-Workspace-Token": other["token"]},
+        )
+        assert delete_other.status_code == 200
 
     def test_update_settings(self, client, workspace):
         """Update workspace settings."""

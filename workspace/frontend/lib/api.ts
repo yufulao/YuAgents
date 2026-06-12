@@ -3,8 +3,6 @@ import type {
   ApiResponse,
   BrowserPersistentContext,
   BrowserTab,
-  CloudAgentConfig,
-  CloudAgentProvider,
   DMConversation,
   EventPollResponse,
   KnowledgeEntry,
@@ -18,7 +16,6 @@ import type {
   TodoItem,
   Workspace,
   WorkspaceAgent,
-  WorkspaceCollaborator,
   WorkspaceFile,
   WorkspaceInvitation,
   WorkspaceSession,
@@ -120,16 +117,10 @@ class WorkspaceApi {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`);
   }
 
-  async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown>; browserfabric_api_key?: string }): Promise<Workspace> {
+  async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown> }): Promise<Workspace> {
     return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
-    });
-  }
-
-  async claimWorkspace(): Promise<Workspace> {
-    return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}/claim`, {
-      method: 'POST',
     });
   }
 
@@ -748,72 +739,6 @@ class WorkspaceApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Cloud agents
-  // ---------------------------------------------------------------------------
-
-  async getCloudProviders(): Promise<CloudAgentProvider[]> {
-    const res = await this.request<{ providers: CloudAgentProvider[] }>('/v1/cloud-agents/providers');
-    return res.providers;
-  }
-
-  async listCloudAgents(): Promise<CloudAgentConfig[]> {
-    const res = await this.request<{ cloud_agents: CloudAgentConfig[] }>(
-      `/v1/cloud-agents?network=${this.workspaceId}`
-    );
-    return res.cloud_agents;
-  }
-
-  async addCloudAgent(params: {
-    agentName: string;
-    provider: string;
-    model: string;
-    apiKey?: string;
-    baseUrl?: string;
-    systemPrompt?: string;
-    maxTokens?: number;
-  }): Promise<CloudAgentConfig> {
-    return this.request<CloudAgentConfig>('/v1/cloud-agents', {
-      method: 'POST',
-      body: JSON.stringify({
-        network: this.workspaceId,
-        agent_name: params.agentName,
-        provider: params.provider,
-        model: params.model,
-        api_key: params.apiKey,
-        base_url: params.baseUrl || null,
-        system_prompt: params.systemPrompt || null,
-        max_tokens: params.maxTokens || null,
-      }),
-    });
-  }
-
-  async updateCloudAgent(agentName: string, updates: {
-    model?: string;
-    apiKey?: string;
-    systemPrompt?: string;
-    maxTokens?: number;
-    status?: string;
-  }): Promise<CloudAgentConfig> {
-    return this.request<CloudAgentConfig>(`/v1/cloud-agents/${agentName}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        network: this.workspaceId,
-        ...updates.model !== undefined && { model: updates.model },
-        ...updates.apiKey !== undefined && { api_key: updates.apiKey },
-        ...updates.systemPrompt !== undefined && { system_prompt: updates.systemPrompt },
-        ...updates.maxTokens !== undefined && { max_tokens: updates.maxTokens },
-        ...updates.status !== undefined && { status: updates.status },
-      }),
-    });
-  }
-
-  async removeCloudAgent(agentName: string): Promise<void> {
-    await this.request<unknown>(`/v1/cloud-agents/${agentName}?network=${this.workspaceId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // ---------------------------------------------------------------------------
   // Invitations (stubs — not yet event-native)
   // ---------------------------------------------------------------------------
 
@@ -823,32 +748,6 @@ class WorkspaceApi {
 
   async listInvitations(_status?: string): Promise<WorkspaceInvitation[]> {
     return []; // Return empty list — invitations not yet migrated
-  }
-
-  // ---------------------------------------------------------------------------
-  // Collaborators (email-based sharing)
-  // ---------------------------------------------------------------------------
-
-  /** List email-based collaborators for this workspace. */
-  async listCollaborators(): Promise<{ collaborators: WorkspaceCollaborator[]; owner: string | null }> {
-    return this.request<{ collaborators: WorkspaceCollaborator[]; owner: string | null }>(
-      `/v1/workspaces/${this.workspaceId}/collaborators`
-    );
-  }
-
-  /** Add an email-based collaborator. */
-  async addCollaborator(email: string, role: string = 'editor'): Promise<WorkspaceCollaborator> {
-    return this.request<WorkspaceCollaborator>(`/v1/workspaces/${this.workspaceId}/collaborators`, {
-      method: 'POST',
-      body: JSON.stringify({ email, role }),
-    });
-  }
-
-  /** Remove an email-based collaborator. */
-  async removeCollaborator(email: string): Promise<void> {
-    await this.request<unknown>(`/v1/workspaces/${this.workspaceId}/collaborators/${encodeURIComponent(email)}`, {
-      method: 'DELETE',
-    });
   }
 
   // ---------------------------------------------------------------------------

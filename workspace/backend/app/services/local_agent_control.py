@@ -81,6 +81,24 @@ agent.role = ag.role || 'worker';
 agent.network = ws.slug;
 if (ag.workingDir) agent.path = ag.workingDir;
 else delete agent.path;
+agent.env = agent.env && typeof agent.env === 'object' ? agent.env : {};
+if (ag.type === 'codex') {
+  if (ag.model) agent.env.CODEX_MODEL = ag.model;
+  else delete agent.env.CODEX_MODEL;
+  if (ag.quality) {
+    agent.env.CODEX_REASONING_EFFORT = ag.quality;
+  } else {
+    delete agent.env.CODEX_REASONING_EFFORT;
+  }
+  const serviceTier = ag.metadata && ag.metadata.codex_service_tier;
+  if (serviceTier && serviceTier !== 'default') {
+    agent.env.CODEX_SERVICE_TIER = serviceTier;
+    agent.env.OPENAI_SERVICE_TIER = serviceTier;
+  } else {
+    delete agent.env.CODEX_SERVICE_TIER;
+    delete agent.env.OPENAI_SERVICE_TIER;
+  }
+}
 
 connector.config.save(config);
 
