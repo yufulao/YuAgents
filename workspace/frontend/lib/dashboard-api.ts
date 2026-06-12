@@ -123,6 +123,19 @@ export async function listLocalWorkspaces(): Promise<Workspace[]> {
   return localFetch<Workspace[]>('/v1/workspaces');
 }
 
+export async function getLocalWorkspaceToken(slug: string): Promise<string> {
+  const data = await localFetch<{ token: string }>(`/v1/workspaces/${encodeURIComponent(slug)}/local-token`);
+  rememberLocalWorkspaceToken(slug, data.token);
+  return data.token;
+}
+
+export async function deleteLocalWorkspace(slug: string, token: string): Promise<void> {
+  await localFetch(`/v1/workspaces/${encodeURIComponent(slug)}`, {
+    method: 'DELETE',
+    headers: { 'X-Workspace-Token': token },
+  });
+}
+
 export async function createLocalWorkspace(params: {
   name: string;
   agentName?: string;

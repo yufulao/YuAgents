@@ -89,6 +89,54 @@ def test_create_managed_agent_defaults_mode_to_execute(client, workspace, db):
     assert cfg.mode == "execute"
 
 
+def test_create_managed_agent_accepts_blank_working_dir(client, workspace, db):
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={
+            "agent_name": "blank-dir",
+            "agent_type": "codex",
+            "working_dir": "",
+            "model_provider": "openai",
+            "model_name": "gpt-5",
+            "mode": "execute",
+            "quality": "medium",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["workingDir"] is None
+    assert data["modelProvider"] == "openai"
+    assert data["model"] == "gpt-5"
+
+    cfg = db.query(AgentConfig).filter_by(handle="blank-dir").one()
+    member = db.query(WorkspaceMember).filter_by(agent_name="blank-dir").one()
+    assert cfg.working_dir is None
+    assert member.working_dir is None
+
+
+def test_create_managed_agent_rejects_stale_config_duplicate(client, workspace, db):
+    db.add(AgentConfig(
+        workspace_id=workspace["id"],
+        handle="stale-config",
+        display_name="stale-config",
+        avatar={"type": "pixel", "value": "stale-config"},
+        agent_type="codex",
+    ))
+    db.commit()
+
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "stale-config", "agent_type": "codex"},
+    )
+
+    assert resp.status_code == 400
+    assert "already exists" in resp.json()["message"]
+    assert db.query(WorkspaceMember).filter_by(agent_name="stale-config").count() == 0
+
+
 def test_create_managed_agent_accepts_chinese_one_field_name(client, workspace, db):
     resp = client.post(
         f"/v1/workspaces/{workspace['id']}/agents",

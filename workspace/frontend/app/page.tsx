@@ -6,7 +6,7 @@ import Image from 'next/image';
 import {
   Bot, Plus, LogOut, Users, Clock, Archive, Loader2,
   Terminal, Copy, Check, ArrowRight, Download,
-  Network, Zap, Shield, MonitorSmartphone,
+  Network, Zap, Shield, MonitorSmartphone, Trash2, Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,8 @@ import {
   createWorkspace,
   listLocalWorkspaces,
   createLocalWorkspace,
+  deleteLocalWorkspace,
+  getLocalWorkspaceToken,
   getLocalWorkspaceTokens,
   rememberLocalWorkspaceToken,
   type WorkspaceSummary,
@@ -29,6 +31,12 @@ import { timeAgo } from '@/lib/helpers';
 import { capture } from '@/lib/analytics';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceCreationEnabled, workspaceDirectoryEnabled } from '@/lib/workspace-policy';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ---------------------------------------------------------------------------
 // Copyable Code Block
@@ -70,6 +78,11 @@ function LandingPage() {
   const [newName, setNewName] = useState('');
   const [newAgent, setNewAgent] = useState('');
   const [createdWorkspace, setCreatedWorkspace] = useState<{ workspaceId: string; slug: string; name: string; token: string } | null>(null);
+  const [managedWorkspace, setManagedWorkspace] = useState<Workspace | null>(null);
+  const [managedToken, setManagedToken] = useState('');
+  const [manageError, setManageError] = useState('');
+  const [loadingToken, setLoadingToken] = useState(false);
+  const [deletingWorkspace, setDeletingWorkspace] = useState(false);
 
   const loadLocalWorkspaces = useCallback(async () => {
     if (!workspaceDirectoryEnabled) {
@@ -112,6 +125,46 @@ function LandingPage() {
     }
     setWorkspaceSlug(workspace.slug);
     setWorkspaceToken('');
+  };
+
+  const manageWorkspace = async (workspace: Workspace) => {
+    setManagedWorkspace(workspace);
+    setManagedToken(tokens[workspace.slug] || '');
+    setManageError('');
+    setLoadingToken(!tokens[workspace.slug]);
+    if (!tokens[workspace.slug]) {
+      try {
+        const token = await getLocalWorkspaceToken(workspace.slug);
+        setManagedToken(token);
+        setTokens(getLocalWorkspaceTokens());
+      } catch (err) {
+        setManageError(err instanceof Error ? err.message : '读取 workspace token 失败');
+      } finally {
+        setLoadingToken(false);
+      }
+    }
+  };
+
+  const deleteManagedWorkspace = async () => {
+    if (!managedWorkspace) return;
+    const token = managedToken || tokens[managedWorkspace.slug] || '';
+    if (!token) {
+      setManageError('缺少 token，无法删除 workspace');
+      return;
+    }
+    if (!window.confirm(`删除 workspace "${managedWorkspace.name}"？这会把它从本机列表移除。`)) return;
+    setDeletingWorkspace(true);
+    setManageError('');
+    try {
+      await deleteLocalWorkspace(managedWorkspace.slug, token);
+      setManagedWorkspace(null);
+      setManagedToken('');
+      await loadLocalWorkspaces();
+    } catch (err) {
+      setManageError(err instanceof Error ? err.message : '删除 workspace 失败');
+    } finally {
+      setDeletingWorkspace(false);
+    }
   };
 
   const createLocal = async (e: React.FormEvent) => {
@@ -203,9 +256,8 @@ function LandingPage() {
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {workspaces.map((workspace) => (
-                      <button
+                      <div
                         key={workspace.workspaceId}
-                        onClick={() => openListedWorkspace(workspace)}
                         className="rounded-lg border p-3 text-left hover:border-primary/40 hover:bg-accent/30 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -229,7 +281,17 @@ function LandingPage() {
                             </span>
                           )}
                         </div>
-                      </button>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <Button type="button" size="sm" variant="outline" onClick={() => manageWorkspace(workspace)}>
+                            <Settings className="size-3.5 mr-1" />
+                            管理
+                          </Button>
+                          <Button type="button" size="sm" onClick={() => openListedWorkspace(workspace)}>
+                            进入
+                            <ArrowRight className="size-3.5 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -351,6 +413,104 @@ function LandingPage() {
           </section>
         </div>
       </main>
+
+      <Dialog
+        open={!!managedWorkspace}
+        onOpenChange={(open) => {
+          if (!open) {
+            setManagedWorkspace(null);
+            setManagedToken('');
+            setManageError('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>管理 Workspace</DialogTitle>
+          </DialogHeader>
+          {managedWorkspace && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{managedWorkspace.name}</div>
+                    <div className="mt-1 text-xs text-muted-foreground font-mono truncate">
+                      {managedWorkspace.slug}
+                    </div>
+                  </div>
+                  <Badge variant={managedWorkspace.status === 'active' ? 'primary' : 'secondary'}>
+                    {managedWorkspace.status}
+                  </Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                  <div>
+                    <div className="font-medium text-foreground">{managedWorkspace.agents.length}</div>
+                    <div>Agent</div>
+                  </div>
+                  <div>
+                    <div className="font-medium text-foreground">
+                      {managedWorkspace.lastActivityAt ? timeAgo(managedWorkspace.lastActivityAt) : '无'}
+                    </div>
+                    <div>最近活动</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="managed-workspace-token">管理 Token</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="managed-workspace-token"
+                    value={loadingToken ? '读取 token...' : managedToken}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="shrink-0"
+                    title="复制 token"
+                    disabled={!managedToken || loadingToken}
+                    onClick={() => navigator.clipboard?.writeText(managedToken)}
+                  >
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {manageError && (
+                <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {manageError}
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={deleteManagedWorkspace}
+                  disabled={loadingToken || deletingWorkspace}
+                >
+                  {deletingWorkspace ? <Loader2 className="size-4 animate-spin mr-1" /> : <Trash2 className="size-4 mr-1" />}
+                  删除 Workspace
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!managedToken || loadingToken}
+                  onClick={() => {
+                    if (!managedWorkspace || !managedToken) return;
+                    router.push(`/${managedWorkspace.slug}?token=${encodeURIComponent(managedToken)}`);
+                  }}
+                >
+                  进入工作区
+                  <ArrowRight className="size-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider } from '@/lib/types';
+import type { AgentCatalogEntry, CloudAgentConfig, CloudAgentProvider, CodexLocalCatalog } from '@/lib/types';
 import { AgentIcon, ProviderIcon } from '@/components/icons/agent-icons';
 import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
 import { getApiUrl } from '@/lib/api-url';
@@ -301,7 +301,12 @@ function LocalAgentsTab({
   const { agents, refreshWorkspace } = useWorkspace();
   const [agentName, setAgentName] = useState('');
   const [workingDir, setWorkingDir] = useState('');
+  const [modelName, setModelName] = useState('');
   const [mode, setMode] = useState('execute');
+  const [quality, setQuality] = useState('medium');
+  const [codexCatalog, setCodexCatalog] = useState<CodexLocalCatalog | null>(null);
+  const [loadingCodexCatalog, setLoadingCodexCatalog] = useState(false);
+  const [codexCatalogError, setCodexCatalogError] = useState('');
   const [createError, setCreateError] = useState('');
   const [createSuccess, setCreateSuccess] = useState('');
   const [creating, setCreating] = useState(false);
@@ -318,10 +323,38 @@ function LocalAgentsTab({
     }
     if (!selectedEntry) return;
     setAgentName(nextAvailableAgentName(selectedEntry.name === 'codex' ? '紫' : '蓝', existingNames));
+    setModelName(selectedEntry.name === 'codex' ? (codexCatalog?.config.model || codexCatalog?.models[0]?.slug || '') : '');
     setMode('execute');
+    setQuality(selectedEntry.name === 'codex' ? (codexCatalog?.config.model_reasoning_effort || 'medium') : 'medium');
     setCreateError('');
     setCreateSuccess('');
-  }, [selectedEntry, catalog, existingNames, onSelectAgent]);
+  }, [selectedEntry, catalog, existingNames, onSelectAgent, codexCatalog]);
+
+  useEffect(() => {
+    if (selectedEntry?.name !== 'codex') {
+      setCodexCatalogError('');
+      return;
+    }
+    let cancelled = false;
+    setLoadingCodexCatalog(true);
+    setCodexCatalogError('');
+    workspaceApi.getLocalCodexCatalog()
+      .then((data) => {
+        if (cancelled) return;
+        setCodexCatalog(data);
+        setModelName((current) => current || data.config.model || data.models[0]?.slug || '');
+        setQuality((current) => current || data.config.model_reasoning_effort || 'medium');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCodexCatalog(null);
+        setCodexCatalogError(err instanceof Error ? err.message : '读取本机 Codex 模型失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCodexCatalog(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedEntry?.name]);
 
   const handleCreateLocalConfig = async () => {
     if (!selectedEntry || !trimmedName) return;
@@ -345,12 +378,14 @@ function LocalAgentsTab({
         agentType: selectedEntry.name,
         displayName: trimmedName,
         workingDir: workingDir.trim() || undefined,
-        modelProvider: `${selectedEntry.name}-local`,
+        modelProvider: selectedEntry.name === 'codex' ? 'openai' : 'anthropic',
+        modelName: modelName.trim() || undefined,
         mode,
+        quality,
         managedMetadata: {
           local_runtime: selectedEntry.name === 'codex' ? 'codex-cli' : 'claude-code',
           local_config_source: selectedEntry.name === 'codex' ? '~/.codex' : '~/.claude',
-          model_source: 'local-cli-config',
+          model_source: selectedEntry.name === 'codex' ? 'local-codex-config' : 'local-cli-config',
         },
         lifecycleStatus: 'active',
       });
@@ -374,7 +409,7 @@ function LocalAgentsTab({
         <div>
           <h4 className="text-xs font-semibold">创建本地 Agent</h4>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            先只保留 Codex 和 Claude。模型、provider、Fast、DeepSeek 等都由对应本机 CLI 配置决定。
+            本地 Agent 使用同一套创建参数；入口页是否远端不影响这里的模型、模式和工作目录配置。
           </p>
         </div>
 
@@ -454,6 +489,53 @@ function LocalAgentsTab({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">模型</Label>
+          {selectedEntry?.name === 'codex' && codexCatalog?.models.length ? (
+            <select
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              className="w-full h-9 rounded-md border bg-background px-2 text-sm font-mono"
+            >
+              {codexCatalog.models.map((model) => (
+                <option key={model.slug} value={model.slug}>
+                  {model.display_name || model.slug}
+                </option>
+              ))}
+              {modelName && !codexCatalog.models.some((model) => model.slug === modelName) && (
+                <option value={modelName}>{modelName}</option>
+              )}
+            </select>
+          ) : (
+            <Input
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              placeholder={selectedEntry?.name === 'codex' ? '例如 gpt-5' : '例如 claude-sonnet-4-5'}
+              className="h-9 text-xs font-mono"
+            />
+          )}
+          <p className="text-[10px] text-muted-foreground">
+            {selectedEntry?.name === 'codex'
+              ? loadingCodexCatalog
+                ? '正在读取本机 Codex 模型列表...'
+                : codexCatalogError || '默认读取本机 Codex 配置，也可以手动覆盖。'
+              : 'Claude 默认跟随本机 Claude Code 配置，也可以在这里记录模型名。'}
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-[11px]">推理强度</Label>
+          <select
+            value={quality}
+            onChange={(e) => setQuality(e.target.value)}
+            className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+          >
+            {['low', 'medium', 'high', 'xhigh', 'max'].map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
         </div>
 
         <div className="space-y-1">

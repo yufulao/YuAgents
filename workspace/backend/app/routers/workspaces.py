@@ -495,6 +495,37 @@ def claim_workspace(
 
 
 # ---------------------------------------------------------------------------
+# GET /v1/workspaces/{workspace_id}/local-token
+# ---------------------------------------------------------------------------
+
+@router.get("/{workspace_id}/local-token")
+def get_local_workspace_token(
+    workspace_id: str,
+    db: Session = Depends(get_db),
+):
+    """Return the workspace token for trusted local-control deployments.
+
+    This endpoint is intentionally disabled by the same flags used to hide
+    workspace creation/directory on remote public Web deployments.
+    """
+    if not (config.WORKSPACE_CREATION_ENABLED and config.WORKSPACE_DIRECTORY_ENABLED):
+        return json_response(ResponseCode.FORBIDDEN, "Workspace token discovery is disabled on this deployment")
+
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(workspace_id))
+    ).scalar_one_or_none()
+
+    if not workspace or workspace.status == "deleted":
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+
+    return success_response({
+        "workspaceId": str(workspace.id),
+        "slug": workspace.slug,
+        "token": workspace.password_hash,
+    })
+
+
+# ---------------------------------------------------------------------------
 # POST /v1/workspaces/{workspace_id}/rotate-token
 # ---------------------------------------------------------------------------
 
@@ -615,6 +646,14 @@ def create_managed_agent(
         )
     ).scalar_one_or_none()
     if existing:
+        return json_response(ResponseCode.BAD_REQUEST, f"Agent '{body.agent_name}' already exists")
+    existing_cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace.id,
+            AgentConfig.handle == body.agent_name,
+        )
+    ).scalar_one_or_none()
+    if existing_cfg:
         return json_response(ResponseCode.BAD_REQUEST, f"Agent '{body.agent_name}' already exists")
 
     disabled = body.lifecycle_status == "disabled"

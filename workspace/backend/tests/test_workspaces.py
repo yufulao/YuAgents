@@ -94,6 +94,16 @@ class TestGetWorkspace:
         assert detail.status_code == 200
         assert detail.json()["data"]["workspaceId"] == workspace["id"]
 
+    def test_local_token_discovery_only_in_local_mode(self, client, workspace, monkeypatch):
+        """Local Web can recover tokens; remote relay deployments cannot."""
+        token = client.get(f"/v1/workspaces/{workspace['slug']}/local-token")
+        assert token.status_code == 200
+        assert token.json()["data"]["token"] == workspace["token"]
+
+        monkeypatch.setattr(config, "WORKSPACE_DIRECTORY_ENABLED", False)
+        disabled = client.get(f"/v1/workspaces/{workspace['slug']}/local-token")
+        assert disabled.status_code == 403
+
     def test_get_workspace_includes_agents(self, client, workspace):
         """Workspace detail includes agent list."""
         resp = client.get(f"/v1/workspaces/{workspace['id']}",
