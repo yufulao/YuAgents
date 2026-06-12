@@ -11,8 +11,8 @@ Remote mode keeps these controls disabled:
 - `NEXT_PUBLIC_WORKSPACE_CREATION_ENABLED=false`
 - `NEXT_PUBLIC_WORKSPACE_DIRECTORY_ENABLED=false`
 
-Remote nginx forwards `/v1/*` to `LOCAL_CONTROL_API_URL`. In the local Docker
-simulation that defaults to:
+The remote frontend uses same-origin `/v1` by default. Remote nginx forwards
+`/v1/*` to `LOCAL_CONTROL_API_URL`. In the local Docker simulation that defaults to:
 
 ```text
 http://host.docker.internal:8000

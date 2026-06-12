@@ -33,7 +33,7 @@ function Set-RemoteEnv {
 
   $env:REMOTE_WEB_BIND = $Bind
   $env:REMOTE_WEB_PORT = [string]$Port
-  $env:API_URL = $PublicUrl
+  $env:API_URL = ""
   $env:CORS_ORIGINS = $PublicUrl
   $env:LOCAL_CONTROL_API_URL = $LocalControlApiUrl
   $env:WORKSPACE_CREATION_ENABLED = "false"
