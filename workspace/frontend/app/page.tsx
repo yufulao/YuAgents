@@ -228,7 +228,7 @@ export default function HomePage() {
               </h1>
               <p className="max-w-2xl leading-relaxed text-muted-foreground">
                 {workspaceDirectoryEnabled
-                  ? 'Workspace 由本机主控保存和管理。服务器、Web 页面、其他设备只是通过网络入口或 SSH 转发访问本机主控，不把 workspace 放到云端。'
+                  ? 'Workspace 由本机主控保存和管理。服务器、Web 页面、其他设备只是通过网络入口或 SSH 转发访问本机主控，不把 workspace 放到外部服务。'
                   : '远端 Web 只作为访问入口。请输入已有 workspace 名称/slug 和 token/password 进入，不在公开入口创建或枚举 workspace。'}
               </p>
             </div>

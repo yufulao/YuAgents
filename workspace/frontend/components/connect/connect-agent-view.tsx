@@ -246,7 +246,7 @@ function LocalAgentForm({
         <div>
           <h4 className="text-xs font-semibold">创建本地 Agent</h4>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            只创建本机 Agent 配置；启动时使用本机 CLI、登录态和工作目录。
+            只创建本机 Agent 配置；启动时使用本机 CLI 和工作目录。
           </p>
         </div>
 
@@ -282,8 +282,8 @@ function LocalAgentForm({
             </div>
             <p className="mt-1">
               {selectedEntry.name === 'codex'
-                ? '启动时走本机 Codex CLI，读取本机 ~/.codex/config.toml 和登录态。'
-                : '启动时走本机 Claude Code，读取本机 Claude 配置和登录态。'}
+                ? '启动时走本机 Codex CLI，读取本机 ~/.codex/config.toml 和 CLI 会话配置。'
+                : '启动时走本机 Claude Code，读取本机 Claude 配置和 CLI 会话配置。'}
             </p>
           </div>
         )}
