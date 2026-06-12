@@ -2,8 +2,9 @@
 """Tests for Web-managed agent configuration APIs."""
 
 import json
+from datetime import datetime, timezone
 
-from app.models import AgentConfig
+from app.models import AgentConfig, WorkspaceMember
 
 
 def _auth(workspace):
@@ -181,6 +182,38 @@ def test_control_managed_agent_starts_local_daemon_bridge(client, workspace, mon
     assert calls[0]["agent"]["workingDir"] == "C:/repo"
     assert calls[0]["workspace"]["token"] == workspace["token"]
     assert calls[0]["endpoint"] == "http://testserver"
+
+
+def test_control_managed_agent_keeps_fast_join_online(client, workspace, db, monkeypatch):
+    client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "fast-joiner", "agent_type": "codex"},
+    )
+
+    def fake_control_local_agent(**kwargs):
+        member = db.query(WorkspaceMember).filter_by(
+            workspace_id=workspace["id"],
+            agent_name="fast-joiner",
+        ).one()
+        member.status = "online"
+        member.last_heartbeat = datetime.now(timezone.utc)
+        member.session_id = "session-from-fast-daemon-join"
+        db.commit()
+        return {"ok": True, "command": "daemon:start", "pid": 1234}
+
+    monkeypatch.setattr("app.routers.workspaces.control_local_agent", fake_control_local_agent)
+
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents/fast-joiner/control",
+        headers=_auth(workspace),
+        json={"action": "start"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["agent"]["agentName"] == "fast-joiner"
+    assert data["agent"]["status"] == "online"
 
 
 def test_cloud_agent_allows_empty_api_key(client, workspace):

@@ -711,6 +711,7 @@ def control_managed_agent(
         return json_response(ResponseCode.BAD_REQUEST, "Agent is disabled; enable it before starting")
 
     endpoint = str(request.base_url).rstrip("/")
+    control_started_at = datetime.now(timezone.utc)
     try:
         result = control_local_agent(
             action=body.action,
@@ -735,8 +736,21 @@ def control_managed_agent(
     if body.action == "stop":
         member.status = "offline"
     else:
-        member.status = "starting"
-        member.last_heartbeat = now
+        # Cold-start races with the daemon's first /v1/join: the child process
+        # can mark the member online before this control request returns. Do
+        # not clobber that fresher online state back to starting.
+        db.refresh(member)
+        heartbeat = member.last_heartbeat
+        if heartbeat and heartbeat.tzinfo is None:
+            heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+        has_fresh_online_join = (
+            member.status == "online"
+            and heartbeat is not None
+            and heartbeat >= control_started_at
+        )
+        if not has_fresh_online_join:
+            member.status = "starting"
+            member.last_heartbeat = now
     db.commit()
 
     return success_response({
