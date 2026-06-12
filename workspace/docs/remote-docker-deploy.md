@@ -22,12 +22,13 @@ For a real Linux server, point `LOCAL_CONTROL_API_URL` at an SSH reverse tunnel
 or another private path back to the local control plane. The relay container
 must be able to reach this URL; otherwise `/v1/*` will return a clear 502.
 
-The default Linux setup assumes an SSH reverse tunnel listens on the server
-host at `127.0.0.1:8000`, and Docker reaches that host port as
-`host.docker.internal:8000`:
+The default Linux setup assumes an SSH reverse tunnel listens on the server's
+Docker host-gateway address, and Docker reaches that host port as
+`host.docker.internal:8000`. A tunnel bound only to server `127.0.0.1` may pass
+host-side `curl` checks while still being unreachable from the nginx container.
 
 ```text
-server host preflight:  http://127.0.0.1:8000
+server host preflight:  http://<docker-host-gateway>:8000
 nginx container upstream: http://host.docker.internal:8000
 ```
 
@@ -51,25 +52,51 @@ On Linux/macOS, run the equivalent shell script from `workspace`:
 sh start.sh
 ```
 
-For a real remote Linux server, first create the reverse tunnel from the local
-machine that runs the authoritative control plane:
+For a real remote Linux server, first get the Docker host-gateway address on
+the server:
 
 ```sh
-ssh -N -R 8000:127.0.0.1:8000 root@YOUR_SERVER
+docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
 ```
 
-Then start the relay on the server:
+It is commonly `172.17.0.1`. Then create the reverse tunnel from the local
+machine that runs the authoritative control plane, binding the server side to
+that gateway address:
+
+```sh
+ssh -N -R 172.17.0.1:8000:127.0.0.1:8000 root@YOUR_SERVER
+```
+
+If sshd rejects the bind address, set this on the server and reload sshd:
+
+```text
+GatewayPorts clientspecified
+```
+
+Then verify both the server host and a Docker container can reach the tunnel:
+
+```sh
+curl -fsS http://172.17.0.1:8000/v1/agent-catalog
+
+docker run --rm --add-host host.docker.internal:host-gateway curlimages/curl:8.10.1 \
+  -fsS http://host.docker.internal:8000/v1/agent-catalog
+```
+
+Then start the relay on the server. Replace `172.17.0.1` with the gateway
+address printed by `docker network inspect`:
 
 ```sh
 cd /home/OpenAgents/workspace
-LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 bash start.sh
+LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 \
+CONTROL_CHECK_URL=http://172.17.0.1:8000 \
+bash start.sh
 ```
 
 If your reverse tunnel uses a different server port, set both URLs:
 
 ```sh
 LOCAL_CONTROL_API_URL=http://host.docker.internal:18000 \
-CONTROL_CHECK_URL=http://127.0.0.1:18000 \
+CONTROL_CHECK_URL=http://172.17.0.1:18000 \
 bash start.sh
 ```
 

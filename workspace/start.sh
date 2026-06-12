@@ -9,13 +9,19 @@ cd "$SCRIPT_DIR"
 : "${PUBLIC_URL:=http://localhost:${REMOTE_WEB_PORT}}"
 : "${LOCAL_CONTROL_API_URL:=http://host.docker.internal:8000}"
 : "${CONTROL_CHECK_URL:=${LOCAL_CONTROL_API_URL}}"
+: "${DOCKER_HOST_GATEWAY:=}"
+
+if [ -z "$DOCKER_HOST_GATEWAY" ] && command -v docker >/dev/null 2>&1; then
+  DOCKER_HOST_GATEWAY="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
+fi
+: "${DOCKER_HOST_GATEWAY:=127.0.0.1}"
 
 case "$CONTROL_CHECK_URL" in
   http://host.docker.internal:*)
-    CONTROL_CHECK_URL="http://127.0.0.1:${CONTROL_CHECK_URL##*:}"
+    CONTROL_CHECK_URL="http://${DOCKER_HOST_GATEWAY}:${CONTROL_CHECK_URL#http://host.docker.internal:}"
     ;;
   http://host.docker.internal/*)
-    CONTROL_CHECK_URL="http://127.0.0.1/${CONTROL_CHECK_URL#http://host.docker.internal/}"
+    CONTROL_CHECK_URL="http://${DOCKER_HOST_GATEWAY}/${CONTROL_CHECK_URL#http://host.docker.internal/}"
     ;;
 esac
 
@@ -37,6 +43,7 @@ echo "Starting OpenAgents prod-style local stack..."
 echo "URL: ${PUBLIC_URL}"
 echo "Bind: ${REMOTE_WEB_BIND}:${REMOTE_WEB_PORT}"
 echo "Local control API from Docker: ${LOCAL_CONTROL_API_URL}"
+echo "Docker host gateway: ${DOCKER_HOST_GATEWAY}"
 echo "Local control API preflight from host: ${CONTROL_CHECK_URL}"
 echo "Workspace creation: disabled"
 echo "Workspace directory: disabled"
@@ -60,9 +67,10 @@ if ! fetch_ok "${CONTROL_CHECK_URL%/}/v1/agent-catalog"; then
   echo "[ERROR] Local control plane is not reachable from the server host at ${CONTROL_CHECK_URL}." >&2
   echo "Start the local control plane first, or create an SSH reverse tunnel to this server." >&2
   echo "Example from your local machine:" >&2
-  echo "  ssh -N -R 8000:127.0.0.1:8000 root@YOUR_SERVER" >&2
+  echo "  ssh -N -R ${DOCKER_HOST_GATEWAY}:8000:127.0.0.1:8000 root@YOUR_SERVER" >&2
+  echo "If sshd rejects that bind address, set 'GatewayPorts clientspecified' on the server and reload sshd." >&2
   echo "Then rerun with:" >&2
-  echo "  LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 bash start.sh" >&2
+  echo "  LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 CONTROL_CHECK_URL=http://${DOCKER_HOST_GATEWAY}:8000 bash start.sh" >&2
   echo "If your tunnel listens on a different server port, set both LOCAL_CONTROL_API_URL and CONTROL_CHECK_URL." >&2
   exit 1
 fi
