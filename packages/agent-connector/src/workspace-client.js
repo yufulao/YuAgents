@@ -715,6 +715,83 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  async createWorkspaceTask(workspaceId, channelName, token, {
+    title,
+    description,
+    assignee,
+    priority,
+    dependsOn,
+    parentTaskId,
+    source,
+  } = {}) {
+    const body = {
+      network: workspaceId,
+      channel: channelName,
+      title,
+      source: source || 'openagents:unknown',
+    };
+    if (description) body.description = description;
+    if (assignee) body.assignee = assignee;
+    if (priority) body.priority = priority;
+    if (Array.isArray(dependsOn)) body.depends_on = dependsOn;
+    if (parentTaskId) body.parent_task_id = parentTaskId;
+    const data = await this._post('/v1/workspace-tasks', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async listWorkspaceTasks(workspaceId, channelName, token, { status, assignee, active = true } = {}) {
+    const params = new URLSearchParams({ network: workspaceId });
+    if (channelName) params.set('channel', channelName);
+    if (status) params.set('status', status);
+    if (assignee) params.set('assignee', assignee);
+    if (active) params.set('active', 'true');
+    const data = await this._get(`/v1/workspace-tasks?${params}`, this._wsHeaders(token));
+    return data.data || data;
+  }
+
+  async claimWorkspaceTask(workspaceId, agentName, token, taskId, sessionId) {
+    const body = {
+      network: workspaceId,
+      agent_name: agentName,
+    };
+    if (sessionId) body.session_id = sessionId;
+    const data = await this._post(
+      `/v1/workspace-tasks/${encodeURIComponent(taskId)}/claim`,
+      body,
+      this._wsHeaders(token),
+    );
+    return data.data || data;
+  }
+
+  async updateWorkspaceTask(workspaceId, token, taskId, {
+    source,
+    status,
+    assignee,
+    priority,
+    description,
+    result,
+    dependsOn,
+    acceptedBy,
+  } = {}) {
+    const body = {
+      network: workspaceId,
+      source: source || 'openagents:unknown',
+    };
+    if (status !== undefined) body.status = status;
+    if (assignee !== undefined) body.assignee = assignee;
+    if (priority !== undefined) body.priority = priority;
+    if (description !== undefined) body.description = description;
+    if (result !== undefined) body.result = result;
+    if (Array.isArray(dependsOn)) body.depends_on = dependsOn;
+    if (acceptedBy !== undefined) body.accepted_by = acceptedBy;
+    const data = await this._patch(
+      `/v1/workspace-tasks/${encodeURIComponent(taskId)}`,
+      body,
+      this._wsHeaders(token),
+    );
+    return data.data || data;
+  }
+
   async createTimer(workspaceId, channelName, token, delay, message, { source } = {}) {
     const body = {
       delay,

@@ -228,4 +228,46 @@ describe('WorkspaceClient', () => {
     assert.ok(capturedPath.includes('ambient_limit=7'));
     assert.equal(result.self.agent_name, 'bary-bot');
   });
+
+  it('workspace task helpers call shared task endpoints', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    const calls = [];
+    client._post = async (path, body) => {
+      calls.push(['post', path, body]);
+      return { data: { task: { id: 'task-1', title: body.title || 'claimed' } } };
+    };
+    client._get = async (path) => {
+      calls.push(['get', path, null]);
+      return { data: { tasks: [] } };
+    };
+    client._patch = async (path, body) => {
+      calls.push(['patch', path, body]);
+      return { data: { task: { id: 'task-1', status: body.status } } };
+    };
+
+    await client.createWorkspaceTask('ws-1', 'workroom', 'tok', {
+      title: 'Build task graph',
+      assignee: 'agent-beta',
+      dependsOn: ['task-0'],
+      source: 'openagents:lead',
+    });
+    await client.listWorkspaceTasks('ws-1', 'workroom', 'tok', { assignee: 'agent-beta' });
+    await client.claimWorkspaceTask('ws-1', 'agent-beta', 'tok', 'task-1', 'sess-task');
+    await client.updateWorkspaceTask('ws-1', 'tok', 'task-1', {
+      source: 'openagents:agent-beta',
+      status: 'in_review',
+      result: 'done',
+    });
+
+    assert.equal(calls[0][0], 'post');
+    assert.equal(calls[0][1], '/v1/workspace-tasks');
+    assert.equal(calls[0][2].channel, 'workroom');
+    assert.deepEqual(calls[0][2].depends_on, ['task-0']);
+    assert.ok(calls[1][1].startsWith('/v1/workspace-tasks?'));
+    assert.ok(calls[1][1].includes('assignee=agent-beta'));
+    assert.equal(calls[2][1], '/v1/workspace-tasks/task-1/claim');
+    assert.equal(calls[2][2].session_id, 'sess-task');
+    assert.equal(calls[3][1], '/v1/workspace-tasks/task-1');
+    assert.equal(calls[3][2].status, 'in_review');
+  });
 });

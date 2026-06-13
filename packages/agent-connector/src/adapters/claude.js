@@ -515,9 +515,23 @@ class ClaudeAdapter extends BaseAdapter {
       mcpWriteTools.push(`${pfx}tunnel_expose`, `${pfx}tunnel_close`);
     }
 
-    // Todos, Timers & Routines (always enabled)
-    mcpTools.push(`${pfx}workspace_get_todos`, `${pfx}workspace_list_timers`, `${pfx}workspace_list_routines`);
-    mcpWriteTools.push(`${pfx}workspace_put_todos`, `${pfx}workspace_create_timer`, `${pfx}workspace_cancel_timer`, `${pfx}workspace_create_routine`, `${pfx}workspace_cancel_routine`);
+    // Shared tasks, personal todos, timers & routines (always enabled)
+    mcpTools.push(
+      `${pfx}workspace_list_tasks`,
+      `${pfx}workspace_get_todos`,
+      `${pfx}workspace_list_timers`,
+      `${pfx}workspace_list_routines`,
+    );
+    mcpWriteTools.push(
+      `${pfx}workspace_create_task`,
+      `${pfx}workspace_claim_task`,
+      `${pfx}workspace_update_task`,
+      `${pfx}workspace_put_todos`,
+      `${pfx}workspace_create_timer`,
+      `${pfx}workspace_cancel_timer`,
+      `${pfx}workspace_create_routine`,
+      `${pfx}workspace_cancel_routine`,
+    );
 
     if (this._mode === 'plan') {
       cmd.push('--permission-mode', 'plan');

@@ -486,6 +486,41 @@ class TodoRecord(Base):
     )
 
 
+class WorkspaceTask(Base):
+    """Shared workspace task graph for multi-agent coordination.
+
+    Unlike TodoRecord (private per-agent planning), this table is the runtime
+    ownership contract: assignment, claim, status, dependencies, result, and
+    acceptance are visible to every participant.
+    """
+    __tablename__ = "workspace_tasks"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    channel_name = Column(Text, nullable=True)
+    parent_task_id = Column(Text, ForeignKey("workspace_tasks.id", ondelete="SET NULL"), nullable=True)
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="todo")  # todo | in_progress | in_review | done | cancelled
+    priority = Column(Text, nullable=False, default="normal")  # low | normal | high | urgent
+    assignee = Column(Text, nullable=True)
+    claimed_by = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=False)
+    result = Column(Text, nullable=True)
+    depends_on = Column(JSONB, default=[])
+    accepted_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_workspace_tasks_workspace_channel_status", "workspace_id", "channel_name", "status"),
+        Index("idx_workspace_tasks_workspace_assignee_status", "workspace_id", "assignee", "status"),
+        Index("idx_workspace_tasks_workspace_status", "workspace_id", "status"),
+    )
+
+
 class TimerRecord(Base):
     """A scheduled timer that posts a message when it fires."""
     __tablename__ = "timers"

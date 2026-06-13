@@ -68,3 +68,20 @@ context pack. This is the runtime counterpart to human memory:
 - Runtime rules in the pack are intentionally short and authoritative: channel
   visibility is not attention, @mentions are explicit handoffs, and role
   descriptions must drive delegation.
+
+## Shared Workspace Tasks
+
+Personal todos are not enough for team scheduling. OpenAgents uses shared
+workspace tasks for ownership, claim, dependencies, status, result, and
+acceptance:
+
+- Scheduling is a rule, not a fixed org chart. The runtime should choose the
+  planner, implementer, reviewer, or QA owner from the current task, channel
+  context, agent descriptions, skills, and availability.
+- A workspace may have a dedicated planner/architect, or it may not. If it does
+  not, the current lead/master or best-fit agent should split independent work
+  before implementation.
+- Independent work should become separate shared tasks so multiple agents can
+  proceed in parallel. Sequential work should be reserved for true dependencies.
+- Agents use personal todos only for their private execution plan after they
+  have a shared task or handoff.

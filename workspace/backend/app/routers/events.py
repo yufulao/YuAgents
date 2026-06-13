@@ -26,7 +26,7 @@ from app.channel_visibility import (
     visible_channel_names,
 )
 from app.database import get_db
-from app.models import AgentDelivery, Channel, ChannelMember, EventRecord, Workspace, WorkspaceMember
+from app.models import AgentDelivery, Channel, ChannelMember, EventRecord, Workspace, WorkspaceMember, WorkspaceTask
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _verify_workspace_access, _workspace_filter
@@ -128,6 +128,23 @@ def _delivery_context_payload(delivery: AgentDelivery, event: EventRecord) -> di
     data = _delivery_event_payload(delivery, event)
     data["event"] = _event_context_payload(event)
     return data
+
+
+def _task_context_payload(task: WorkspaceTask) -> dict:
+    return {
+        "id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "status": task.status,
+        "priority": task.priority,
+        "assignee": task.assignee,
+        "claimed_by": task.claimed_by,
+        "created_by": task.created_by,
+        "channel_name": task.channel_name,
+        "depends_on": task.depends_on or [],
+        "result": task.result,
+        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
 
 
 @router.post("/events")
@@ -462,6 +479,22 @@ def get_agent_context(
         ).all()
         ambient_messages = [_delivery_context_payload(d, e) for d, e in reversed(rows)]
 
+    task_query = select(WorkspaceTask).where(
+        WorkspaceTask.workspace_id == workspace.id,
+        WorkspaceTask.status.in_(["todo", "in_progress", "in_review"]),
+    )
+    if channel:
+        task_query = task_query.where(
+            or_(
+                WorkspaceTask.channel_name == channel,
+                WorkspaceTask.assignee == agent,
+                WorkspaceTask.claimed_by == agent,
+            )
+        )
+    task_rows = db.execute(
+        task_query.order_by(WorkspaceTask.created_at.asc(), WorkspaceTask.id.asc()).limit(30)
+    ).scalars().all()
+
     return success_response({
         "workspace": {
             "id": str(workspace.id),
@@ -485,12 +518,15 @@ def get_agent_context(
         "agents": agents,
         "recent_messages": recent_messages,
         "ambient_messages": ambient_messages,
+        "active_tasks": [_task_context_payload(t) for t in task_rows],
         "runtime_rules": [
             "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
             "Do not flatten roles. Use each agent's role and description when deciding delegation.",
-            "Architect/master agents should split independent work and assign owners instead of doing all implementation themselves.",
-            "QA/reviewer agents should verify, reproduce, and report evidence; implementation agents should own code changes.",
+            "Scheduling is a rule, not a fixed org chart: choose planners, implementers, reviewers, or QA from the actual context and agent descriptions.",
+            "For independent work, create separate shared tasks with owners so capable agents can run in parallel; only serialize truly dependent work.",
+            "Agents assigned to verification should reproduce and report evidence; agents assigned to implementation should own code changes.",
             "If another agent must act, @mention that agent explicitly and include a concrete handoff.",
+            "Use shared workspace tasks for multi-agent work ownership; use personal todos only for your own execution plan.",
         ],
     })
 

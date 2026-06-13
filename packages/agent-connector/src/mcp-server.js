@@ -52,6 +52,59 @@ function buildToolDefs(disabledModules) {
         required: ['status'],
       },
     },
+    {
+      name: 'workspace_create_task',
+      description: 'Create a shared workspace task with optional assignee. Use for multi-agent ownership and delegation, not private planning.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short task title' },
+          description: { type: 'string', description: 'Detailed task context or acceptance criteria' },
+          assignee: { type: 'string', description: 'Agent name to assign and wake, without @' },
+          priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'Task priority' },
+          depends_on: { type: 'array', items: { type: 'string' }, description: 'Task IDs that must finish first' },
+        },
+        required: ['title'],
+      },
+    },
+    {
+      name: 'workspace_list_tasks',
+      description: 'List shared workspace tasks for the current channel. Defaults to active tasks.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['todo', 'in_progress', 'in_review', 'done', 'cancelled'], description: 'Optional status filter' },
+          assignee: { type: 'string', description: 'Optional agent/owner filter' },
+          active: { type: 'boolean', description: 'Only todo/in_progress/in_review tasks (default true)' },
+        },
+      },
+    },
+    {
+      name: 'workspace_claim_task',
+      description: 'Claim a shared workspace task before implementation work.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string', description: 'Shared task ID' },
+        },
+        required: ['task_id'],
+      },
+    },
+    {
+      name: 'workspace_update_task',
+      description: 'Update status/result/assignment for a shared workspace task.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string', description: 'Shared task ID' },
+          status: { type: 'string', enum: ['todo', 'in_progress', 'in_review', 'done', 'cancelled'], description: 'New status' },
+          assignee: { type: 'string', description: 'New assignee, without @' },
+          result: { type: 'string', description: 'Completion result, evidence, or blocker detail' },
+          priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'New priority' },
+        },
+        required: ['task_id'],
+      },
+    },
   ];
 
   // -- Files module --
@@ -834,6 +887,58 @@ class McpServer {
           return `${icon} ${t.content} (${t.assignee || 'unassigned'})`;
         });
         return text(lines.join('\n'));
+      }
+
+      case 'workspace_create_task': {
+        const result = await this.ws.createWorkspaceTask(this.workspaceId, this.channelName, this.token, {
+          title: args.title,
+          description: args.description,
+          assignee: args.assignee,
+          priority: args.priority,
+          dependsOn: args.depends_on,
+          source: `openagents:${this.agentName}`,
+        });
+        const task = result && result.task;
+        return text(`Workspace task created: ${task ? `${task.id} — ${task.title}` : args.title}`);
+      }
+
+      case 'workspace_list_tasks': {
+        const data = await this.ws.listWorkspaceTasks(this.workspaceId, this.channelName, this.token, {
+          status: args.status,
+          assignee: args.assignee,
+          active: args.active !== false,
+        });
+        const tasks = (data && data.tasks) || [];
+        if (!tasks.length) return text('No shared workspace tasks.');
+        const lines = tasks.map((t) => {
+          const owner = t.claimed_by || t.assignee || 'unassigned';
+          return `- ${t.id}: [${t.status}] ${t.title} → ${owner}`;
+        });
+        return text(lines.join('\n'));
+      }
+
+      case 'workspace_claim_task': {
+        const result = await this.ws.claimWorkspaceTask(
+          this.workspaceId,
+          this.agentName,
+          this.token,
+          args.task_id,
+          this.sessionId,
+        );
+        const task = result && result.task;
+        return text(`Workspace task claimed: ${task ? `${task.id} — ${task.title}` : args.task_id}`);
+      }
+
+      case 'workspace_update_task': {
+        const result = await this.ws.updateWorkspaceTask(this.workspaceId, this.token, args.task_id, {
+          source: `openagents:${this.agentName}`,
+          status: args.status,
+          assignee: args.assignee,
+          result: args.result,
+          priority: args.priority,
+        });
+        const task = result && result.task;
+        return text(`Workspace task updated: ${task ? `${task.id} [${task.status}] ${task.title}` : args.task_id}`);
       }
 
       case 'workspace_create_timer': {

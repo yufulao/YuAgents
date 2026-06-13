@@ -122,6 +122,7 @@ function buildRuntimeContextPrompt(context) {
   const agents = Array.isArray(context.agents) ? context.agents : [];
   const recent = Array.isArray(context.recent_messages) ? context.recent_messages : [];
   const ambient = Array.isArray(context.ambient_messages) ? context.ambient_messages : [];
+  const tasks = Array.isArray(context.active_tasks) ? context.active_tasks : [];
   const rules = Array.isArray(context.runtime_rules) ? context.runtime_rules : [];
 
   const parts = [];
@@ -156,6 +157,16 @@ function buildRuntimeContextPrompt(context) {
     for (const delivery of ambient.slice(-10)) {
       const line = _messageLine(delivery.event || {});
       if (line) parts.push(line);
+    }
+  }
+
+  if (tasks.length) {
+    parts.push('\n### Active Shared Tasks');
+    parts.push('These are shared ownership tasks, not your private todo list. Claim your task before implementation and update status/result when done.');
+    for (const task of tasks.slice(0, 20)) {
+      const owner = task.claimed_by || task.assignee || 'unassigned';
+      const desc = task.description ? ` — ${_truncate(task.description, 220)}` : '';
+      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${desc}`);
     }
   }
 
@@ -370,7 +381,26 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   // To-Dos (planning)
   if (!isPlan && !disabled.has('todos')) {
     sections.push(
-      '\n### To-Do List (Planning)\n\n' +
+      '\n### Shared Workspace Tasks (Team Ownership)\n\n' +
+      'Use shared tasks when work should be assigned, claimed, reviewed, or split across agents. ' +
+      'Scheduling is based on the actual task, channel context, and agent role/description — do not assume a fixed org chart.\n\n' +
+      '**Create shared task:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/workspace-tasks -d '{"network":"${workspaceId}",` +
+      `"channel":"${channelName}","source":"openagents:${agentName}",` +
+      `"title":"Task title","description":"Acceptance criteria",` +
+      `"assignee":"agent-name","priority":"normal"}'\`\n\n` +
+      '**List active shared tasks:**\n' +
+      `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-tasks?network=${workspaceId}&channel=${channelName}&active=true"\`\n\n` +
+      '**Claim shared task:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/workspace-tasks/{task_id}/claim -d '{"network":"${workspaceId}",` +
+      `"agent_name":"${agentName}"}'\`\n\n` +
+      '**Update shared task:**\n' +
+      `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/workspace-tasks/{task_id} -d '{"network":"${workspaceId}",` +
+      `"source":"openagents:${agentName}","status":"in_review","result":"Evidence or blocker"}'\`\n\n` +
+      '\n### Personal To-Do List (Private Execution Plan)\n\n' +
       'Create or update your to-do list to track progress. The entire list ' +
       'is replaced each time (send the full list with current statuses).\n\n' +
       '**Status values:** `pending`, `in_progress`, `completed`\n\n' +
@@ -532,7 +562,8 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     lines.push('- Knowledge: GET /v1/knowledge?network=...; GET /v1/knowledge/by-slug/{slug}?network=...');
   }
   if (!disabled.has('todos')) {
-    lines.push('- Todos: GET /v1/todos?network=...&channel=...');
+    lines.push('- Shared tasks: GET /v1/workspace-tasks?network=...&channel=...&active=true');
+    lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
   if (!disabled.has('timers')) {
     lines.push('- Timers: GET /v1/timers?network=...&channel=...');
@@ -549,7 +580,10 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     );
     if (!disabled.has('files')) lines.push('- Upload file: POST /v1/files/base64 with filename, content_base64, content_type, network, source, channel_name.');
     if (!disabled.has('browser')) lines.push('- Browser actions: POST /v1/browser/tabs, /tabs/{id}/navigate, /click, /type; DELETE /tabs/{id}.');
-    if (!disabled.has('todos')) lines.push('- Update todos: PUT /v1/todos with todos[], network, channel, source.');
+    if (!disabled.has('todos')) {
+      lines.push('- Shared tasks: POST/GET /v1/workspace-tasks, POST /v1/workspace-tasks/{id}/claim, PATCH /v1/workspace-tasks/{id}.');
+      lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
+    }
     if (!disabled.has('timers')) lines.push('- Create/cancel timer: POST /v1/timers; DELETE /v1/timers/{id}.');
     if (!disabled.has('routines')) lines.push('- Create/cancel routine: POST /v1/routines; DELETE /v1/routines/{id}.');
   }
@@ -570,10 +604,10 @@ function buildGuardrails() {
     'AskUserQuestion blocks the subprocess and will hang the thread. ' +
     'If you need to ask the user something, just write the question ' +
     'as your text response.\n' +
-    '\nIMPORTANT: When the user gives you a numbered list, bulleted list, or ' +
-    'multiple tasks in a single message, you MUST create a to-do list BEFORE ' +
-    'doing any work. This is mandatory — no exceptions, even for simple tasks. ' +
-    'The to-do list lets the user track your progress in real time.\n' +
+    '\nIMPORTANT: For multi-agent work, use shared workspace tasks to assign, ' +
+    'claim, and track ownership. Scheduling is role/context-based, not a fixed ' +
+    'team template. After you own a task, use your personal to-do list for your ' +
+    'private execution plan.\n' +
     '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
     'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +
     'ALWAYS use the workspace REST API (curl commands in your skill instructions). ' +
@@ -591,7 +625,8 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
   parts.push(
     'Use workspace_get_history to read previous messages.\n' +
     'Use workspace_get_agents to see other agents.\n' +
-    'Use workspace_put_todos to track your progress. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
+    'Use workspace_create_task/list/claim/update for shared multi-agent work ownership.\n' +
+    'Use workspace_put_todos to track your private execution plan. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
     'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +
     'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n' +

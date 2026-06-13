@@ -74,6 +74,15 @@ describe('workspace prompt budget', () => {
           metadata: {},
         },
       }],
+      active_tasks: [{
+        id: 'task-1',
+        title: '移动端复测',
+        status: 'in_progress',
+        priority: 'high',
+        assignee: '博丽灵梦',
+        claimed_by: '博丽灵梦',
+        description: 'QA verify mobile layout.',
+      }],
       runtime_rules: ['Do not flatten roles.'],
     });
 
@@ -81,6 +90,8 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('role=master'));
     assert.ok(prompt.includes('博丽灵梦: role=qa'));
     assert.ok(prompt.includes('Passive Ambient Messages'));
+    assert.ok(prompt.includes('Active Shared Tasks'));
+    assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });
 });

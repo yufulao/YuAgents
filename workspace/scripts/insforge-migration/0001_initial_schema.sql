@@ -316,6 +316,33 @@ CREATE INDEX IF NOT EXISTS idx_todos_workspace_channel    ON todos (workspace_id
 CREATE INDEX IF NOT EXISTS idx_todos_workspace_created_by ON todos (workspace_id, created_by);
 
 -- ===========================================================================
+-- Workspace tasks (shared multi-agent task graph)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS workspace_tasks (
+    id              text        PRIMARY KEY,
+    workspace_id    uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    channel_name    text,
+    parent_task_id  text        REFERENCES workspace_tasks(id) ON DELETE SET NULL,
+    title           text        NOT NULL,
+    description     text,
+    status          text        NOT NULL DEFAULT 'todo',
+    priority        text        NOT NULL DEFAULT 'normal',
+    assignee        text,
+    claimed_by      text,
+    created_by      text        NOT NULL,
+    result          text,
+    depends_on      jsonb       DEFAULT '[]'::jsonb,
+    accepted_by     text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    claimed_at      timestamptz,
+    completed_at    timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_workspace_channel_status  ON workspace_tasks (workspace_id, channel_name, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_workspace_assignee_status ON workspace_tasks (workspace_id, assignee, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_tasks_workspace_status          ON workspace_tasks (workspace_id, status);
+
+-- ===========================================================================
 -- Timers (one-shot scheduled messages)
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS timers (
@@ -430,7 +457,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- ===========================================================================
 -- Alembic stamp — schema is at head; backend's `alembic upgrade head` no-ops.
--- Update '028' to match the latest revision in
+-- Update '029' to match the latest revision in
 -- workspace/backend/alembic/versions/ when the source schema changes.
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS alembic_version (
@@ -438,4 +465,4 @@ CREATE TABLE IF NOT EXISTS alembic_version (
     CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
 );
 INSERT INTO alembic_version (version_num)
-SELECT '028' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
+SELECT '029' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
