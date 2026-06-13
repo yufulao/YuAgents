@@ -255,6 +255,13 @@ class TestDiscover:
         assert len(agents) >= 1
         names = [a["address"] for a in agents]
         assert "openagents:agent-alpha" in names
+        alpha = next(a for a in agents if a["address"] == "openagents:agent-alpha")
+        assert alpha["presence_status"] in {"online", "offline", "stopped"}
+        assert alpha["activity_state"] in {"idle", "online", "offline", "stopped"}
+        assert alpha["workload_state"] in {"idle", "online", "offline", "stopped"}
+        assert alpha["display_status"] == alpha["status"]
+        assert isinstance(alpha["is_connected"], bool)
+        assert isinstance(alpha["has_active_work"], bool)
 
     def test_discover_channels(self, client, workspace):
         """Discover shows workspace channels."""

@@ -29,6 +29,7 @@ interface AgentActivityPanelProps {
 type ActivityState =
   | 'offline'
   | 'online'
+  | 'idle'
   | 'starting'
   | 'thinking'
   | 'editing_file'
@@ -47,21 +48,23 @@ interface AgentActivity {
 }
 
 const STATE_META: Record<ActivityState, { label: string; className: string; icon: typeof Activity }> = {
-  offline: { label: 'offline', className: 'text-zinc-500 dark:text-zinc-400', icon: Circle },
-  online: { label: 'online', className: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle2 },
-  starting: { label: 'starting', className: 'text-amber-600 dark:text-amber-400', icon: Loader2 },
-  thinking: { label: 'thinking', className: 'text-amber-600 dark:text-amber-400', icon: Brain },
-  editing_file: { label: 'editing file', className: 'text-amber-600 dark:text-amber-400', icon: Pencil },
-  running_command: { label: 'running command', className: 'text-amber-600 dark:text-amber-400', icon: Terminal },
-  waiting_input: { label: 'waiting input', className: 'text-violet-600 dark:text-violet-400', icon: Clock },
-  stopping: { label: 'stopping', className: 'text-zinc-500 dark:text-zinc-400', icon: Loader2 },
-  stopped: { label: 'stopped', className: 'text-zinc-500 dark:text-zinc-400', icon: CircleStop },
-  error: { label: 'error', className: 'text-red-600 dark:text-red-400', icon: AlertTriangle },
+  offline: { label: '离线', className: 'text-zinc-500 dark:text-zinc-400', icon: Circle },
+  online: { label: '在线', className: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle2 },
+  idle: { label: '空闲', className: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle2 },
+  starting: { label: '启动中', className: 'text-amber-600 dark:text-amber-400', icon: Loader2 },
+  thinking: { label: '思考中', className: 'text-amber-600 dark:text-amber-400', icon: Brain },
+  editing_file: { label: '编辑文件', className: 'text-amber-600 dark:text-amber-400', icon: Pencil },
+  running_command: { label: '执行命令', className: 'text-amber-600 dark:text-amber-400', icon: Terminal },
+  waiting_input: { label: '等待输入', className: 'text-violet-600 dark:text-violet-400', icon: Clock },
+  stopping: { label: '停止中', className: 'text-zinc-500 dark:text-zinc-400', icon: Loader2 },
+  stopped: { label: '已停止', className: 'text-zinc-500 dark:text-zinc-400', icon: CircleStop },
+  error: { label: '阻塞', className: 'text-red-600 dark:text-red-400', icon: AlertTriangle },
 };
 
 const LIFECYCLE_STATES = new Set<ActivityState>([
   'offline',
   'online',
+  'idle',
   'starting',
   'thinking',
   'editing_file',
@@ -73,13 +76,13 @@ const LIFECYCLE_STATES = new Set<ActivityState>([
 ]);
 
 function normalizeState(agent: WorkspaceAgent, hasActiveThread: boolean): ActivityState {
-  const lifecycle = agent.lifecycleState as ActivityState | undefined;
-  if (lifecycle && LIFECYCLE_STATES.has(lifecycle)) return lifecycle;
+  const activity = (agent.activityState || agent.lifecycleState) as ActivityState | undefined;
+  if (activity && LIFECYCLE_STATES.has(activity)) return activity;
   if (agent.lifecycleState === 'working') return 'thinking';
   if (hasActiveThread) return 'thinking';
-  if (agent.status === 'online') return 'online';
+  if (agent.presenceStatus === 'online' || agent.isConnected || agent.status === 'online') return 'idle';
   if (agent.status === 'error') return 'error';
-  if (agent.status === 'stopped' || agent.status === 'disabled') return 'stopped';
+  if (agent.presenceStatus === 'stopped' || agent.status === 'stopped' || agent.status === 'disabled') return 'stopped';
   return 'offline';
 }
 
@@ -131,10 +134,8 @@ export function AgentActivityPanel({
   onRefresh,
 }: AgentActivityPanelProps) {
   const activities = getAgentActivities(agents, sessions, activeSessionIds);
-  const activeActivities = activities.filter(
-    (activity) => activity.state !== 'online' && activity.state !== 'offline',
-  );
-  const onlineIdle = activities.filter((activity) => activity.state === 'online');
+  const activeActivities = activities.filter((activity) => activity.agent.hasActiveWork);
+  const onlineIdle = activities.filter((activity) => activity.state === 'idle' || activity.state === 'online');
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -154,7 +155,7 @@ export function AgentActivityPanel({
       <div className="flex items-center justify-between px-2 pb-1.5">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Activity className="size-3" />
-          <span>Active agents</span>
+          <span>Agent 状态</span>
           {activeActivities.length > 0 && <span>({activeActivities.length})</span>}
         </div>
         {onRefresh && (
@@ -163,7 +164,7 @@ export function AgentActivityPanel({
             onClick={handleRefresh}
             disabled={refreshing}
             className="size-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-60"
-            title="Refresh status"
+            title="刷新状态"
           >
             <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
           </button>
@@ -186,7 +187,7 @@ export function AgentActivityPanel({
                     avatar={activity.agent.avatar}
                     avatarUrl={activity.agent.avatarUrl}
                     size={20}
-                    status={activity.agent.status}
+                    status={activity.agent.presenceStatus || activity.agent.status}
                     showStatus
                   />
                   <div className="min-w-0 flex-1">
@@ -203,7 +204,7 @@ export function AgentActivityPanel({
                       </span>
                     </div>
                     <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
-                      <span className="truncate">{activity.session?.title || activity.session?.sessionId || 'No active thread'}</span>
+                      <span className="truncate">{activity.session?.title || activity.session?.sessionId || '无活动线程'}</span>
                       {activity.updatedAt && <span className="shrink-0">· {timeAgo(activity.updatedAt)}</span>}
                     </div>
                   </div>
@@ -219,7 +220,7 @@ export function AgentActivityPanel({
         </div>
       ) : (
         <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-          No active agent work detected.
+          没有检测到正在执行的 Agent。
         </div>
       )}
 
@@ -228,7 +229,7 @@ export function AgentActivityPanel({
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="size-1.5 rounded-full bg-emerald-500" />
             <span className="truncate">
-              Online idle: {onlineIdle.slice(0, 3).map((activity) => activity.agent.displayName || activity.agent.agentName).join(', ')}
+              在线空闲：{onlineIdle.slice(0, 3).map((activity) => activity.agent.displayName || activity.agent.agentName).join(', ')}
               {onlineIdle.length > 3 ? ` +${onlineIdle.length - 3}` : ''}
             </span>
           </div>

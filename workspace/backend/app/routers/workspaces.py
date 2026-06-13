@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import config
+from app.agent_status import project_agent_status
 from app.database import get_db
 from app.models import (
     AgentConfig,
@@ -138,19 +139,7 @@ def _mask_bf_key(key: str | None) -> str | None:
 
 
 def _member_status(m: WorkspaceMember, now: datetime, cfg: AgentConfig | None = None) -> str:
-    metadata = (cfg.config_metadata if cfg else None) or {}
-    if metadata.get("disabled"):
-        return "stopped"
-    status = m.status
-    is_cloud = (m.agent_type or "").startswith("cloud:")
-    if not is_cloud and m.last_heartbeat:
-        # Ensure timezone-aware comparison (SQLite stores naive datetimes)
-        heartbeat = m.last_heartbeat
-        if heartbeat.tzinfo is None:
-            heartbeat = heartbeat.replace(tzinfo=timezone.utc)
-        if (now - heartbeat) > AGENT_TIMEOUT:
-            status = "offline"
-    return status
+    return str(project_agent_status(m, now, AGENT_TIMEOUT, cfg)["display_status"])
 
 
 def _default_avatar(handle: str) -> dict:
@@ -161,6 +150,7 @@ def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | N
     display_name = cfg.display_name if cfg else m.agent_name
     avatar = cfg.avatar if cfg else _default_avatar(m.agent_name)
     metadata = (cfg.config_metadata if cfg else None) or {}
+    projected = project_agent_status(m, now, AGENT_TIMEOUT, cfg)
     return {
         "id": cfg.id if cfg else f"{m.workspace_id}:{m.agent_name}",
         "handle": m.agent_name,
@@ -168,8 +158,14 @@ def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | N
         "displayName": display_name,
         "role": m.role,
         "agentType": cfg.agent_type if cfg else m.agent_type,
-        "status": _member_status(m, now, cfg),
-        "lifecycleState": _member_status(m, now, cfg),
+        "status": projected["display_status"],
+        "lifecycleState": projected["activity_state"],
+        "presenceStatus": projected["presence_status"],
+        "activityState": projected["activity_state"],
+        "workloadState": projected["workload_state"],
+        "displayStatus": projected["display_status"],
+        "isConnected": projected["is_connected"],
+        "hasActiveWork": projected["has_active_work"],
         "description": m.description,
         "avatar": avatar,
         "avatarUrl": avatar.get("value") if avatar.get("type") == "upload" else None,

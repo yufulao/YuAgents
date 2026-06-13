@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import config
+from app.agent_status import project_agent_status
 from app.channel_visibility import human_email_from_authorization, visible_channel_names
 from app.database import get_db
 from app.models import AgentConfig, Channel, Workspace, WorkspaceMember
@@ -397,24 +398,21 @@ def discover(
     for m in members:
         cfg = configs_by_handle.get(m.agent_name)
         metadata = (cfg.config_metadata if cfg else None) or {}
-        status = m.status
-        is_cloud = (m.agent_type or "").startswith("cloud:")
-        if metadata.get("disabled"):
-            status = "stopped"
-        if not is_cloud and m.last_heartbeat:
-            heartbeat = m.last_heartbeat
-            if heartbeat.tzinfo is None:
-                heartbeat = heartbeat.replace(tzinfo=timezone.utc)
-            if status != "stopped" and (now - heartbeat) > AGENT_TIMEOUT:
-                status = "offline"
+        projected = project_agent_status(m, now, AGENT_TIMEOUT, cfg)
         agents.append({
             "id": cfg.id if cfg else f"{workspace.id}:{m.agent_name}",
             "address": f"openagents:{m.agent_name}",
             "handle": m.agent_name,
             "display_name": cfg.display_name if cfg else m.agent_name,
             "role": m.role,
-            "status": status,
-            "lifecycle_state": status,
+            "status": projected["display_status"],
+            "lifecycle_state": projected["activity_state"],
+            "presence_status": projected["presence_status"],
+            "activity_state": projected["activity_state"],
+            "workload_state": projected["workload_state"],
+            "display_status": projected["display_status"],
+            "is_connected": projected["is_connected"],
+            "has_active_work": projected["has_active_work"],
             "agent_type": cfg.agent_type if cfg else m.agent_type,
             "avatar": cfg.avatar if cfg else {"type": "pixel", "value": m.agent_name},
             "avatar_url": (cfg.avatar or {}).get("value") if cfg and (cfg.avatar or {}).get("type") == "upload" else None,

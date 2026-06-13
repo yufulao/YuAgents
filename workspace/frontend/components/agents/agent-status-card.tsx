@@ -54,12 +54,27 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
     }
   };
 
+  const statusText = (agent: WorkspaceAgent) => {
+    if (agent.presenceStatus === 'online' || agent.isConnected) {
+      if (agent.hasActiveWork) {
+        if (agent.activityState === 'running_command') return '在线 · 执行命令';
+        if (agent.activityState === 'editing_file') return '在线 · 编辑文件';
+        if (agent.activityState === 'waiting_input') return '在线 · 等待输入';
+        if (agent.activityState === 'error') return '在线 · 阻塞';
+        if (agent.activityState === 'starting') return '在线 · 启动中';
+        return '在线 · 工作中';
+      }
+      return '在线 · 空闲';
+    }
+    if (agent.presenceStatus === 'stopped' || agent.status === 'stopped') return '已停止';
+    return agent.lastHeartbeatAt ? `离线 · ${timeAgo(agent.lastHeartbeatAt)}` : '离线';
+  };
+
   return (
     <div className="space-y-2">
       <SectionHeader label="Agents" />
       <div className="space-y-1.5">
         {agents.map((agent) => {
-          const isOnline = agent.status === 'online';
           const isMaster = agent.role === 'master';
 
           return (
@@ -67,16 +82,12 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
               key={agent.agentName}
               className="flex items-center gap-2.5 px-2 py-1.5 rounded-md group"
             >
-              <AgentAvatar name={agent.agentName} size={28} status={agent.status} showStatus />
+              <AgentAvatar name={agent.agentName} size={28} status={agent.presenceStatus || agent.status} showStatus />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{agent.agentName}</p>
                 <p className="text-xs text-muted-foreground">
                   {agent.agentType && <span className="capitalize">{agent.agentType} · </span>}
-                  {isOnline
-                    ? 'Online'
-                    : agent.lastHeartbeatAt
-                      ? `Last seen ${timeAgo(agent.lastHeartbeatAt)}`
-                      : 'Offline'}
+                  {statusText(agent)}
                 </p>
               </div>
               <span className={cn(

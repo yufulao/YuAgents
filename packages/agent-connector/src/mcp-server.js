@@ -564,9 +564,19 @@ class McpServer {
         const data = await this.ws.getAgents(this.workspaceId, this.token);
         const agents = data.agents || data || [];
         if (!agents.length) return text('No agents connected.');
-        const lines = agents.map((a) =>
-          `- ${a.name} (${a.type || 'unknown'}) — ${a.status || 'unknown'}${a.role ? ` [${a.role}]` : ''}`
-        );
+        const lines = agents.map((a) => {
+          const name = a.displayName && a.displayName !== a.agentName
+            ? `${a.displayName} (${a.agentName})`
+            : a.agentName;
+          const status = [
+            `presence=${a.presenceStatus || a.status || 'unknown'}`,
+            `activity=${a.activityState || 'unknown'}`,
+            a.workloadState ? `workload=${a.workloadState}` : null,
+            a.currentChannel ? `channel=${a.currentChannel}` : null,
+          ].filter(Boolean).join(', ');
+          const desc = a.description ? ` — ${a.description}` : '';
+          return `- ${name} [${a.role || 'member'}] ${status}${desc}`;
+        });
         return text(lines.join('\n'));
       }
 

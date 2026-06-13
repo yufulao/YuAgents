@@ -28,6 +28,12 @@ export interface WorkspaceAgent {
   enabledSkills: Record<string, unknown> | null;
   status: string;
   lifecycleState?: string;
+  presenceStatus?: string | null;
+  activityState?: string | null;
+  workloadState?: string | null;
+  displayStatus?: string | null;
+  isConnected?: boolean;
+  hasActiveWork?: boolean;
   activitySummary?: string | null;
   currentChannel?: string | null;
   modelProvider?: string | null;
@@ -308,6 +314,12 @@ export interface NetworkAgent {
   status: string;
   lifecycle_state?: string | null;
   lifecycle_status?: string | null;
+  presence_status?: string | null;
+  activity_state?: string | null;
+  workload_state?: string | null;
+  display_status?: string | null;
+  is_connected?: boolean;
+  has_active_work?: boolean;
   agent_type: string | null;
   avatar_url?: string | null;
   server_host: string | null;
@@ -443,6 +455,12 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     enabledSkills: agent.enabled_skills || null,
     status: agent.status,
     lifecycleState: agent.lifecycle_state || (agent.lifecycle_status === 'disabled' ? 'stopped' : agent.status),
+    presenceStatus: agent.presence_status || agent.status,
+    activityState: agent.activity_state || agent.lifecycle_state || agent.status,
+    workloadState: agent.workload_state || null,
+    displayStatus: agent.display_status || agent.status,
+    isConnected: agent.is_connected ?? agent.status === 'online',
+    hasActiveWork: agent.has_active_work ?? false,
     activitySummary: agent.activity_summary || null,
     currentChannel: agent.current_channel || null,
     modelProvider: agent.model_provider || null,

@@ -454,7 +454,7 @@ class WorkspaceClient {
 
   /**
    * Get workspace agents via GET /v1/discover.
-   * @returns {Array<{ agentName, role, status }>}
+   * @returns {Array<{ agentName, displayName, role, status, description }>}
    */
   async getAgents(workspaceId, token) {
     const params = new URLSearchParams({ network: workspaceId });
@@ -462,9 +462,15 @@ class WorkspaceClient {
     const result = data.data || data;
     const agents = (result && result.agents) || [];
     return agents.map((a) => ({
-      agentName: (a.address || '').replace('openagents:', ''),
+      agentName: a.handle || (a.address || '').replace('openagents:', ''),
+      displayName: a.display_name || a.handle || (a.address || '').replace('openagents:', ''),
       role: a.role || 'member',
       status: a.status || 'offline',
+      presenceStatus: a.presence_status || a.status || 'offline',
+      activityState: a.activity_state || a.lifecycle_state || a.status || 'offline',
+      workloadState: a.workload_state || null,
+      currentChannel: a.current_channel || null,
+      description: a.description || '',
       enabledSkills: a.enabled_skills || null,
     }));
   }
