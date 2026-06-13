@@ -57,6 +57,20 @@ function skillsDirForAgentType(agentType, workingDir) {
   }
 }
 
+function userSkillsDirForAgentType(agentType, homeDir) {
+  const base = homeDir || os.homedir();
+  switch ((agentType || '').toLowerCase()) {
+    case 'claude':
+      return path.join(base, '.claude', 'skills');
+    case 'cursor':
+      return path.join(base, '.cursor', 'skills');
+    case 'codex':
+      return path.join(base, '.codex', 'skills');
+    default:
+      return path.join(base, '.agent', 'skills');
+  }
+}
+
 /**
  * Normalize a catalog skill object (snake_case from backend / camelCase from
  * UI) to a stable shape.
@@ -283,28 +297,36 @@ function uninstallSkill({ skill, agentType, workingDir, log }) {
  *
  * @returns {Array<{id: string, name: string, description: string, path: string, skillMd: string}>}
  */
-function listInstalledSkills({ agentType, workingDir }) {
-  const skillsDir = skillsDirForAgentType(agentType, workingDir);
-  let entries;
-  try {
-    entries = fs.readdirSync(skillsDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+function listInstalledSkills({ agentType, workingDir, homeDir }) {
+  const skillDirs = [
+    skillsDirForAgentType(agentType, workingDir),
+    userSkillsDirForAgentType(agentType, homeDir),
+  ];
   const out = [];
-  for (const ent of entries) {
-    if (!ent.isDirectory()) continue;
-    const dir = path.join(skillsDir, ent.name);
-    const skillMd = _findSkillMd(dir);
-    if (!skillMd) continue;
-    const meta = _parseSkillFrontmatter(skillMd);
-    out.push({
-      id: ent.name,
-      name: meta.name || ent.name,
-      description: meta.description || '',
-      path: dir,
-      skillMd,
-    });
+  const seen = new Set();
+  for (const skillsDir of skillDirs) {
+    let entries;
+    try {
+      entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
+      if (seen.has(ent.name)) continue;
+      const dir = path.join(skillsDir, ent.name);
+      const skillMd = _findSkillMd(dir);
+      if (!skillMd) continue;
+      const meta = _parseSkillFrontmatter(skillMd);
+      seen.add(ent.name);
+      out.push({
+        id: ent.name,
+        name: meta.name || ent.name,
+        description: meta.description || '',
+        path: dir,
+        skillMd,
+      });
+    }
   }
   return out;
 }
@@ -378,6 +400,7 @@ function _httpGetSync(url) {
 
 module.exports = {
   skillsDirForAgentType,
+  userSkillsDirForAgentType,
   installSkill,
   uninstallSkill,
   listInstalledSkills,

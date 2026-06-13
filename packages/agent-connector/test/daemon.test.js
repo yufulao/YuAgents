@@ -124,6 +124,9 @@ describe('Daemon', () => {
     const status = JSON.parse(fs.readFileSync(config.statusFile, 'utf-8'));
     assert.ok(status.agents);
     assert.equal(status.pid, process.pid);
+    assert.equal(status.runtime.feature_version, 2);
+    assert.ok(status.runtime.started_at);
+    assert.ok(status.runtime.source_mtime_ms > 0);
   });
 
   it('_processCommands handles stop command', async () => {
@@ -287,8 +290,9 @@ describe('Daemon', () => {
     adapter._ensureRuntimeRuleSkill();
     await adapter._reportInstalledLocalSkills();
 
-    const ids = reported.map((item) => item.skillId).sort();
-    assert.deepEqual(ids, ['openagents-runtime', 'unity-mcp']);
+    const ids = new Set(reported.map((item) => item.skillId));
+    assert.ok(ids.has('openagents-runtime'));
+    assert.ok(ids.has('unity-mcp'));
     assert.ok(reported.every((item) => item.state === 'installed'));
   });
 

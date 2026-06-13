@@ -132,4 +132,40 @@ describe('skill install smoke (real WorkspaceClient + stub backend)', () => {
     assert.equal(last.state, 'failed');
     assert.match(last.error, /fetch exploded/);
   });
+
+  it('lists workspace and user-level skills but skips system skills', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oa-skills-home-'));
+    try {
+      const runtimeDir = path.join(workDir, '.codex', 'skills', 'openagents-runtime');
+      fs.mkdirSync(runtimeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(runtimeDir, 'SKILL.md'),
+        '---\nname: Runtime Rules\ndescription: Runtime contract\n---\n# Runtime Rules\n',
+        'utf-8',
+      );
+      const unityDir = path.join(homeDir, '.codex', 'skills', 'unity-mcp-skill');
+      fs.mkdirSync(unityDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(unityDir, 'SKILL.md'),
+        '---\nname: Unity MCP\ndescription: Unity editor automation\n---\n# Unity MCP\n',
+        'utf-8',
+      );
+      const systemDir = path.join(homeDir, '.codex', 'skills', '.system', 'openai-docs');
+      fs.mkdirSync(systemDir, { recursive: true });
+      fs.writeFileSync(path.join(systemDir, 'SKILL.md'), '# OpenAI docs\n', 'utf-8');
+
+      const skills = skillInstaller.listInstalledSkills({
+        agentType: 'codex',
+        workingDir: workDir,
+        homeDir,
+      });
+
+      assert.deepEqual(skills.map((skill) => skill.id).sort(), [
+        'openagents-runtime',
+        'unity-mcp-skill',
+      ]);
+    } finally {
+      try { fs.rmSync(homeDir, { recursive: true, force: true }); } catch {}
+    }
+  });
 });

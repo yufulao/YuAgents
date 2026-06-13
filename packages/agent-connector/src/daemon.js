@@ -32,6 +32,8 @@ class Daemon {
     this._cmdInterval = null;
     this._reloadInFlight = null;  // serialize concurrent _reload() calls
     this._startupAgentFilter = Daemon._parseStartupAgentFilter(process.env.OPENAGENTS_START_ONLY);
+    this._startedAt = new Date().toISOString();
+    this._sourceMtimeAtStart = Daemon.runtimeSourceMtime();
   }
 
   // ---------------------------------------------------------------------------
@@ -227,6 +229,23 @@ class Daemon {
       }
     } catch {}
     return new Set(trimmed.split(',').map((item) => item.trim()).filter(Boolean));
+  }
+
+  static runtimeSourceMtime(srcDir = __dirname) {
+    const files = [
+      path.join(srcDir, 'daemon.js'),
+      path.join(srcDir, 'index.js'),
+      path.join(srcDir, 'workspace-client.js'),
+      path.join(srcDir, 'skill-installer.js'),
+      path.join(srcDir, 'adapters', 'base.js'),
+    ];
+    let latest = 0;
+    for (const file of files) {
+      try {
+        latest = Math.max(latest, fs.statSync(file).mtimeMs);
+      } catch {}
+    }
+    return latest;
   }
 
   // ---------------------------------------------------------------------------
@@ -689,7 +708,15 @@ class Daemon {
 
   _writeStatus() {
     try {
-      const status = { agents: this.getStatus(), pid: process.pid };
+      const status = {
+        agents: this.getStatus(),
+        pid: process.pid,
+        runtime: {
+          feature_version: 2,
+          started_at: this._startedAt,
+          source_mtime_ms: this._sourceMtimeAtStart,
+        },
+      };
       fs.writeFileSync(this.config.statusFile, JSON.stringify(status, null, 2), 'utf-8');
     } catch {}
   }

@@ -48,6 +48,7 @@ def control_local_agent(
 
     script = r"""
 const path = require('path');
+const fs = require('fs');
 const input = JSON.parse(process.env.OA_LOCAL_AGENT_CONTROL || '{}');
 const { AgentConnector, Daemon } = require(path.join(input.connectorDir, 'src', 'index.js'));
 
@@ -107,6 +108,36 @@ let livePid = Daemon.runningDaemonPid(connector._configDir);
 let daemonStarted = false;
 let command = null;
 const messages = [];
+let daemonReplaced = false;
+
+function readDaemonRuntime() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(connector.config.statusFile, 'utf-8'));
+    return raw && raw.runtime ? raw.runtime : null;
+  } catch {
+    return null;
+  }
+}
+
+function shouldReplaceDaemon() {
+  if (!livePid || input.action === 'stop') return false;
+  const runtime = readDaemonRuntime();
+  if (!runtime || Number(runtime.feature_version || 0) < 2) return true;
+  const runningSourceMtime = Number(runtime.source_mtime_ms || 0);
+  const currentSourceMtime = Daemon.runtimeSourceMtime(path.join(input.connectorDir, 'src'));
+  const startedAtMs = Date.parse(runtime.started_at || '');
+  if (Number.isFinite(startedAtMs) && startedAtMs + 1000 < currentSourceMtime) return true;
+  return runningSourceMtime + 1 < currentSourceMtime;
+}
+
+if (shouldReplaceDaemon()) {
+  messages.push(`Replacing stale agent-connector daemon PID ${livePid}`);
+  connector.stopDaemon();
+  daemonReplaced = true;
+  pid = connector.getDaemonPid();
+  livePid = Daemon.runningDaemonPid(connector._configDir);
+}
+
 if (input.action === 'stop') {
   if (livePid) {
     connector.sendDaemonCommand(`stop:${ag.name}`);
@@ -143,6 +174,7 @@ process.stdout.write(JSON.stringify({
   daemonStarted,
   command,
   messages,
+  daemonReplaced,
   status,
   configDir: connector._configDir,
 }));

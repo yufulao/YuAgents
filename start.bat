@@ -53,6 +53,9 @@ echo Stopping existing local Web processes on ports 8000 and 3001...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "foreach ($port in 8000,3001) { Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }" >nul 2>nul
 timeout /t 1 /nobreak >nul
 
+echo Stopping existing agent-connector daemon so local runtime code is reloaded...
+node "%ROOT%packages\agent-connector\bin\agent-connector.js" down >nul 2>nul
+
 echo Starting backend on http://127.0.0.1:8000
 (
   echo @echo off
