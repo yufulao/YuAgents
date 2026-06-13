@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from './api';
-import { generateUserId, getStoredIdentity, storeIdentity } from './identity';
+import { generateUserId, getStoredIdentity, getWorkspaceIdentityProfile, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
 import type { BrowserPersistentContext, BrowserTab, DMConversation, KnowledgeEntry, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
 
@@ -161,6 +161,7 @@ export function WorkspaceProvider({
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<WorkspaceAgent[]>([]);
   const { currentUser, setUserName, setUserProfile } = useWorkspaceIdentity();
+  const hydratedProfileRef = useRef<string | null>(null);
   const onlineUsers: OnlineUser[] = [];
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [currentSessionId, _setCurrentSessionId] = useState<string | null>(null);
@@ -354,6 +355,17 @@ export function WorkspaceProvider({
   useEffect(() => {
     workspaceApi.configure(workspaceId, token);
   }, [workspaceId, token]);
+
+  useEffect(() => {
+    if (!workspace || currentUser.avatarUrl) return;
+    const profile = getWorkspaceIdentityProfile(workspace.settings, currentUser);
+    if (!profile?.avatarUrl) return;
+    const nextName = currentUser.name && currentUser.name !== '访客' ? currentUser.name : profile.name;
+    const fingerprint = `${nextName}|${profile.avatarUrl}`;
+    if (hydratedProfileRef.current === fingerprint) return;
+    hydratedProfileRef.current = fingerprint;
+    setUserProfile({ name: nextName, avatarUrl: profile.avatarUrl });
+  }, [workspace, currentUser, setUserProfile]);
 
   const refreshWorkspace = useCallback(async () => {
     try {

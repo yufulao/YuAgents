@@ -36,6 +36,9 @@ import { Switch } from '@/components/ui/switch';
 import { useLayout } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
+import { getAgentModelLabel } from '@/lib/agent-display';
+import { withWorkspaceIdentityProfile } from '@/lib/identity';
+import type { WorkspaceAgent } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { AgentActivityPanel } from '@/components/agents/agent-activity-panel';
 import { cn } from '@/lib/utils';
@@ -70,6 +73,35 @@ function NavButton({
       {count !== undefined && count > 0 && (
         <span className="text-xs text-muted-foreground">{count}</span>
       )}
+    </button>
+  );
+}
+
+function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; status: string; onClick: () => void }) {
+  const modelLabel = getAgentModelLabel(agent);
+  return (
+    <button
+      onClick={onClick}
+      className="group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+    >
+      <AgentAvatar
+        name={agent.agentName}
+        avatar={agent.avatar}
+        avatarUrl={agent.avatarUrl}
+        size={20}
+        status={status}
+        showStatus
+      />
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[13px] font-normal leading-tight text-foreground group-hover:text-primary">
+          {agent.agentName}
+        </span>
+        {modelLabel && (
+          <span className="block truncate font-mono text-[10px] leading-tight text-muted-foreground">
+            {modelLabel}
+          </span>
+        )}
+      </span>
     </button>
   );
 }
@@ -225,23 +257,12 @@ export function SidebarContent() {
             </p>
             <div className="max-h-48 space-y-0.5 overflow-y-auto">
               {visibleAgents.map((agent) => (
-                <button
+                <AgentListButton
                   key={agent.agentName}
+                  agent={agent}
+                  status={agentStatusDot(agent)}
                   onClick={() => setSelectedAgentName(agent.agentName)}
-                  className="group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  <AgentAvatar
-                    name={agent.agentName}
-                    avatar={agent.avatar}
-                    avatarUrl={agent.avatarUrl}
-                    size={20}
-                    status={agentStatusDot(agent)}
-                    showStatus
-                  />
-                  <span className="truncate text-left text-[13px] font-normal text-foreground group-hover:text-primary">
-                    {agent.agentName}
-                  </span>
-                </button>
+                />
               ))}
             </div>
 
@@ -368,7 +389,14 @@ function SettingsDialogPortal({
     try {
       await workspaceApi.updateWorkspace({
         name: name.trim(),
-        settings: { ...workspace.settings, monitorMode },
+        settings: withWorkspaceIdentityProfile(
+          { ...workspace.settings, monitorMode },
+          {
+            id: currentUser.id,
+            name: userName.trim(),
+            avatarUrl: userAvatar.trim() || null,
+          },
+        ),
       });
       setUserProfile({
         name: userName.trim(),

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Check,
   Copy,
+  Cpu,
   Folder,
   Monitor,
   Pencil,
@@ -19,6 +20,7 @@ import {
 import { useLayout } from '@/components/layout/layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { getAgentModelLabel, getInstalledSkillIds } from '@/lib/agent-display';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -179,9 +181,12 @@ export function AgentProfilePanel() {
   const displayType = agent.agentType
     ? agent.agentType.charAt(0).toUpperCase() + agent.agentType.slice(1)
     : '未知';
+  const modelLabel = getAgentModelLabel(agent);
+  const installedSkillIds = getInstalledSkillIds(agent);
 
   const infoItems = [
     { icon: <Monitor className="size-3.5" />, label: '类型', value: displayType },
+    { icon: <Cpu className="size-3.5" />, label: '模型', value: modelLabel || '—' },
     { icon: <Folder className="size-3.5" />, label: '目录', value: agent.workingDir || '—' },
     { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
   ];
@@ -230,6 +235,11 @@ export function AgentProfilePanel() {
                   <span className={cn('size-1.5 rounded-full', isOnline ? 'bg-green-500' : 'bg-zinc-400')} />
                   {agent.status}
                 </span>
+                {modelLabel && (
+                  <span className="truncate font-mono text-[11px] text-muted-foreground">
+                    {modelLabel}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -371,9 +381,33 @@ export function AgentProfilePanel() {
                       <span className="text-muted-foreground">Codex Fast</span><span>{agent.managedMetadata?.codex_service_tier === 'fast' ? '开启' : '关闭'}</span>
                     </>
                   )}
-                  <span className="text-muted-foreground">模型</span><span className="truncate">{agent.modelName || agent.model || '—'}</span>
+                  <span className="text-muted-foreground">模型</span><span className="truncate">{modelLabel || '—'}</span>
                   <span className="text-muted-foreground">工作目录</span><span className="truncate">{agent.workingDir || '—'}</span>
                 </div>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border">
+            <div className="flex items-center justify-between border-b px-3.5 py-2.5">
+              <span className="text-xs font-medium">已装载 Skills</span>
+              <span className="text-[11px] text-muted-foreground">{installedSkillIds.length}</span>
+            </div>
+            <div className="p-3">
+              {installedSkillIds.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {installedSkillIds.map((skillId) => (
+                    <span
+                      key={skillId}
+                      className="max-w-full truncate rounded-md border bg-muted/50 px-2 py-1 font-mono text-[11px] text-foreground"
+                      title={skillId}
+                    >
+                      {skillId}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">暂无已装载 skill</p>
               )}
             </div>
           </div>
