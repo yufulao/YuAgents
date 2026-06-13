@@ -341,6 +341,48 @@ class TestPollEvents:
 class TestAgentDeliveries:
     """Durable per-agent delivery inbox."""
 
+    def test_direct_message_creates_leaseable_delivery(self, client, workspace, db):
+        join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert join.status_code == 200
+        session_id = join.json()["data"]["session_id"]
+
+        sent = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": "openagents:agent-alpha",
+            "payload": {"content": "private hello"},
+            "visibility": "direct",
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert sent.status_code == 200
+        event_id = sent.json()["data"]["id"]
+
+        db.expire_all()
+        delivery = db.query(AgentDelivery).filter_by(
+            event_id=event_id,
+            agent_name="agent-alpha",
+        ).one()
+        assert delivery.status == "pending"
+        assert delivery.delivery_kind == "attention"
+        assert delivery.attention_reason == "direct"
+        assert delivery.channel_name is None
+
+        leased = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": session_id,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert leased.status_code == 200
+        deliveries = leased.json()["data"]["deliveries"]
+        assert len(deliveries) == 1
+        assert deliveries[0]["event"]["id"] == event_id
+        assert deliveries[0]["event"]["target"] == "openagents:agent-alpha"
+        assert deliveries[0]["event"]["visibility"] == "direct"
+
     def test_targeted_message_creates_leaseable_delivery(self, client, workspace, db):
         join = client.post("/v1/join", json={
             "agent_name": "agent-alpha",

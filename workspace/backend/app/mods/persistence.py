@@ -75,7 +75,52 @@ class PersistenceMod(ObserveMod):
         if event.type == "workspace.message.posted" and event.target.startswith("channel/"):
             self._create_agent_deliveries(event, context, record)
 
+        if (
+            event.type == "workspace.message.posted"
+            and event.visibility == "direct"
+            and event.target.startswith("openagents:")
+        ):
+            self._create_direct_agent_delivery(event, context, record)
+
         return None  # observe mods return value is ignored
+
+    def _create_direct_agent_delivery(self, event: Event, context: PipelineContext, record) -> None:
+        from app.models import AgentDelivery
+
+        payload = event.payload or {}
+        if payload.get("message_type") in {"thinking", "status", "todos", "loading"}:
+            return
+
+        target = event.target[len("openagents:"):]
+        if not target:
+            return
+        if event.source == event.target:
+            return
+
+        db = context.extra.get("db")
+        workspace = context.extra.get("workspace")
+        if not db or not workspace:
+            return
+
+        existing = db.execute(
+            select(AgentDelivery).where(
+                AgentDelivery.event_id == record.id,
+                AgentDelivery.agent_name == target,
+            )
+        ).scalar_one_or_none()
+        if existing:
+            return
+
+        db.add(AgentDelivery(
+            workspace_id=workspace.id,
+            event_id=record.id,
+            agent_name=target,
+            channel_name=None,
+            delivery_kind="attention",
+            attention_reason="direct",
+            status="pending",
+        ))
+        db.flush()
 
     def _create_agent_deliveries(self, event: Event, context: PipelineContext, record) -> None:
         from app.models import AgentDelivery, Channel

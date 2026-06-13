@@ -47,13 +47,24 @@ function compactPreview(content: string, limit = 120): string {
 function DMSection({
   conversations,
   currentSessionId,
+  currentUser,
   onSelect,
 }: {
   conversations: { agents: [string, string]; lastMessage?: { content: string; sender: string; timestamp: number }; messageCount: number }[];
   currentSessionId: string | null;
+  currentUser: { id: string; name: string };
   onSelect: (sessionId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const formatAddress = (address: string) => {
+    if (address.startsWith('openagents:')) return address.replace(/^openagents:/, '');
+    if (address.startsWith('human:')) {
+      const value = address.replace(/^human:/, '');
+      if (value === currentUser.id || value === currentUser.name) return currentUser.name || '我';
+      return value;
+    }
+    return address;
+  };
 
   return (
     <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
@@ -78,9 +89,9 @@ function DMSection({
           {conversations.map((convo) => {
             const dmId = `dm:${convo.agents[0]},${convo.agents[1]}`;
             const isSelected = currentSessionId === dmId;
-            const agentA = convo.agents[0].replace(/^openagents:/, '');
-            const agentB = convo.agents[1].replace(/^openagents:/, '');
-            const sender = convo.lastMessage?.sender.replace(/^openagents:/, '');
+            const agentA = formatAddress(convo.agents[0]);
+            const agentB = formatAddress(convo.agents[1]);
+            const sender = convo.lastMessage ? formatAddress(convo.lastMessage.sender) : '';
             const preview = convo.lastMessage
               ? `${sender}: ${convo.lastMessage.content}`
               : '尚无私聊消息';
@@ -119,7 +130,7 @@ function DMSection({
 }
 
 export function ThreadList() {
-  const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations, refreshWorkspace } = useWorkspace();
+  const { sessions, currentSessionId, setCurrentSessionId, agents, currentUser, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations, refreshWorkspace } = useWorkspace();
   const { toggleListPaneCollapsed, isMobile, openMobileDetail } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
@@ -493,6 +504,7 @@ export function ThreadList() {
               <DMSection
                 conversations={allDMs}
                 currentSessionId={currentSessionId}
+                currentUser={currentUser}
                 onSelect={(id) => {
                   setCurrentSessionId(id);
                   if (isMobile) openMobileDetail();
