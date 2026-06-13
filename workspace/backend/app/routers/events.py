@@ -522,8 +522,9 @@ def get_agent_context(
         "runtime_rules": [
             "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
             "Do not flatten roles. Use each agent's role and description when deciding delegation.",
-            "Scheduling is a rule, not a fixed org chart: choose planners, implementers, reviewers, or QA from the actual context and agent descriptions.",
-            "For independent work, create separate shared tasks with owners so capable agents can run in parallel; only serialize truly dependent work.",
+            "Scheduling is context-driven, not a fixed org chart: derive the needed work functions from the current request, then match them to agent descriptions.",
+            "For a bug, useful functions may be analysis, fix, and test; for a feature, they may be reference research, design breakdown, and implementation. Use the functions the context actually needs.",
+            "Create shared tasks for those work functions only when separate owners improve clarity or throughput; keep single-owner work single-owner.",
             "Agents assigned to verification should reproduce and report evidence; agents assigned to implementation should own code changes.",
             "If another agent must act, @mention that agent explicitly and include a concrete handoff.",
             "Use shared workspace tasks for multi-agent work ownership; use personal todos only for your own execution plan.",

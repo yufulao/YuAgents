@@ -383,7 +383,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
     sections.push(
       '\n### Shared Workspace Tasks (Team Ownership)\n\n' +
       'Use shared tasks when work should be assigned, claimed, reviewed, or split across agents. ' +
-      'Scheduling is based on the actual task, channel context, and agent role/description — do not assume a fixed org chart.\n\n' +
+      'Scheduling derives needed work functions from the actual request and channel context, then matches them to agent role/description/skills/status. ' +
+      'Examples: bug work may need analysis/fix/test; feature work may need reference research/design breakdown/implementation. ' +
+      'Use only the functions the context actually needs.\n\n' +
       '**Create shared task:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-tasks -d '{"network":"${workspaceId}",` +
@@ -605,8 +607,9 @@ function buildGuardrails() {
     'If you need to ask the user something, just write the question ' +
     'as your text response.\n' +
     '\nIMPORTANT: For multi-agent work, use shared workspace tasks to assign, ' +
-    'claim, and track ownership. Scheduling is role/context-based, not a fixed ' +
-    'team template. After you own a task, use your personal to-do list for your ' +
+    'claim, and track ownership. Scheduling derives work functions from context ' +
+    'and maps them to agent descriptions/skills/status; it is not a fixed team template. ' +
+    'Use separate tasks only when separate owners improve clarity or throughput. After you own a task, use your personal to-do list for your ' +
     'private execution plan.\n' +
     '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
     'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +

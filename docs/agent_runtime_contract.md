@@ -75,13 +75,15 @@ Personal todos are not enough for team scheduling. OpenAgents uses shared
 workspace tasks for ownership, claim, dependencies, status, result, and
 acceptance:
 
-- Scheduling is a rule, not a fixed org chart. The runtime should choose the
-  planner, implementer, reviewer, or QA owner from the current task, channel
-  context, agent descriptions, skills, and availability.
-- A workspace may have a dedicated planner/architect, or it may not. If it does
-  not, the current lead/master or best-fit agent should split independent work
-  before implementation.
-- Independent work should become separate shared tasks so multiple agents can
-  proceed in parallel. Sequential work should be reserved for true dependencies.
+- Scheduling is a rule, not a fixed org chart. The runtime should derive the
+  needed work functions from the current request and channel context, then match
+  those functions to agent descriptions, skills, and availability.
+- Work functions are contextual examples, not permanent concepts. A bug may
+  need analysis, fix, and testing. A feature may need reference research,
+  design breakdown, and implementation. Other requests may need different
+  functions.
+- Create shared tasks for those work functions when separate owners improve
+  clarity or throughput. If one owner can complete the work cleanly, keep it
+  single-owner instead of splitting for its own sake.
 - Agents use personal todos only for their private execution plan after they
   have a shared task or handoff.
