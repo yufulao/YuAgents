@@ -308,6 +308,7 @@ class WorkspaceClient {
     limit = 500,
     sessionId,
     leaseSeconds,
+    includeAmbient = false,
   } = {}) {
     if (sessionId) {
       try {
@@ -318,6 +319,7 @@ class WorkspaceClient {
           limit: String(Math.min(limit, 100)),
         });
         if (leaseSeconds) params.set('lease_seconds', String(leaseSeconds));
+        if (includeAmbient) params.set('include_ambient', 'true');
         const data = await this._get(`/v1/agent-deliveries/pending?${params}`, this._wsHeaders(token));
         const result = data.data || data;
         const deliveries = (result && result.deliveries) || [];
@@ -327,6 +329,8 @@ class WorkspaceClient {
             const msg = this._eventToMessage(d.event);
             msg._deliveryId = d.id;
             msg._deliveryAttempts = d.attempts || 0;
+            msg._deliveryKind = d.delivery_kind || null;
+            msg._attentionReason = d.attention_reason || null;
             return msg;
           })
           .filter(Boolean);

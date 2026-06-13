@@ -71,6 +71,15 @@ def _agent_name_from_source(source: str) -> str:
     return source[len("openagents:"):] if source.startswith("openagents:") else source
 
 
+def _normalize_agent_name(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    name = value.strip()
+    if name.startswith("@"):
+        name = name[1:].strip()
+    return name or None
+
+
 def _serialize_task(task: WorkspaceTask) -> dict:
     return {
         "id": task.id,
@@ -108,8 +117,8 @@ def _current_agent_session(db: Session, workspace_id: str, agent_name: str, sess
 
 async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: str, source: str, token: Optional[str]):
     channel = task.channel_name or "default"
-    assignee = task.assignee or ""
-    mention = f"@{assignee} " if assignee and action == "created" else ""
+    assignee = _normalize_agent_name(task.assignee)
+    mention = f"@{assignee} " if assignee and action in {"created", "updated"} else ""
     status = task.status or "todo"
     content = f"{mention}Workspace task {action}: [{status}] {task.title}"
     if task.result and action in {"updated", "completed"}:
@@ -123,7 +132,10 @@ async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: 
             "message_type": "task",
             "task": _serialize_task(task),
         },
-        metadata={"workspace_task_id": task.id},
+        metadata={
+            "workspace_task_id": task.id,
+            "target_agents": [assignee] if assignee and action in {"created", "updated"} else [],
+        },
     )
     await _emit_event(event, workspace, db, token=token)
 
@@ -154,7 +166,7 @@ async def create_workspace_task(
         description=body.description,
         status=body.status,
         priority=body.priority,
-        assignee=body.assignee,
+        assignee=_normalize_agent_name(body.assignee),
         created_by=body.source,
         depends_on=body.depends_on or [],
         updated_at=now,
@@ -270,7 +282,7 @@ async def update_workspace_task(
             return json_response(ResponseCode.BAD_REQUEST, "Invalid task priority")
         task.priority = body.priority
     if body.assignee is not None:
-        task.assignee = body.assignee or None
+        task.assignee = _normalize_agent_name(body.assignee)
     if body.description is not None:
         task.description = body.description
     if body.result is not None:

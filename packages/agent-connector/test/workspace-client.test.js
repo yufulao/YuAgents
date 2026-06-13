@@ -171,6 +171,42 @@ describe('WorkspaceClient', () => {
     assert.equal(result.messages[0]._deliveryAttempts, 2);
   });
 
+  it('pollPending can lease ambient durable deliveries', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    client._get = async (path) => {
+      capturedPath = path;
+      return {
+        data: {
+          deliveries: [{
+            id: 'delivery-ambient',
+            delivery_kind: 'ambient',
+            attention_reason: null,
+            attempts: 1,
+            event: {
+              id: 'event-ambient',
+              source: 'human:user',
+              target: 'channel/general',
+              payload: { content: 'visible to the room', message_type: 'chat' },
+              metadata: { target_agents: ['other-agent'] },
+              timestamp: Date.now(),
+            },
+          }],
+        },
+      };
+    };
+
+    const result = await client.pollPending('ws-1', 'bary-bot', 'tok', {
+      sessionId: 'sess-read',
+      includeAmbient: true,
+    });
+
+    assert.ok(capturedPath.includes('include_ambient=true'));
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.messages[0]._deliveryId, 'delivery-ambient');
+    assert.equal(result.messages[0]._deliveryKind, 'ambient');
+  });
+
   it('ackDelivery posts current session proof', async () => {
     const client = new WorkspaceClient('http://127.0.0.1:19999');
     let capturedPath = null;

@@ -566,6 +566,7 @@ class BaseAdapter {
             // safe because in-flight duplicate polls below renew the lease
             // without queuing the same delivery a second time.
             leaseSeconds: 300,
+            includeAmbient: true,
           }
         );
         messages = result.messages;
@@ -1051,6 +1052,27 @@ class BaseAdapter {
       this._log(`Runtime context pack unavailable: ${e && e.message ? e.message : e}`);
       return '';
     }
+  }
+
+  _buildDeliveryPrompt(msg) {
+    const kind = msg && msg._deliveryKind;
+    if (kind === 'ambient') {
+      return [
+        'Delivery kind: ambient channel context.',
+        'This normal channel message is visible to every agent in the channel. Read it and update your understanding.',
+        'Only take work or send a visible reply if your role, an assigned shared task, or the current request makes your participation relevant.',
+        'If no visible action is needed from you, return exactly: __no_response__',
+      ].join('\n');
+    }
+    if (kind === 'attention') {
+      const reason = msg && msg._attentionReason ? ` (${msg._attentionReason})` : '';
+      return `Delivery kind: attention${reason}. This message was routed to you for visible handling.`;
+    }
+    return '';
+  }
+
+  _isNoResponseText(text) {
+    return String(text || '').trim() === '__no_response__';
   }
 }
 

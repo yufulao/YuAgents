@@ -286,11 +286,12 @@ class CodexAdapter extends BaseAdapter {
       msgChannel,
       msg.id || msg.messageId,
     );
+    const deliveryPrompt = this._buildDeliveryPrompt(msg);
 
     if (this._useCliMode) {
-      await this._handleViaSubprocess(content, msgChannel, runtimeContextPrompt);
+      await this._handleViaSubprocess(content, msgChannel, runtimeContextPrompt, deliveryPrompt);
     } else if (this._directMode) {
-      await this._handleViaDirectApi(content, msgChannel, runtimeContextPrompt);
+      await this._handleViaDirectApi(content, msgChannel, runtimeContextPrompt, deliveryPrompt);
     } else {
       await this.sendError(msgChannel, 'codex CLI not found. Install with: npm install -g @openai/codex');
     }
@@ -300,7 +301,7 @@ class CodexAdapter extends BaseAdapter {
   // CLI subprocess mode (primary)
   // ------------------------------------------------------------------
 
-  async _handleViaSubprocess(content, msgChannel, runtimeContextPrompt = '') {
+  async _handleViaSubprocess(content, msgChannel, runtimeContextPrompt = '', deliveryPrompt = '') {
     const env = { ...(this.agentEnv || process.env) };
     dropEmptyCodexEnv(env);
 
@@ -315,7 +316,8 @@ class CodexAdapter extends BaseAdapter {
     if (this._directBaseUrl) env.OPENAI_BASE_URL = this._directBaseUrl;
 
     const context = this._buildSystemContext(msgChannel, runtimeContextPrompt);
-    const fullPrompt = `${context}\n\n---\n\nUser message:\n${content}`;
+    const deliveryBlock = deliveryPrompt ? `${deliveryPrompt}\n\n` : '';
+    const fullPrompt = `${context}\n\n---\n\n${deliveryBlock}User message:\n${content}`;
 
     // Run up to 2 attempts: first with resume, then fresh if stale
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -326,6 +328,9 @@ class CodexAdapter extends BaseAdapter {
       try {
         const result = await this._spawnCodex(cmd, env, msgChannel, fullPrompt);
 
+        if (this._isNoResponseText(result.responseText)) {
+          return;
+        }
         if (result.responseText) {
           await this.sendResponse(msgChannel, result.responseText);
           return;
@@ -335,6 +340,8 @@ class CodexAdapter extends BaseAdapter {
           delete this._channelThreads[msgChannel];
           this._saveSessions();
           continue;
+        } else if (deliveryPrompt.startsWith('Delivery kind: ambient')) {
+          return;
         } else {
           await this.sendResponse(msgChannel, 'No response generated. Please try again.');
           return;
@@ -498,9 +505,12 @@ class CodexAdapter extends BaseAdapter {
   // Direct HTTP mode (fallback when CLI not available)
   // ------------------------------------------------------------------
 
-  async _handleViaDirectApi(content, msgChannel, runtimeContextPrompt = '') {
+  async _handleViaDirectApi(content, msgChannel, runtimeContextPrompt = '', deliveryPrompt = '') {
     try {
-      const responseText = await this._callCompletionApi(content, msgChannel, runtimeContextPrompt);
+      const responseText = await this._callCompletionApi(content, msgChannel, runtimeContextPrompt, deliveryPrompt);
+      if (this._isNoResponseText(responseText)) {
+        return;
+      }
       if (responseText) {
         this._conversationHistory.push({ role: 'user', content });
         this._conversationHistory.push({ role: 'assistant', content: responseText });
@@ -508,6 +518,8 @@ class CodexAdapter extends BaseAdapter {
           this._conversationHistory = this._conversationHistory.slice(-MAX_HISTORY_ENTRIES * 2);
         }
         await this.sendResponse(msgChannel, responseText);
+      } else if (deliveryPrompt.startsWith('Delivery kind: ambient')) {
+        return;
       } else {
         await this.sendResponse(msgChannel, 'No response generated. Please try again.');
       }
@@ -517,11 +529,12 @@ class CodexAdapter extends BaseAdapter {
     }
   }
 
-  async _callCompletionApi(userMessage, channel, runtimeContextPrompt = '') {
+  async _callCompletionApi(userMessage, channel, runtimeContextPrompt = '', deliveryPrompt = '') {
     const systemPrompt = this._buildSystemContext(channel, runtimeContextPrompt);
+    const promptContent = deliveryPrompt ? `${deliveryPrompt}\n\nUser message:\n${userMessage}` : userMessage;
     const messages = [{ role: 'system', content: systemPrompt }];
     messages.push(...this._conversationHistory);
-    messages.push({ role: 'user', content: userMessage });
+    messages.push({ role: 'user', content: promptContent });
 
     const url = `${this._directBaseUrl}/chat/completions`;
     const payload = JSON.stringify({

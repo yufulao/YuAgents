@@ -971,9 +971,13 @@ class ClaudeAdapter extends BaseAdapter {
       msgChannel,
       msg.id || msg.messageId,
     );
-    const messageWithRuntimeContext = runtimeContextPrompt
-      ? `${runtimeContextPrompt}\n\n---\n\nCurrent user message:\n${content}`
+    const deliveryPrompt = this._buildDeliveryPrompt(msg);
+    const contentWithDelivery = deliveryPrompt
+      ? `${deliveryPrompt}\n\nCurrent user message:\n${content}`
       : content;
+    const messageWithRuntimeContext = runtimeContextPrompt
+      ? `${runtimeContextPrompt}\n\n---\n\n${contentWithDelivery}`
+      : contentWithDelivery;
 
     // ── Persistent process fast-path ──
     // If we have a living persistent process for this channel, send via stdin
@@ -986,6 +990,9 @@ class ClaudeAdapter extends BaseAdapter {
       const result = await this._sendToPersistentProc(existingPP, messageWithRuntimeContext);
       if (result.resultEvent) {
         const fullResponse = existingPP.lastResponseText.join('\n').trim();
+        if (this._isNoResponseText(fullResponse)) {
+          return;
+        }
         if (fullResponse) {
           try { await this.sendResponse(msgChannel, fullResponse); } catch {}
         } else if (existingPP.lastErrorText) {
@@ -1058,7 +1065,7 @@ class ClaudeAdapter extends BaseAdapter {
     }
 
     // Spawn a persistent process and send the first message via stdin
-    let effectiveContent = content;
+    let effectiveContent = contentWithDelivery;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} mcpConfigFile = null; }
 
@@ -1066,7 +1073,7 @@ class ClaudeAdapter extends BaseAdapter {
         this._killPersistentProc(msgChannel);
         try {
           const recap = await this._buildChannelRecap(msgChannel, content);
-          if (recap) effectiveContent = `${recap}\n\n---\n\n${content}`;
+          if (recap) effectiveContent = `${recap}\n\n---\n\n${contentWithDelivery}`;
         } catch {}
       }
 
@@ -1101,7 +1108,7 @@ class ClaudeAdapter extends BaseAdapter {
           if (!pp.everPostedAnything) {
             if (pp.lastErrorText) {
               try { await this.sendError(msgChannel, this._formatClaudeError(pp.lastErrorText)); } catch {}
-            } else {
+            } else if (msg._deliveryKind !== 'ambient') {
               try { await this.sendResponse(msgChannel, 'No response generated. Please try again.'); } catch {}
             }
           }
@@ -1136,6 +1143,9 @@ class ClaudeAdapter extends BaseAdapter {
           continue;
         }
 
+        if (this._isNoResponseText(finalResponse)) {
+          break;
+        }
         if (finalResponse) {
           try { await this.sendResponse(msgChannel, finalResponse); } catch {}
         } else if (pp.lastErrorText) {

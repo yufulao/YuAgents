@@ -55,6 +55,8 @@ def test_create_list_claim_and_update_workspace_task(client, workspace):
     deliveries = pending.json()["data"]["deliveries"]
     assert len(deliveries) == 1
     assert deliveries[0]["event"]["payload"]["message_type"] == "task"
+    assert deliveries[0]["event"]["payload"]["content"].startswith("@agent-beta Workspace task created:")
+    assert deliveries[0]["event"]["metadata"]["target_agents"] == ["agent-beta"]
 
     claimed = client.post(f"/v1/workspace-tasks/{task['id']}/claim", json={
         "network": workspace["id"],
@@ -82,6 +84,56 @@ def test_create_list_claim_and_update_workspace_task(client, workspace):
     updated_task = updated.json()["data"]["task"]
     assert updated_task["status"] == "in_review"
     assert "invalid token" in updated_task["result"]
+
+
+def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    beta_join = client.post("/v1/join", json={
+        "agent_name": "agent-beta",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert beta_join.status_code == 200
+    beta_session = beta_join.json()["data"]["session_id"]
+
+    join_channel = client.post("/v1/events", json={
+        "type": "network.channel.join",
+        "source": "human:user1",
+        "target": f"channel/{channel_name}",
+        "payload": {"channel": channel_name, "agent_name": "agent-beta"},
+        "network": workspace["id"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert join_channel.status_code == 200
+
+    created = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Review module boundaries",
+        "source": "openagents:agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 200
+    task = created.json()["data"]["task"]
+    assert task["assignee"] is None
+
+    updated = client.patch(f"/v1/workspace-tasks/{task['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-alpha",
+        "assignee": "@agent-beta",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert updated.status_code == 200
+    assert updated.json()["data"]["task"]["assignee"] == "agent-beta"
+
+    pending = client.get("/v1/agent-deliveries/pending", params={
+        "network": workspace["id"],
+        "agent": "agent-beta",
+        "session_id": beta_session,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert pending.status_code == 200
+    deliveries = pending.json()["data"]["deliveries"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["delivery_kind"] == "attention"
+    assert deliveries[0]["event"]["payload"]["content"].startswith("@agent-beta Workspace task updated:")
+    assert deliveries[0]["event"]["metadata"]["target_agents"] == ["agent-beta"]
 
 
 def test_agent_context_pack_includes_active_workspace_tasks(client, workspace):

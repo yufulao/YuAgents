@@ -1082,6 +1082,15 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
     # ── Multi-agent channel: always use LLM router ──────────────────
     real_participants = participant_names
 
+    preselected_targets = event.metadata.get("target_agents") if isinstance(event.metadata, dict) else None
+    if isinstance(preselected_targets, list):
+        targets = _filter_targets_to_channel(channel, [
+            target for target in preselected_targets
+            if isinstance(target, str) and target and target != "__no_response__"
+        ])
+        event.metadata["target_agents"] = targets if targets else ["__no_response__"]
+        return event
+
     # Mention routing is governed by the channel, not the workspace roster.
     # This prevents @mention from waking or implicitly pulling an agent into a
     # private thread where it is not already a participant.
