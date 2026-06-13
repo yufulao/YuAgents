@@ -39,6 +39,32 @@ It does not upload local runtime state or generated files such as `node_modules`
 helper scripts. Docker installs frontend dependencies again on the server during
 `docker compose up --build` through the frontend Dockerfile's `npm ci` step.
 
+## Package Only
+
+If you only want a 7z package to upload manually:
+
+```bat
+package-oa-yodaze.bat
+```
+
+This requires 7-Zip on the local machine. The script checks `PATH` plus common
+install locations such as `C:\Program Files\7-Zip\7z.exe`.
+
+The package is written to `dist\openagents-oa-yodaze-relay-YYYYMMDD-HHMMSS.7z`.
+It uses the same tracked-file whitelist as the deploy script, so it does not
+include local environments, generated builds, `node_modules`, `.next`, exports,
+logs, SQLite DBs, or untracked files.
+
+After uploading it to the server, extract it under `/opt/openagents` so the
+server has:
+
+```text
+/opt/openagents/workspace/docker-compose.prod.yml
+/opt/openagents/workspace/nginx.conf.template
+/opt/openagents/workspace/start.sh
+/opt/openagents/workspace/frontend/...
+```
+
 The underlying command is:
 
 ```powershell
