@@ -69,6 +69,10 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
     if (agent.presenceStatus === 'stopped' || agent.status === 'stopped') return '已停止';
     return agent.lastHeartbeatAt ? `离线 · ${timeAgo(agent.lastHeartbeatAt)}` : '离线';
   };
+  const statusDot = (agent: WorkspaceAgent) =>
+    agent.activityState && agent.activityState !== 'idle'
+      ? agent.activityState
+      : agent.presenceStatus || agent.status;
 
   return (
     <div className="space-y-2">
@@ -82,7 +86,7 @@ export function AgentStatusCard({ agents }: AgentStatusCardProps) {
               key={agent.agentName}
               className="flex items-center gap-2.5 px-2 py-1.5 rounded-md group"
             >
-              <AgentAvatar name={agent.agentName} size={28} status={agent.presenceStatus || agent.status} showStatus />
+              <AgentAvatar name={agent.agentName} size={28} status={statusDot(agent)} showStatus />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{agent.agentName}</p>
                 <p className="text-xs text-muted-foreground">

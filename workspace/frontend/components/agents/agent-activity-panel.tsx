@@ -75,6 +75,20 @@ const LIFECYCLE_STATES = new Set<ActivityState>([
   'error',
 ]);
 
+const ACTIVE_STATES = new Set<ActivityState>([
+  'starting',
+  'thinking',
+  'editing_file',
+  'running_command',
+  'waiting_input',
+  'stopping',
+  'error',
+]);
+
+function avatarStatusForActivity(activity: AgentActivity) {
+  return activity.state === 'idle' ? 'online' : activity.state;
+}
+
 function normalizeState(agent: WorkspaceAgent, hasActiveThread: boolean): ActivityState {
   const activity = (agent.activityState || agent.lifecycleState) as ActivityState | undefined;
   if (activity && LIFECYCLE_STATES.has(activity)) return activity;
@@ -134,7 +148,7 @@ export function AgentActivityPanel({
   onRefresh,
 }: AgentActivityPanelProps) {
   const activities = getAgentActivities(agents, sessions, activeSessionIds);
-  const activeActivities = activities.filter((activity) => activity.agent.hasActiveWork);
+  const activeActivities = activities.filter((activity) => activity.agent.hasActiveWork || ACTIVE_STATES.has(activity.state));
   const onlineIdle = activities.filter((activity) => activity.state === 'idle' || activity.state === 'online');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -151,7 +165,7 @@ export function AgentActivityPanel({
   if (agents.length === 0) return null;
 
   return (
-    <div className="mt-3 border-t border-border pt-3">
+    <div className="mt-3 min-w-0 border-t border-border pt-3">
       <div className="flex items-center justify-between px-2 pb-1.5">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Activity className="size-3" />
@@ -179,19 +193,19 @@ export function AgentActivityPanel({
             return (
               <div
                 key={`${activity.agent.agentName}-${activity.session?.sessionId || activity.state}`}
-                className="mx-1.5 rounded-lg px-1.5 py-1.5 hover:bg-muted/60 transition-colors"
+                className="mx-1.5 min-w-0 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-muted/60"
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <AgentAvatar
                     name={activity.agent.displayName || activity.agent.agentName}
                     avatar={activity.agent.avatar}
                     avatarUrl={activity.agent.avatarUrl}
                     size={20}
-                    status={activity.agent.presenceStatus || activity.agent.status}
+                    status={avatarStatusForActivity(activity)}
                     showStatus
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       <span className="text-[12px] font-medium truncate">
                         {activity.agent.displayName || activity.agent.agentName}
                       </span>
@@ -203,14 +217,14 @@ export function AgentActivityPanel({
                         {meta.label}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
-                      <span className="truncate">{activity.session?.title || activity.session?.sessionId || '无活动线程'}</span>
+                    <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+                      <span className="min-w-0 truncate">{activity.session?.title || activity.session?.sessionId || '无活动线程'}</span>
                       {activity.updatedAt && <span className="shrink-0">· {timeAgo(activity.updatedAt)}</span>}
                     </div>
                   </div>
                 </div>
-                <div className="mt-1 ml-7 min-w-0">
-                  <p className="text-[11px] leading-snug text-muted-foreground truncate">
+                <div className="ml-7 mt-1 min-w-0 max-w-full overflow-hidden">
+                  <p className="whitespace-normal break-words text-[11px] leading-snug text-muted-foreground line-clamp-2">
                     {activity.summary}
                   </p>
                 </div>
@@ -225,10 +239,10 @@ export function AgentActivityPanel({
       )}
 
       {onlineIdle.length > 0 && (
-        <div className="mt-2 px-2">
+        <div className="mt-2 min-w-0 px-2">
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="size-1.5 rounded-full bg-emerald-500" />
-            <span className="truncate">
+            <span className="min-w-0 truncate">
               在线空闲：{onlineIdle.slice(0, 3).map((activity) => activity.agent.displayName || activity.agent.agentName).join(', ')}
               {onlineIdle.length > 3 ? ` +${onlineIdle.length - 3}` : ''}
             </span>

@@ -37,6 +37,18 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
+function agentStatusDot(agent: WorkspaceAgent): string {
+  return agent.activityState && agent.activityState !== 'idle'
+    ? agent.activityState
+    : agent.presenceStatus || agent.status;
+}
+
+function agentStatusDotClass(status?: string): string {
+  if (status === 'online' || status === 'idle') return 'bg-green-500';
+  if (!status || status === 'offline' || status === 'stopped' || status === 'disabled') return 'bg-zinc-400';
+  return 'bg-amber-500';
+}
+
 export function ChatInput({ onSend, disabled, className, agents = [], knowledge = [], draft, onDraftChange, onFocusChange, focusKey, onCreateRoutine }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
@@ -305,6 +317,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
           )}
           {filteredAgents.map((agent) => {
             const idx = mentionItems.findIndex((m) => m.type === 'agent' && m.agent.agentName === agent.agentName);
+            const status = agentStatusDot(agent);
             return (
               <button
                 key={agent.agentName}
@@ -317,7 +330,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
                   insertMention(agent.agentName);
                 }}
               >
-                <AgentAvatar name={agent.agentName} size={24} status={agent.status} showStatus />
+                <AgentAvatar name={agent.agentName} size={24} status={status} showStatus />
                 <span className="font-medium">{agent.agentName}</span>
                 <span className={cn(
                   'text-[10px] px-1.5 py-0.5 rounded-full ml-auto',
@@ -329,7 +342,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
                 </span>
                 <span className={cn(
                   'size-2 rounded-full',
-                  agent.status === 'online' ? 'bg-green-500' : 'bg-zinc-400'
+                  agentStatusDotClass(status)
                 )} />
               </button>
             );

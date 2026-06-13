@@ -3,6 +3,14 @@ import { cn } from '@/lib/utils';
 
 const OA_PALETTE = ['#6366F1', '#8B5CF6', '#06B6D4', '#10B981', '#F59E0B'];
 
+function statusDotClass(status?: string) {
+  if (status === 'online' || status === 'idle') return 'bg-green-500';
+  if (!status || status === 'offline' || status === 'stopped' || status === 'disabled') {
+    return 'bg-zinc-300 dark:bg-zinc-600';
+  }
+  return 'bg-amber-500';
+}
+
 interface AgentAvatarProps {
   name: string;
   avatar?: { type: string; value: string } | null;
@@ -43,7 +51,7 @@ export function AgentAvatar({
         <span className={cn(
           'absolute -bottom-0.5 -right-0.5 rounded-full border-[1.5px] border-background',
           size >= 28 ? 'size-2.5' : 'size-2',
-          status === 'online' ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
+          statusDotClass(status)
         )} />
       )}
     </div>

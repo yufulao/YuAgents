@@ -125,6 +125,10 @@ export function SidebarContent() {
 
   const visibleAgents = agents;
   const onlineCount = agents.filter((agent) => agent.status === 'online').length;
+  const agentStatusDot = (agent: typeof agents[number]) =>
+    agent.activityState && agent.activityState !== 'idle'
+      ? agent.activityState
+      : agent.presenceStatus || agent.status;
 
   if (!isSidebarOpen) {
     return (
@@ -156,7 +160,7 @@ export function SidebarContent() {
                     avatar={agent.avatar}
                     avatarUrl={agent.avatarUrl}
                     size={28}
-                    status={agent.status}
+                    status={agentStatusDot(agent)}
                     showStatus
                   />
                 </button>
@@ -231,7 +235,7 @@ export function SidebarContent() {
                     avatar={agent.avatar}
                     avatarUrl={agent.avatarUrl}
                     size={20}
-                    status={agent.status}
+                    status={agentStatusDot(agent)}
                     showStatus
                   />
                   <span className="truncate text-left text-[13px] font-normal text-foreground group-hover:text-primary">
