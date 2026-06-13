@@ -693,6 +693,12 @@ class BaseAdapter {
     this._markMessageInFlight(msg);
 
     if (this._channelBusy.has(channel)) {
+      if (msg._deliveryKind === 'ambient') {
+        this._log(`Absorbing ambient delivery for busy channel ${channel}`);
+        await this._ackMessage(msg);
+        this._clearMessageInFlight(msg);
+        return;
+      }
       if (!this._channelQueues[channel]) this._channelQueues[channel] = [];
       const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       msg._queueId = queueId;

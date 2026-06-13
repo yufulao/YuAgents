@@ -363,6 +363,40 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
+  it('BaseAdapter absorbs ambient deliveries when channel is busy', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    let ackedDelivery = null;
+    let statusCount = 0;
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId) => {
+      ackedDelivery = deliveryId;
+      return { status: 'acked' };
+    };
+    adapter.sendStatus = async () => { statusCount += 1; };
+
+    await adapter._dispatchMessage({
+      messageId: 'event-ambient',
+      _deliveryId: 'delivery-ambient',
+      _deliveryKind: 'ambient',
+      sessionId: 'general',
+      content: 'passive room context',
+    });
+
+    assert.equal(ackedDelivery, 'delivery-ambient');
+    assert.equal(statusCount, 0);
+    assert.equal(adapter._processedIds.has('event-ambient'), true);
+    assert.equal(adapter._isInFlightMessage({ messageId: 'event-ambient' }), false);
+    assert.deepEqual(adapter._channelQueues.general || [], []);
+  });
+
   it('readDaemonPid returns null when no pid file', () => {
     assert.equal(Daemon.readDaemonPid(tmpDir), null);
   });
