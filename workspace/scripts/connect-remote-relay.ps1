@@ -51,6 +51,14 @@ function Invoke-Ssh([string]$Command) {
   }
 }
 
+function Select-LastIpv4([string]$Text) {
+  $matches = [regex]::Matches($Text, "(?<![\d.])(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?![\d.])")
+  if ($matches.Count -eq 0) {
+    return $null
+  }
+  return $matches[$matches.Count - 1].Value
+}
+
 Require-Command ssh
 
 if ($StartLocal) {
@@ -65,8 +73,10 @@ if ($StartLocal) {
 Write-Host "Checking local control plane at http://127.0.0.1:8000 ..."
 Wait-Url "http://127.0.0.1:8000/v1/agent-catalog" 90 "local control plane"
 
-$gateway = (& ssh -p $SshPort $Remote "docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1").Trim()
+$gatewayOutput = (& ssh -p $SshPort $Remote "docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1") -join "`n"
+$gateway = Select-LastIpv4 $gatewayOutput
 if (-not $gateway) {
+  Write-Warning "Could not parse Docker bridge gateway from remote output; using 172.17.0.1."
   $gateway = "172.17.0.1"
 }
 
