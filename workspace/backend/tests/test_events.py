@@ -544,6 +544,79 @@ class TestAgentDeliveries:
         assert unchanged.status == "pending"
         assert unchanged.lease_owner_session_id is None
 
+    def test_agent_context_pack_compacts_process_messages_without_changing_event_log(self, client, workspace):
+        alpha_join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert alpha_join.status_code == 200
+        alpha_session = alpha_join.json()["data"]["session_id"]
+        channel_name = workspace["channel"]["name"]
+
+        long_thinking = "reasoning-step " * 80
+        long_detail = {"tool_call": "expensive-output " * 80}
+        sent = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "openagents:agent-alpha",
+            "target": f"channel/{channel_name}",
+            "payload": {
+                "content": long_thinking,
+                "message_type": "thinking",
+                "details": long_detail,
+            },
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert sent.status_code == 200
+        thinking_id = sent.json()["data"]["id"]
+
+        todos = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "openagents:agent-alpha",
+            "target": f"channel/{channel_name}",
+            "payload": {
+                "content": "full personal todo list",
+                "message_type": "todos",
+                "todos": [
+                    {"content": "inspect", "status": "completed"},
+                    {"content": "patch", "status": "in_progress"},
+                    {"content": "verify", "status": "pending"},
+                ],
+            },
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert todos.status_code == 200
+        todos_id = todos.json()["data"]["id"]
+
+        context = client.get("/v1/agent-context", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": alpha_session,
+            "channel": channel_name,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert context.status_code == 200
+        messages = {m["id"]: m for m in context.json()["data"]["recent_messages"]}
+
+        thinking_payload = messages[thinking_id]["payload"]
+        assert thinking_payload["message_type"] == "thinking"
+        assert thinking_payload["context_compacted"] is True
+        assert len(thinking_payload["content"]) <= 160
+        assert "expensive-output" not in str(thinking_payload)
+        assert "details" not in thinking_payload
+
+        todos_payload = messages[todos_id]["payload"]
+        assert todos_payload["message_type"] == "todos"
+        assert todos_payload["context_compacted"] is True
+        assert todos_payload["content"] == "todos: 1 pending, 1 in_progress, 1 completed"
+        assert "todos" not in todos_payload
+
+        poll = client.get("/v1/events", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert poll.status_code == 200
+        events = {e["id"]: e for e in poll.json()["data"]["events"]}
+        assert events[thinking_id]["payload"]["details"] == long_detail
+        assert events[todos_id]["payload"]["todos"][0]["content"] == "inspect"
+
     def test_agent_context_pack_requires_current_session(self, client, workspace):
         resp = client.get("/v1/agent-context", params={
             "network": workspace["id"],

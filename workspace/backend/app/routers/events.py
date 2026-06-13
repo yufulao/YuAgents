@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["Events"])
 
 
+_PROCESS_CONTEXT_MESSAGE_TYPES = {"status", "thinking", "todos"}
+_DURABLE_CONTEXT_CONTENT_LIMIT = 500
+_PROCESS_CONTEXT_CONTENT_LIMIT = 160
+
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
@@ -111,13 +116,65 @@ def _delivery_event_payload(delivery: AgentDelivery, event: EventRecord) -> dict
     }
 
 
+def _compact_context_text(value: object, limit: int) -> str:
+    text = str(value or "").replace("\r\n", "\n").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _todo_context_summary(payload: dict) -> Optional[str]:
+    todos = payload.get("todos")
+    if not isinstance(todos, list):
+        return None
+    counts = {"pending": 0, "in_progress": 0, "completed": 0}
+    other = 0
+    for item in todos:
+        status = ""
+        if isinstance(item, dict):
+            status = str(item.get("status") or "").lower()
+        if status in counts:
+            counts[status] += 1
+        else:
+            other += 1
+    parts = [
+        f"{counts['pending']} pending",
+        f"{counts['in_progress']} in_progress",
+        f"{counts['completed']} completed",
+    ]
+    if other:
+        parts.append(f"{other} other")
+    return f"todos: {', '.join(parts)}"
+
+
+def _context_event_payload(payload: Optional[dict]) -> dict:
+    original = payload if isinstance(payload, dict) else {}
+    result = dict(original)
+    message_type = str(result.get("message_type") or result.get("type") or "chat").lower()
+    if message_type in _PROCESS_CONTEXT_MESSAGE_TYPES:
+        summary = _todo_context_summary(result) if message_type == "todos" else None
+        content = summary if summary is not None else result.get("content")
+        result["content"] = _compact_context_text(content, _PROCESS_CONTEXT_CONTENT_LIMIT)
+        result["context_compacted"] = True
+        result.pop("details", None)
+        result.pop("process_details", None)
+        result.pop("todos", None)
+        return result
+
+    if "content" in result:
+        result["content"] = _compact_context_text(result.get("content"), _DURABLE_CONTEXT_CONTENT_LIMIT)
+        if result["content"] != str(original.get("content") or "").replace("\r\n", "\n").strip():
+            result["context_compacted"] = True
+    return result
+
+
 def _event_context_payload(event: EventRecord) -> dict:
     return {
         "id": event.id,
         "type": event.type,
         "source": event.source,
         "target": event.target,
-        "payload": event.payload or {},
+        "payload": _context_event_payload(event.payload),
         "metadata": event.metadata_ or {},
         "timestamp": event.timestamp,
         "visibility": event.visibility,
