@@ -71,6 +71,14 @@ try {
     throw "tar extract failed with exit code $LASTEXITCODE"
   }
 
+  $serverStart = Join-Path $Stage "workspace\start.sh"
+  if (Test-Path $serverStart) {
+    $content = [System.IO.File]::ReadAllText($serverStart)
+    $content = $content -replace "`r`n", "`n"
+    $content = $content -replace "`r", "`n"
+    [System.IO.File]::WriteAllText($serverStart, $content, [System.Text.UTF8Encoding]::new($false))
+  }
+
   if (Test-Path $OutputPath) {
     Remove-Item -Force $OutputPath
   }
