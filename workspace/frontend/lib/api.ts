@@ -264,6 +264,31 @@ class WorkspaceApi {
     });
   }
 
+  /** Send a direct chat message to one agent. */
+  async sendDirectMessage(
+    agentName: string,
+    content: string,
+    senderName = 'user',
+    attachments?: { fileId: string; filename: string; contentType: string; url: string }[],
+    senderId?: string,
+    senderAvatarUrl?: string | null,
+  ): Promise<ONMEvent> {
+    return this.sendEvent({
+      type: 'workspace.message.posted',
+      source: `human:${senderId || senderName}`,
+      target: `openagents:${agentName}`,
+      payload: {
+        content,
+        sender_type: 'human',
+        ...(senderId ? { sender_id: senderId } : {}),
+        sender_name: senderName,
+        ...(senderAvatarUrl ? { sender_avatar_url: senderAvatarUrl } : {}),
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      },
+      visibility: 'direct',
+    });
+  }
+
   /**
    * Poll messages for a channel (session) via the event API.
    * Returns WorkspaceMessage[] for component compatibility.

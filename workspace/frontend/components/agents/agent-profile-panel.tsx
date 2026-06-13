@@ -7,9 +7,9 @@ import {
   Copy,
   Cpu,
   Folder,
+  MessageCircle,
   Monitor,
   Pencil,
-  Plus,
   Power,
   RefreshCw,
   Trash2,
@@ -28,8 +28,8 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function AgentProfilePanel() {
-  const { selectedAgentName, setSelectedAgentName, isMobile, setViewMode, agentPanelWidth, setAgentPanelWidth } = useLayout();
-  const { agents, refreshWorkspace, createSession } = useWorkspace();
+  const { selectedAgentName, setSelectedAgentName, isMobile, setViewMode, openMobileDetail, agentPanelWidth, setAgentPanelWidth } = useLayout();
+  const { agents, currentUser, refreshWorkspace, setCurrentSessionId } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -44,7 +44,7 @@ export function AgentProfilePanel() {
   const [qualityDraft, setQualityDraft] = useState('medium');
   const [codexFastDraft, setCodexFastDraft] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [controlBusy, setControlBusy] = useState<'start' | 'restart' | 'stop' | null>(null);
+  const [controlBusy, setControlBusy] = useState<{ agentName: string; action: 'start' | 'restart' | 'stop' } | null>(null);
   const configDraftAgentRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -154,18 +154,21 @@ export function AgentProfilePanel() {
     }
   }, [agent, description, descDirty, refreshWorkspace]);
 
-  const handleStartThread = useCallback(async () => {
+  const handleStartDM = useCallback(() => {
     if (!agent) return;
-    await createSession({ master: agent.agentName, participants: [agent.agentName] });
+    const sender = currentUser.id || currentUser.name || 'user';
+    setCurrentSessionId(`dm:human:${sender},openagents:${agent.agentName}`);
     setSelectedAgentName(null);
     setViewMode('threads');
-  }, [agent, createSession, setSelectedAgentName, setViewMode]);
+    if (isMobile) openMobileDetail();
+  }, [agent, currentUser.id, currentUser.name, isMobile, openMobileDetail, setCurrentSessionId, setSelectedAgentName, setViewMode]);
 
   const handleLocalAgentControl = useCallback(async (action: 'start' | 'restart' | 'stop') => {
     if (!agent) return;
-    setControlBusy(action);
+    const controlledAgentName = agent.agentName;
+    setControlBusy({ agentName: controlledAgentName, action });
     try {
-      await workspaceApi.controlManagedAgent(agent.agentName, action);
+      await workspaceApi.controlManagedAgent(controlledAgentName, action);
       const refreshDelays = [1000, 3000, 6000, 10000, 20000];
       const scheduleRefreshes = () => refreshDelays.forEach((delay) => {
         window.setTimeout(() => {
@@ -190,7 +193,9 @@ export function AgentProfilePanel() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Agent 操作失败');
     } finally {
-      setControlBusy(null);
+      setControlBusy((current) => (
+        current?.agentName === controlledAgentName && current.action === action ? null : current
+      ));
     }
   }, [agent, refreshWorkspace]);
 
@@ -266,6 +271,13 @@ export function AgentProfilePanel() {
   const isOnline = agent.status === 'online';
   const isStarting = agent.status === 'starting';
   const localPrimaryAction: 'start' | 'restart' = isOnline || isStarting ? 'restart' : 'start';
+  const currentControlBusy = controlBusy?.agentName === agent.agentName ? controlBusy.action : null;
+  const profileStatus = agent.activityState && agent.activityState !== 'idle'
+    ? agent.activityState
+    : agent.presenceStatus || agent.status;
+  const profileStatusTone = profileStatus === 'online' || profileStatus === 'idle'
+    ? 'online'
+    : (!profileStatus || profileStatus === 'offline' || profileStatus === 'stopped' || profileStatus === 'disabled') ? 'offline' : 'active';
   const displayType = agent.agentType
     ? agent.agentType.charAt(0).toUpperCase() + agent.agentType.slice(1)
     : '未知';
@@ -325,7 +337,7 @@ export function AgentProfilePanel() {
               avatar={agent.avatar}
               avatarUrl={agent.avatarUrl}
               size={40}
-              status={agent.status}
+              status={profileStatus}
               showStatus
             />
             <div className="min-w-0 flex-1">
@@ -336,10 +348,17 @@ export function AgentProfilePanel() {
               <div className="mt-1 flex items-center gap-1.5">
                 <span className={cn(
                   'inline-flex items-center gap-1 rounded px-1.5 py-px text-[11px] font-medium',
-                  isOnline ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+                  profileStatusTone === 'online' && 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                  profileStatusTone === 'offline' && 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+                  profileStatusTone === 'active' && 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
                 )}>
-                  <span className={cn('size-1.5 rounded-full', isOnline ? 'bg-green-500' : 'bg-zinc-400')} />
-                  {agent.status}
+                  <span className={cn(
+                    'size-1.5 rounded-full',
+                    profileStatusTone === 'online' && 'bg-green-500',
+                    profileStatusTone === 'offline' && 'bg-zinc-400',
+                    profileStatusTone === 'active' && 'bg-amber-500',
+                  )} />
+                  {profileStatus}
                 </span>
                 {modelLabel && (
                   <span className="truncate font-mono text-[11px] text-muted-foreground">
@@ -522,20 +541,20 @@ export function AgentProfilePanel() {
         <div className="border-t px-3.5 py-3">
           <div className="flex gap-2">
             <button
-              onClick={handleStartThread}
+              onClick={handleStartDM}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-medium transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800"
             >
-              <Plus className="size-3" />
-              新建会话
+              <MessageCircle className="size-3" />
+              发起私聊
             </button>
             {!isDisabled && (
               <button
                 onClick={() => handleLocalAgentControl(localPrimaryAction)}
-                disabled={controlBusy !== null}
+                disabled={currentControlBusy !== null}
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
                 title={localPrimaryAction === 'restart' ? '重启本机 Agent' : '启动本机 Agent'}
               >
-                {controlBusy === localPrimaryAction ? <RefreshCw className="size-3 animate-spin" /> : <Power className="size-3" />}
+                {currentControlBusy === localPrimaryAction ? <RefreshCw className="size-3 animate-spin" /> : <Power className="size-3" />}
                 {localPrimaryAction === 'restart' ? '重启' : '启动'}
               </button>
             )}
