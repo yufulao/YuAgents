@@ -6,6 +6,8 @@ import {
   BookOpen,
   CalendarClock,
   Check,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Globe,
   Inbox,
@@ -39,7 +41,6 @@ import { workspaceApi } from '@/lib/api';
 import { withWorkspaceIdentityProfile } from '@/lib/identity';
 import type { WorkspaceAgent } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
-import { AgentActivityPanel } from '@/components/agents/agent-activity-panel';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { NewThreadDialog } from '@/components/threads/new-thread-dialog';
@@ -120,6 +121,40 @@ function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; st
   );
 }
 
+function SidebarSection({
+  title,
+  count,
+  collapsed,
+  onToggle,
+  className,
+  children,
+}: {
+  title: string;
+  count?: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const Chevron = collapsed ? ChevronRight : ChevronDown;
+  return (
+    <section className={cn('min-w-0', className)}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="mb-0.5 flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs font-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Chevron className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+        {count !== undefined && count > 0 && (
+          <span className="shrink-0 text-[11px]">{count}</span>
+        )}
+      </button>
+      <div hidden={collapsed}>{children}</div>
+    </section>
+  );
+}
+
 export function SidebarContent() {
   const router = useRouter();
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
@@ -136,13 +171,14 @@ export function SidebarContent() {
     routines,
     knowledge,
     unreadNotificationCount,
-    activeSessionIds,
+    currentSessionId,
   } = useWorkspace();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newThreadOpen, setNewThreadOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -171,10 +207,18 @@ export function SidebarContent() {
 
   const visibleAgents = agents;
   const onlineCount = agents.filter((agent) => agent.status === 'online').length;
+  const activeTaskCount = todos.filter((todo) => todo.status === 'pending' || todo.status === 'in_progress').length;
+  const currentThreadTaskCount = todos.filter((todo) =>
+    todo.channelName === currentSessionId && (todo.status === 'pending' || todo.status === 'in_progress')
+  ).length;
   const agentStatusDot = (agent: typeof agents[number]) =>
     agent.activityState && agent.activityState !== 'idle'
       ? agent.activityState
       : agent.presenceStatus || agent.status;
+  const isSectionCollapsed = (key: string) => collapsedSections[key] ?? false;
+  const toggleSection = (key: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !(prev[key] ?? false) }));
+  };
 
   if (!isSidebarOpen) {
     return (
@@ -265,44 +309,52 @@ export function SidebarContent() {
             </button>
           </div>
 
-          <div className="px-2.5">
-            <p className="mb-0.5 px-2 py-1.5 text-xs font-normal text-muted-foreground">
-              Agents（{onlineCount}/{visibleAgents.length}）
-            </p>
-            <div className="max-h-48 space-y-0.5 overflow-y-auto">
-              {visibleAgents.map((agent) => (
-                <AgentListButton
-                  key={agent.agentName}
-                  agent={agent}
-                  status={agentStatusDot(agent)}
-                  onClick={() => setSelectedAgentName(agent.agentName)}
-                />
-              ))}
-            </div>
+          <div className="space-y-3 px-2.5">
+            <SidebarSection
+              title={`Agents（${onlineCount}/${visibleAgents.length}）`}
+              collapsed={isSectionCollapsed('agents')}
+              onToggle={() => toggleSection('agents')}
+            >
+              <div className="max-h-48 space-y-0.5 overflow-y-auto">
+                {visibleAgents.map((agent) => (
+                  <AgentListButton
+                    key={agent.agentName}
+                    agent={agent}
+                    status={agentStatusDot(agent)}
+                    onClick={() => setSelectedAgentName(agent.agentName)}
+                  />
+                ))}
+              </div>
+            </SidebarSection>
 
-            <AgentActivityPanel
-              agents={visibleAgents}
-              sessions={sessions}
-              activeSessionIds={activeSessionIds}
-              onRefresh={refreshWorkspace}
-            />
+            <SidebarSection
+              title="队列"
+              count={currentThreadTaskCount}
+              collapsed={isSectionCollapsed('queue')}
+              onToggle={() => toggleSection('queue')}
+            >
+              <div id="thread-status-sidebar-slot" className="min-h-8 min-w-0" />
+            </SidebarSection>
 
-            <p className="mb-0.5 mt-6 px-2 py-1.5 text-xs font-normal text-muted-foreground">
-              功能
-            </p>
-            <div className="space-y-0.5">
-              <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="会话" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
-              {visibleAgents.length > 0 && (
-                <>
-                  <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="文件" count={files.length} onClick={() => setViewMode('files')} />
-                  <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="浏览器" count={browserTabs.length} onClick={() => setViewMode('browser')} />
-                  <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="例行任务" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
-                  <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="知识库" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
-                  <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="任务" count={todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length} onClick={() => setViewMode('tasks')} />
-                  <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="收件箱" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
-                </>
-              )}
-            </div>
+            <SidebarSection
+              title="功能"
+              collapsed={isSectionCollapsed('features')}
+              onToggle={() => toggleSection('features')}
+            >
+              <div className="space-y-0.5">
+                <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="会话" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
+                {visibleAgents.length > 0 && (
+                  <>
+                    <NavButton active={viewMode === 'files'} icon={<FileText className="size-[15px]" />} label="文件" count={files.length} onClick={() => setViewMode('files')} />
+                    <NavButton active={viewMode === 'browser'} icon={<Globe className="size-[15px]" />} label="浏览器" count={browserTabs.length} onClick={() => setViewMode('browser')} />
+                    <NavButton active={viewMode === 'routines'} icon={<CalendarClock className="size-[15px]" />} label="例行任务" count={routines.filter((r) => r.status === 'active').length} onClick={() => setViewMode('routines')} />
+                    <NavButton active={viewMode === 'knowledge'} icon={<BookOpen className="size-[15px]" />} label="知识库" count={knowledge.length} onClick={() => setViewMode('knowledge')} />
+                    <NavButton active={viewMode === 'tasks'} icon={<ListTodo className="size-[15px]" />} label="任务" count={activeTaskCount} onClick={() => setViewMode('tasks')} />
+                    <NavButton active={viewMode === 'inbox'} icon={<Inbox className="size-[15px]" />} label="收件箱" count={unreadNotificationCount > 0 ? unreadNotificationCount : undefined} onClick={() => setViewMode('inbox')} />
+                  </>
+                )}
+              </div>
+            </SidebarSection>
           </div>
         </ScrollArea>
 

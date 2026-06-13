@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ChatMessages } from './chat-messages';
 import { ChatInput, type PendingFile } from './chat-input';
 import { ThreadStatusBar } from './thread-status-bar';
@@ -89,6 +90,7 @@ export function ChatView() {
   const [showCreateRoutine, setShowCreateRoutine] = useState(false);
   const {
     isMobile,
+    isSidebarOpen,
     openMobileList,
     viewMode,
     splitBrowser,
@@ -153,6 +155,7 @@ export function ChatView() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const [statusPortalTarget, setStatusPortalTarget] = useState<HTMLElement | null>(null);
 
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
@@ -249,6 +252,10 @@ export function ChatView() {
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   // Merge real messages with optimistic messages for display
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
+
+  useEffect(() => {
+    setStatusPortalTarget(document.getElementById('thread-status-sidebar-slot'));
+  }, [currentSessionId, viewMode, isSidebarOpen]);
 
   const startEditingTitle = () => {
     setTitleDraft(currentSession?.title || '');
@@ -407,6 +414,17 @@ export function ChatView() {
 
   return (
     <div className="flex flex-col h-full">
+      {statusPortalTarget && currentSessionId && createPortal(
+        <ThreadStatusBar
+          key={currentSessionId}
+          channelName={currentSessionId}
+          messages={displayMessages}
+          variant="sidebar"
+          emptyLabel="当前会话暂无队列"
+        />,
+        statusPortalTarget,
+      )}
+
       {/* Thread header */}
       <div className="flex items-center justify-between px-2 lg:px-4 py-2 lg:py-3 border-b shrink-0">
         <div className="flex items-center gap-2 lg:gap-3 min-w-0">
@@ -686,7 +704,6 @@ export function ChatView() {
         {!isDM && (
           <div className="px-3 lg:px-4 py-2 lg:py-3">
             <div className="max-w-3xl mx-auto w-full">
-              {currentSessionId && <ThreadStatusBar channelName={currentSessionId} messages={displayMessages} />}
               <ChatInput
                 onSend={handleSend}
                 agents={agents}
