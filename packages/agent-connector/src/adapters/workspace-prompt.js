@@ -93,6 +93,36 @@ function buildCollaborationPrompt() {
   );
 }
 
+function buildRuntimeRulePackPrompt() {
+  return (
+    '\n## OpenAgents Runtime Rule Pack (mandatory)\n' +
+    '- `docs/*.md` are design references, not automatic memory; follow injected runtime rules and context packs.\n' +
+    '- Channel messages are context for channel members; @mentions are explicit attention/delegation.\n' +
+    '- Preserve role boundaries and use agent role/description/status when routing work.\n' +
+    '- Scheduling is context-driven: derive needed work functions; do not force a fixed planner/implementer/QA template.\n' +
+    '- Create shared tasks only when separate owners improve clarity/throughput; otherwise keep work single-owner.\n' +
+    '- Claim shared tasks before implementation, update result/evidence, and keep personal todos private.\n'
+  );
+}
+
+function buildRuntimeRuleSkillMd() {
+  return (
+    '---\n' +
+    'name: OpenAgents Runtime Rules\n' +
+    'description: Mandatory collaboration, attention, task ownership, and context rules for OpenAgents workspace agents.\n' +
+    '---\n\n' +
+    '# OpenAgents Runtime Rules\n\n' +
+    'This skill is installed by the local agent connector. It turns the stable runtime contract into a discoverable agent skill so agents do not depend on remembering arbitrary `docs/*.md` files.\n\n' +
+    '## Rules\n\n' +
+    buildRuntimeRulePackPrompt()
+      .replace(/^\n?## OpenAgents Runtime Rule Pack \(mandatory\)\n/, '')
+      .replace(/^- /gm, '- ') +
+    '\n## Operational Notes\n\n' +
+    '- Runtime context from `/v1/agent-context` is authoritative for current role, channel, roster, recent messages, ambient context, and active shared tasks.\n' +
+    '- Backend delivery, lease/ack, and shared task APIs are enforcement mechanisms; use them instead of relying on chat memory alone.\n'
+  );
+}
+
 function _truncate(text, max) {
   const value = String(text || '').replace(/\s+/g, ' ').trim();
   if (!value) return '';
@@ -625,6 +655,7 @@ function buildGuardrails() {
 function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = 'execute', browserEnabled = false, includeA2UI = false }) {
   const parts = [];
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
+  parts.push(buildRuntimeRulePackPrompt());
   parts.push(
     'Use workspace_get_history to read previous messages.\n' +
     'Use workspace_get_agents to see other agents.\n' +
@@ -659,6 +690,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
 function buildCodexSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules, browserEnabled = false, includeA2UI = false }) {
   const parts = [];
   parts.push(buildWorkspaceIdentity(agentName, workspaceId, channelName, mode));
+  parts.push(buildRuntimeRulePackPrompt());
   parts.push(buildBrowserDirective(browserEnabled));
   parts.push(buildCollaborationPrompt());
   if (includeA2UI) parts.push(buildA2UIPrompt());
@@ -775,6 +807,7 @@ function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channel
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
   const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
+  const runtimeRules = buildRuntimeRulePackPrompt();
 
   const frontmatter = (
     '---\n' +
@@ -790,7 +823,7 @@ function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channel
     '---\n\n'
   );
 
-  return frontmatter + identity + directive + '\n' + collab + '\n' + body + '\n' + buildGuardrails();
+  return frontmatter + identity + runtimeRules + directive + '\n' + collab + '\n' + body + '\n' + buildGuardrails();
 }
 
 /**
@@ -798,11 +831,12 @@ function buildOpenclawSkillMd({ endpoint, workspaceId, token, agentName, channel
  */
 function buildOpenCodeSystemPrompt({ agentName, workspaceId, channelName, endpoint, token, mode = 'execute', disabledModules, browserEnabled = false }) {
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, mode);
+  const runtimeRules = buildRuntimeRulePackPrompt();
   const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
   const modePrompt = buildModePrompt(mode);
   const api = buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channelName, disabledModules, mode });
-  return identity + directive + '\n' + collab + '\n' + modePrompt + '\n' + api + '\n' + buildGuardrails();
+  return identity + runtimeRules + directive + '\n' + collab + '\n' + modePrompt + '\n' + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -825,8 +859,9 @@ function buildOpenCodeSkillMd({ endpoint, workspaceId, token, agentName, channel
   const identity =
     `You are agent '${agentName}' connected to OpenAgents workspace ${workspaceId}.\n` +
     'Use these APIs via bash + curl to interact with the workspace.\n\n';
+  const runtimeRules = buildRuntimeRulePackPrompt();
 
-  return frontmatter + identity + api + '\n' + buildGuardrails();
+  return frontmatter + identity + runtimeRules + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -847,6 +882,7 @@ function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelNa
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
   const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
+  const runtimeRules = buildRuntimeRulePackPrompt();
 
   const frontmatter =
     '---\n' +
@@ -858,7 +894,7 @@ function buildClaudeSkillMd({ endpoint, workspaceId, token, agentName, channelNa
     '  or collaborating with other agents via @mentions.\n' +
     '---\n\n';
 
-  return frontmatter + identity + directive + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
+  return frontmatter + identity + runtimeRules + directive + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
 }
 
 /**
@@ -878,6 +914,7 @@ function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelNa
   const identity = buildWorkspaceIdentity(agentName, workspaceId, channelName, 'execute');
   const directive = buildBrowserDirective(browserEnabled);
   const collab = buildCollaborationPrompt();
+  const runtimeRules = buildRuntimeRulePackPrompt();
 
   const frontmatter =
     '---\n' +
@@ -889,13 +926,15 @@ function buildCursorSkillMd({ endpoint, workspaceId, token, agentName, channelNa
     '  or collaborating with other agents via @mentions.\n' +
     '---\n\n';
 
-  return frontmatter + identity + directive + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
+  return frontmatter + identity + runtimeRules + directive + '\n' + collab + '\n' + api + '\n' + buildGuardrails();
 }
 
 module.exports = {
   buildWorkspaceIdentity,
   buildBrowserDirective,
   buildCollaborationPrompt,
+  buildRuntimeRulePackPrompt,
+  buildRuntimeRuleSkillMd,
   buildRuntimeContextPrompt,
   buildModePrompt,
   buildGuardrails,

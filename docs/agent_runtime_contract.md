@@ -45,10 +45,21 @@ layer for delivery, status, role boundaries, or task ownership.
   clears it from in-flight state and acks it so cancellation does not reappear as
   new work later.
 
-## Skill/Rule Pack Direction
+## Skill/Rule Pack Loading
 
-The baseline agent skill should contain rules that should not drift between
-agents:
+Docs are not automatic agent memory. Stable rules must be loaded by runtime,
+not left only in `docs/*.md`. The connector therefore loads the baseline rule
+pack in two ways:
+
+- Every Claude/Codex system prompt includes a compact `OpenAgents Runtime Rule
+  Pack` section.
+- On adapter startup, the connector writes
+  `openagents-runtime/SKILL.md` into the agent's local skills directory
+  (`.claude/skills`, `.codex/skills`, `.cursor/skills`, or `.agent/skills`).
+  Runtimes with native skill discovery can read it directly; Codex also sees it
+  through the installed-skill listing in its per-turn context.
+
+The baseline rule skill contains rules that should not drift between agents:
 
 - Always reply in the exact channel/thread target that received the request.
 - Mention another agent only when intentionally handing work to that agent.
@@ -57,8 +68,8 @@ agents:
   implement, reviewers verify, QA reproduces and retests.
 - Report concrete state changes, test evidence, blockers, and handoff targets.
 
-This file is the source note for turning those rules into a generated agent
-skill/rule pack after the delivery and shared-task contracts are stable.
+This file remains the design source and audit trail. The generated prompt
+section and local skill file are the actual loading path used by agents.
 
 ## Runtime Context Pack
 

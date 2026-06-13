@@ -17,9 +17,12 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { WorkspaceClient, SessionRevokedError } = require('../workspace-client');
 const { generateSessionTitle, SESSION_DEFAULT_RE } = require('./utils');
 const { defaultAgentWorkdir } = require('../paths');
+const { skillsDirForAgentType } = require('../skill-installer');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 
@@ -106,6 +109,8 @@ class BaseAdapter {
     } catch (e) {
       this._log(`Warning: skill sync failed (non-fatal): ${e.message}`);
     }
+
+    this._ensureRuntimeRuleSkill();
 
     // Fast-path operations (control-event cursor + heartbeat + control poll)
     // run BEFORE the message-cursor advance. Even though _skipExistingEvents
@@ -339,6 +344,27 @@ class BaseAdapter {
    * (e.g. rebuild prompt context). Default: no-op.
    */
   async _onSkillsChanged() {}
+
+  _ensureRuntimeRuleSkill() {
+    try {
+      const workDir = this.workingDir || defaultAgentWorkdir(this.agentName);
+      const skillsDir = skillsDirForAgentType(this.agentType || 'agent', workDir);
+      const runtimeDir = path.join(skillsDir, 'openagents-runtime');
+      fs.mkdirSync(runtimeDir, { recursive: true });
+      const { buildRuntimeRuleSkillMd } = require('./workspace-prompt');
+      const skillPath = path.join(runtimeDir, 'SKILL.md');
+      const content = buildRuntimeRuleSkillMd();
+      let existing = null;
+      try { existing = fs.readFileSync(skillPath, 'utf-8'); } catch {}
+      if (existing !== content) {
+        fs.writeFileSync(skillPath, content, 'utf-8');
+      }
+      this._runtimeRuleSkillPath = skillPath;
+      this._log(`Ensured runtime rule skill: ${skillPath}`);
+    } catch (e) {
+      this._log(`Warning: runtime rule skill unavailable: ${e && e.message ? e.message : e}`);
+    }
+  }
 
   /**
    * Post a chat message back to the requesting channel summarizing agent

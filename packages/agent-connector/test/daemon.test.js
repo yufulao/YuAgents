@@ -236,6 +236,29 @@ describe('Daemon', () => {
     assert.equal(adapter.stopReason, 'session_revoked');
   });
 
+  it('BaseAdapter installs the built-in runtime rule skill in the agent workdir', () => {
+    const workDir = path.join(tmpDir, 'agent-work');
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      agentType: 'codex',
+      workingDir: workDir,
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+
+    adapter._ensureRuntimeRuleSkill();
+
+    const skillPath = path.join(workDir, '.codex', 'skills', 'openagents-runtime', 'SKILL.md');
+    assert.equal(adapter._runtimeRuleSkillPath, skillPath);
+    assert.ok(fs.existsSync(skillPath));
+    const content = fs.readFileSync(skillPath, 'utf-8');
+    assert.ok(content.includes('OpenAgents Runtime Rules'));
+    assert.ok(content.includes('docs/*.md'));
+  });
+
   it('BaseAdapter tracks in-flight durable deliveries by event and delivery id', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

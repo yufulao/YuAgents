@@ -5,8 +5,12 @@ const assert = require('node:assert/strict');
 
 const {
   buildClaudeSystemPrompt,
+  buildClaudeSkillMd,
   buildCodexSystemPrompt,
+  buildCursorSkillMd,
   buildOpenclawSystemPrompt,
+  buildRuntimeRulePackPrompt,
+  buildRuntimeRuleSkillMd,
   buildRuntimeContextPrompt,
 } = require('../src/adapters/workspace-prompt');
 
@@ -25,6 +29,8 @@ describe('workspace prompt budget', () => {
     const prompt = buildCodexSystemPrompt(baseOpts);
 
     assert.ok(prompt.includes("You are agent '紫'"));
+    assert.ok(prompt.includes('OpenAgents Runtime Rule Pack'));
+    assert.ok(prompt.includes('docs/*.md'));
     assert.ok(prompt.includes('Auth: X-Workspace-Token: tok-test'));
     assert.ok(prompt.includes('Post status/chat: POST /v1/events'));
     assert.ok(prompt.length < 5000, `prompt too large: ${prompt.length}`);
@@ -36,9 +42,29 @@ describe('workspace prompt budget', () => {
     const prompt = buildClaudeSystemPrompt(baseOpts);
 
     assert.ok(prompt.includes('Use workspace_get_history'));
+    assert.ok(prompt.includes('OpenAgents Runtime Rule Pack'));
     assert.ok(prompt.length < 3500, `prompt too large: ${prompt.length}`);
     assert.equal(prompt.includes('```a2ui'), false);
     assert.equal(prompt.includes('Exact prop names'), false);
+  });
+
+  it('builds mandatory runtime rule pack and skill markdown', () => {
+    const prompt = buildRuntimeRulePackPrompt();
+    const skill = buildRuntimeRuleSkillMd();
+
+    assert.ok(prompt.includes('docs/*.md'));
+    assert.ok(prompt.includes('Scheduling is context-driven'));
+    assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
+    assert.ok(skill.includes('/v1/agent-context'));
+    assert.ok(skill.includes('shared task APIs'));
+  });
+
+  it('injects runtime rules into generated workspace skills', () => {
+    const claudeSkill = buildClaudeSkillMd(baseOpts);
+    const cursorSkill = buildCursorSkillMd(baseOpts);
+
+    assert.ok(claudeSkill.includes('OpenAgents Runtime Rule Pack'));
+    assert.ok(cursorSkill.includes('OpenAgents Runtime Rule Pack'));
   });
 
   it('preserves the legacy long prompt for adapters that still need full curl examples', () => {
