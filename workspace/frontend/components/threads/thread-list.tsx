@@ -49,11 +49,11 @@ function DMSection({
   currentSessionId,
   onSelect,
 }: {
-  conversations: { agents: [string, string]; lastMessage: { content: string; sender: string; timestamp: number }; messageCount: number }[];
+  conversations: { agents: [string, string]; lastMessage?: { content: string; sender: string; timestamp: number }; messageCount: number }[];
   currentSessionId: string | null;
   onSelect: (sessionId: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
@@ -80,9 +80,11 @@ function DMSection({
             const isSelected = currentSessionId === dmId;
             const agentA = convo.agents[0].replace(/^openagents:/, '');
             const agentB = convo.agents[1].replace(/^openagents:/, '');
-            const sender = convo.lastMessage.sender.replace(/^openagents:/, '');
-            const preview = `${sender}: ${convo.lastMessage.content}`;
-            const displayTime = convo.lastMessage.timestamp
+            const sender = convo.lastMessage?.sender.replace(/^openagents:/, '');
+            const preview = convo.lastMessage
+              ? `${sender}: ${convo.lastMessage.content}`
+              : '尚无私聊消息';
+            const displayTime = convo.lastMessage?.timestamp
               ? timeAgo(new Date(convo.lastMessage.timestamp).toISOString())
               : '';
 
@@ -468,10 +470,28 @@ export function ThreadList() {
                 return onlineAgentNames.has(name);
               });
             });
-            if (visibleDMs.length === 0) return null;
+            const dmByPair = new Map(
+              visibleDMs.map((convo) => [[...convo.agents].sort().join('\u0000'), convo])
+            );
+            const onlineAgents = agents.filter((agent) => onlineAgentNames.has(agent.agentName));
+            const possibleDMs: { agents: [string, string]; lastMessage?: { content: string; sender: string; timestamp: number }; messageCount: number }[] = [];
+            for (let i = 0; i < onlineAgents.length; i += 1) {
+              for (let j = i + 1; j < onlineAgents.length; j += 1) {
+                const pair: [string, string] = [
+                  `openagents:${onlineAgents[i].agentName}`,
+                  `openagents:${onlineAgents[j].agentName}`,
+                ];
+                const key = [...pair].sort().join('\u0000');
+                possibleDMs.push(dmByPair.get(key) || { agents: pair, messageCount: 0 });
+                dmByPair.delete(key);
+              }
+            }
+            const remainingExisting = Array.from(dmByPair.values());
+            const allDMs = [...possibleDMs, ...remainingExisting];
+            if (allDMs.length === 0) return null;
             return (
               <DMSection
-                conversations={visibleDMs}
+                conversations={allDMs}
                 currentSessionId={currentSessionId}
                 onSelect={(id) => {
                   setCurrentSessionId(id);
