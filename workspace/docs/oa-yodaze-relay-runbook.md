@@ -41,16 +41,15 @@ helper scripts. Docker installs frontend dependencies again on the server during
 
 ## Package Only
 
-If you only want a 7z package to upload manually:
+If you only want a zip package to upload manually:
 
 ```bat
 package-oa-yodaze.bat
 ```
 
-This requires 7-Zip on the local machine. The script checks `PATH` plus common
-install locations such as `C:\Program Files\7-Zip\7z.exe`.
-
-The package is written to `dist\openagents-oa-yodaze-relay-YYYYMMDD-HHMMSS.7z`.
+The package uses PowerShell's built-in `Compress-Archive`, so it does not need
+7-Zip. It is written to
+`dist\openagents-oa-yodaze-relay-YYYYMMDD-HHMMSS.zip`.
 It uses the same tracked-file whitelist as the deploy script, so it does not
 include local environments, generated builds, `node_modules`, `.next`, exports,
 logs, SQLite DBs, or untracked files.

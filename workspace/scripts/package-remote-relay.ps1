@@ -17,26 +17,8 @@ function Require-Command([string[]]$Names) {
   throw ("None of these commands were found in PATH: " + ($Names -join ", "))
 }
 
-function Resolve-7Zip {
-  $cmd = Get-Command "7z" -ErrorAction SilentlyContinue
-  if ($cmd) {
-    return $cmd.Source
-  }
-  foreach ($path in @(
-    "$env:ProgramFiles\7-Zip\7z.exe",
-    "${env:ProgramFiles(x86)}\7-Zip\7z.exe",
-    "$env:LOCALAPPDATA\Programs\7-Zip\7z.exe"
-  )) {
-    if ($path -and (Test-Path $path)) {
-      return $path
-    }
-  }
-  throw "7-Zip was not found. Install 7-Zip, or add 7z.exe to PATH."
-}
-
 $Git = Require-Command @("git")
 $Tar = Require-Command @("tar")
-$SevenZip = Resolve-7Zip
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   $OutputDir = Join-Path $RepoRoot "dist"
@@ -45,7 +27,7 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  $ArchiveName = "openagents-oa-yodaze-relay-$stamp.7z"
+  $ArchiveName = "openagents-oa-yodaze-relay-$stamp.zip"
 }
 $OutputPath = Join-Path $OutputDir $ArchiveName
 
@@ -93,13 +75,8 @@ try {
     Remove-Item -Force $OutputPath
   }
 
-  Write-Host "Creating 7z package..."
-  Push-Location $Stage
-  & $SevenZip a -t7z -mx=9 $OutputPath workspace | Out-Host
-  if ($LASTEXITCODE -ne 0) {
-    throw "7z failed with exit code $LASTEXITCODE"
-  }
-  Pop-Location
+  Write-Host "Creating zip package..."
+  Compress-Archive -Path (Join-Path $Stage "workspace") -DestinationPath $OutputPath -CompressionLevel Optimal -Force
 
   $item = Get-Item $OutputPath
   Write-Host ""
