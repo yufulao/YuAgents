@@ -78,12 +78,14 @@ class PersistenceMod(ObserveMod):
         return None  # observe mods return value is ignored
 
     def _create_agent_deliveries(self, event: Event, context: PipelineContext, record) -> None:
-        from app.models import AgentDelivery
+        from app.models import AgentDelivery, Channel
 
         metadata = event.metadata or {}
         targets = metadata.get("target_agents")
-        if not isinstance(targets, list) or targets == ["__no_response__"]:
-            return
+        target_set = {
+            target for target in targets
+            if isinstance(target, str) and target and target != "__no_response__"
+        } if isinstance(targets, list) else set()
 
         payload = event.payload or {}
         if payload.get("message_type") in {"thinking", "status", "todos", "loading"}:
@@ -95,9 +97,29 @@ class PersistenceMod(ObserveMod):
             return
 
         channel_name = event.target[len("channel/"):] if event.target.startswith("channel/") else None
+        if not channel_name:
+            return
+        channel = db.execute(
+            select(Channel).where(
+                Channel.workspace_id == workspace.id,
+                Channel.name == channel_name,
+            )
+        ).scalar_one_or_none()
+        if not channel:
+            return
+
+        participants = [
+            participant.agent_name
+            for participant in channel.participants
+            if participant.agent_name
+        ]
+        sender = None
+        if event.source and event.source.startswith("openagents:"):
+            sender = event.source[len("openagents:"):]
+
         seen = set()
-        for target in targets:
-            if not isinstance(target, str) or not target or target in seen or target == "__no_response__":
+        for target in participants:
+            if target in seen or target == sender:
                 continue
             seen.add(target)
             existing = db.execute(
@@ -108,11 +130,19 @@ class PersistenceMod(ObserveMod):
             ).scalar_one_or_none()
             if existing:
                 continue
+            is_attention = target in target_set
             db.add(AgentDelivery(
                 workspace_id=workspace.id,
                 event_id=record.id,
                 agent_name=target,
                 channel_name=channel_name,
+                delivery_kind="attention" if is_attention else "ambient",
+                attention_reason=self._attention_reason(payload.get("content", ""), target) if is_attention else None,
                 status="pending",
             ))
         db.flush()
+
+    def _attention_reason(self, content: str, agent_name: str) -> str:
+        if f"@{agent_name}" in (content or ""):
+            return "mention"
+        return "routed"

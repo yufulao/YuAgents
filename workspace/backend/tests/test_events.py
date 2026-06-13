@@ -367,6 +367,8 @@ class TestAgentDeliveries:
             agent_name="agent-alpha",
         ).one()
         assert delivery.status == "pending"
+        assert delivery.delivery_kind == "attention"
+        assert delivery.attention_reason == "routed"
 
         leased = client.get("/v1/agent-deliveries/pending", params={
             "network": workspace["id"],
@@ -404,3 +406,65 @@ class TestAgentDeliveries:
             "session_id": "stale",
         }, headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 401
+
+    def test_channel_message_creates_ambient_delivery_for_non_target_participants(self, client, workspace, db):
+        alpha_join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        beta_join = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert alpha_join.status_code == 200
+        assert beta_join.status_code == 200
+        beta_session = beta_join.json()["data"]["session_id"]
+
+        channel_name = workspace["channel"]["name"]
+        join_channel = client.post("/v1/events", json={
+            "type": "network.channel.join",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"channel": channel_name, "agent_name": "agent-beta"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert join_channel.status_code == 200
+
+        sent = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"content": "normal channel message"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert sent.status_code == 200
+        event_id = sent.json()["data"]["id"]
+
+        db.expire_all()
+        deliveries = db.query(AgentDelivery).filter_by(event_id=event_id).all()
+        by_agent = {d.agent_name: d for d in deliveries}
+        assert by_agent["agent-alpha"].delivery_kind == "attention"
+        assert by_agent["agent-beta"].delivery_kind == "ambient"
+        assert by_agent["agent-beta"].attention_reason is None
+
+        default_poll = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-beta",
+            "session_id": beta_session,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert default_poll.status_code == 200
+        assert default_poll.json()["data"]["deliveries"] == []
+
+        ambient_poll = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-beta",
+            "session_id": beta_session,
+            "include_ambient": True,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert ambient_poll.status_code == 200
+        ambient_deliveries = ambient_poll.json()["data"]["deliveries"]
+        assert len(ambient_deliveries) == 1
+        assert ambient_deliveries[0]["delivery_kind"] == "ambient"
+        assert ambient_deliveries[0]["event"]["id"] == event_id

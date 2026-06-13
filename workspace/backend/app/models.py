@@ -70,12 +70,12 @@ class EventRecord(Base):
 
 
 class AgentDelivery(Base):
-    """Durable per-agent inbox row for a routed workspace message.
+    """Durable per-agent inbox row for a workspace message.
 
     The event log remains the conversation source of truth. This table is the
-    agent-facing delivery contract: each targeted agent must lease and ack its
-    own row, so restarts and transient disconnects do not silently advance a
-    cursor past unprocessed work.
+    agent-facing delivery contract. Every channel participant receives ambient
+    rows, while mentions/routing mark a subset as attention rows that should
+    wake the agent for work.
     """
     __tablename__ = "agent_deliveries"
 
@@ -84,6 +84,8 @@ class AgentDelivery(Base):
     event_id = Column(Text, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     agent_name = Column(Text, nullable=False)
     channel_name = Column(Text, nullable=True)
+    delivery_kind = Column(Text, nullable=False, default="attention")  # attention | ambient
+    attention_reason = Column(Text, nullable=True)  # routed | mention | master | null
     status = Column(Text, nullable=False, default="pending")  # pending | leased | acked | dead
     attempts = Column(Integer, nullable=False, default=0)
     lease_owner_session_id = Column(Text, nullable=True)

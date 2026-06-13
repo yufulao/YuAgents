@@ -23,8 +23,14 @@ layer for delivery, status, role boundaries, or task ownership.
 
 - `events` remains the conversation source of truth.
 - `agent_deliveries` is the per-agent inbox and retry contract.
-- A routed message creates one delivery row per targeted agent.
-- A running agent leases its own pending rows using its current `session_id`.
+- A channel message creates one delivery row per channel agent participant.
+- `delivery_kind=ambient` means the agent received the message for context but
+  should not wake or answer.
+- `delivery_kind=attention` means the agent was mentioned or routed to and
+  should wake for work.
+- A running agent leases its own pending attention rows using its current
+  `session_id`. Ambient rows are available for future context packs and passive
+  memory, but are not pulled into the execution loop by default.
 - A delivery is acked only after the adapter finishes handling the message.
 - If an agent exits before ack, the lease expires and the row becomes eligible
   for retry.

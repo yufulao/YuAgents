@@ -146,6 +146,8 @@ CREATE TABLE IF NOT EXISTS agent_deliveries (
     event_id                text        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     agent_name              text        NOT NULL,
     channel_name            text,
+    delivery_kind           text        NOT NULL DEFAULT 'attention',
+    attention_reason        text,
     status                  text        NOT NULL DEFAULT 'pending',
     attempts                integer     NOT NULL DEFAULT 0,
     lease_owner_session_id  text,
@@ -428,7 +430,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- ===========================================================================
 -- Alembic stamp — schema is at head; backend's `alembic upgrade head` no-ops.
--- Update '027' to match the latest revision in
+-- Update '028' to match the latest revision in
 -- workspace/backend/alembic/versions/ when the source schema changes.
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS alembic_version (
@@ -436,4 +438,4 @@ CREATE TABLE IF NOT EXISTS alembic_version (
     CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
 );
 INSERT INTO alembic_version (version_num)
-SELECT '027' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
+SELECT '028' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
