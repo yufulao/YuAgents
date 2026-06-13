@@ -294,8 +294,9 @@ function processDetails(message: WorkspaceMessage): ProcessDetail[] {
   const details: ProcessDetail[] = [];
   const metadata = message.metadata || {};
 
-  if (message.targetAgents && message.targetAgents.length > 0) {
-    details.push({ label: '唤醒 Agent', value: message.targetAgents.join(', ') });
+  const visibleTargets = (message.targetAgents || []).filter((name) => name && name !== '__no_response__');
+  if (visibleTargets.length > 0) {
+    details.push({ label: '唤醒 Agent', value: visibleTargets.join(', ') });
   }
   if (message.mentions.length > 0) {
     details.push({ label: '提及', value: message.mentions.map((name) => `@${name}`).join(', ') });

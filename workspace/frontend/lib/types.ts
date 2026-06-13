@@ -413,6 +413,9 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
   const isHuman = event.source.startsWith('human:');
   const payload = (event.payload || {}) as Record<string, unknown>;
   const senderName = (payload.sender_name as string) || event.source.replace(/^(openagents:|human:)/, '');
+  const targetAgents = Array.isArray(event.metadata?.target_agents)
+    ? (event.metadata.target_agents as string[]).filter((name) => name && name !== '__no_response__')
+    : null;
 
   return {
     messageId: event.id,
@@ -426,7 +429,7 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
     body: (payload.body as string) || null,
     details: payload.details ?? event.metadata?.details ?? null,
     mentions: (payload.mentions as string[]) || [],
-    targetAgents: (event.metadata?.target_agents as string[]) || null,
+    targetAgents: targetAgents && targetAgents.length > 0 ? targetAgents : null,
     messageType: (payload.message_type as string) || 'chat',
     metadata: {
       ...(event.metadata || {}),

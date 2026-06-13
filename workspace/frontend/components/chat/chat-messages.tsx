@@ -18,6 +18,7 @@ type MessageGroup =
 function groupMessages(messages: WorkspaceMessage[], showAllSteps: boolean): MessageGroup[] {
   const groups: MessageGroup[] = [];
   let currentSteps: WorkspaceMessage[] = [];
+  let pendingTriggerIndex: number | null = null;
 
   const flushSteps = () => {
     if (currentSteps.length > 0) {
@@ -31,12 +32,19 @@ function groupMessages(messages: WorkspaceMessage[], showAllSteps: boolean): Mes
       currentSteps.push(msg);
     } else {
       const processSteps = [...currentSteps];
+      if (pendingTriggerIndex !== null && currentSteps.length > 0) {
+        const trigger = groups[pendingTriggerIndex];
+        if (trigger && trigger.type === 'chat') {
+          trigger.processSteps = [...trigger.processSteps, ...currentSteps];
+        }
+      }
       if (showAllSteps) {
         flushSteps();
       } else {
         currentSteps = [];
       }
       groups.push({ type: 'chat', message: msg, processSteps });
+      pendingTriggerIndex = groups.length - 1;
     }
   });
 
