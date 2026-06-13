@@ -14,8 +14,8 @@ import type { WorkspaceAgent, KnowledgeEntry } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { BookOpen } from 'lucide-react';
 
-const TEXTAREA_MIN_HEIGHT = 112;
-const TEXTAREA_MAX_HEIGHT = 280;
+const TEXTAREA_MIN_HEIGHT = 52;
+const TEXTAREA_MAX_HEIGHT = 112;
 
 export interface PendingFile {
   file: File;
@@ -388,7 +388,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
       )}
 
       <div className={cn(
-        'relative flex flex-col gap-2 bg-background transition-all rounded-2xl border shadow-lg p-4',
+        'relative flex flex-col gap-2 bg-background transition-all rounded-2xl border shadow-lg px-3 py-2.5',
         isDragging && 'border-primary border-dashed bg-primary/5',
         isFocused && !isDragging && 'ring-2 ring-primary/30 border-primary/40'
       )}>
@@ -432,7 +432,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
           </div>
         )}
 
-        <div className="relative min-h-28 flex-1">
+        <div className="relative min-h-[52px] flex-1">
           <textarea
             ref={textareaRef}
             value={message}
@@ -442,10 +442,10 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
             onFocus={() => { setIsFocused(true); onFocusChange?.(true); }}
             onBlur={() => { setIsFocused(false); onFocusChange?.(false); }}
             placeholder={agents.length > 1 || knowledge.length > 0 ? '输入消息...（用 @ 提及 Agent 或知识库）' : '输入消息...'}
-            rows={4}
+            rows={2}
             disabled={disabled}
             data-chat-input
-            className="min-h-28 max-h-[280px] w-full resize-none overflow-hidden border-0 bg-transparent px-0 py-2 text-sm leading-6 shadow-none focus:outline-none placeholder:text-muted-foreground"
+            className="min-h-[52px] max-h-[112px] w-full resize-none overflow-hidden border-0 bg-transparent px-0 py-1.5 text-sm leading-5 shadow-none focus:outline-none placeholder:text-muted-foreground"
           />
           {/* Shortcut hint: always show 'esc' when focused, show 'i' when not focused and empty */}
           {isFocused ? (
