@@ -303,7 +303,12 @@ class WorkspaceClient {
    * Poll for pending messages targeted at an agent via GET /v1/events.
    * Returns { messages, cursor } where cursor is the last event ID.
    */
-  async pollPending(workspaceId, agentName, token, { after, limit = 500, sessionId } = {}) {
+  async pollPending(workspaceId, agentName, token, {
+    after,
+    limit = 500,
+    sessionId,
+    leaseSeconds,
+  } = {}) {
     if (sessionId) {
       try {
         const params = new URLSearchParams({
@@ -312,6 +317,7 @@ class WorkspaceClient {
           session_id: sessionId,
           limit: String(Math.min(limit, 100)),
         });
+        if (leaseSeconds) params.set('lease_seconds', String(leaseSeconds));
         const data = await this._get(`/v1/agent-deliveries/pending?${params}`, this._wsHeaders(token));
         const result = data.data || data;
         const deliveries = (result && result.deliveries) || [];

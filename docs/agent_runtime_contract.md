@@ -35,6 +35,15 @@ layer for delivery, status, role boundaries, or task ownership.
 - If an agent exits before ack, the lease expires and the row becomes eligible
   for retry.
 - Stale sessions cannot lease or ack deliveries.
+- Connector adapters request short attention leases, currently 5 minutes. While
+  a message is still being handled, duplicate polls are treated as lease renewal
+  and are not queued as duplicate work.
+- If handling fails, the adapter releases the delivery for bounded retry; after
+  repeated failures the delivery is acked so one bad message cannot stall the
+  agent's production loop indefinitely.
+- If a queued delivery is explicitly cancelled before execution, the adapter
+  clears it from in-flight state and acks it so cancellation does not reappear as
+  new work later.
 
 ## Skill/Rule Pack Direction
 

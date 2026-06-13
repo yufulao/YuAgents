@@ -236,6 +236,73 @@ describe('Daemon', () => {
     assert.equal(adapter.stopReason, 'session_revoked');
   });
 
+  it('BaseAdapter tracks in-flight durable deliveries by event and delivery id', () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    const msg = { messageId: 'event-1', _deliveryId: 'delivery-1' };
+
+    adapter._markMessageInFlight(msg);
+
+    assert.equal(adapter._isInFlightMessage({ messageId: 'event-1' }), true);
+    assert.equal(adapter._isInFlightMessage({ _deliveryId: 'delivery-1' }), true);
+    adapter._clearMessageInFlight(msg);
+    assert.equal(adapter._isInFlightMessage(msg), false);
+  });
+
+  it('BaseAdapter requeues failed deliveries only for limited retries', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._sessionId = 'sess-1';
+    const statuses = [];
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, _deliveryId, _sessionId, opts) => {
+      statuses.push(opts.status);
+      return { status: opts.status };
+    };
+
+    await adapter._failMessage({ messageId: 'event-1', _deliveryId: 'delivery-1', _deliveryAttempts: 1 }, new Error('boom'));
+    await adapter._failMessage({ messageId: 'event-2', _deliveryId: 'delivery-2', _deliveryAttempts: 3 }, new Error('boom again'));
+
+    assert.deepEqual(statuses, ['failed', 'acked']);
+    assert.equal(adapter._processedIds.has('event-2'), true);
+  });
+
+  it('BaseAdapter ack-clears cancelled queued durable deliveries', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._sessionId = 'sess-1';
+    const queued = { messageId: 'event-1', _deliveryId: 'delivery-1', _queueId: 'q-1' };
+    adapter._channelQueues.general = [queued];
+    adapter._markMessageInFlight(queued);
+    let ackedDelivery = null;
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId) => {
+      ackedDelivery = deliveryId;
+      return { status: 'acked' };
+    };
+
+    const cancelled = await adapter._cancelQueuedMessage('general', 'q-1');
+
+    assert.equal(cancelled, true);
+    assert.equal(ackedDelivery, 'delivery-1');
+    assert.equal(adapter._isInFlightMessage(queued), false);
+    assert.equal(adapter._processedIds.has('event-1'), true);
+    assert.deepEqual(adapter._channelQueues.general, []);
+  });
+
   it('readDaemonPid returns null when no pid file', () => {
     assert.equal(Daemon.readDaemonPid(tmpDir), null);
   });

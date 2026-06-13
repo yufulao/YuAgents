@@ -48,6 +48,7 @@ class BaseAdapter {
     this._stopReason = null;
     this._sessionId = null;  // issued by server on /v1/join; used to prove liveness
     this._processedIds = new Set();
+    this._inFlightIds = new Set();
     this._titledSessions = new Set();
     this._mode = 'execute';
     this._lastControlId = null;
@@ -504,7 +505,14 @@ class BaseAdapter {
       try {
         const result = await this.client.pollPending(
           this.workspaceId, this.agentName, this.token,
-          { after: this._lastEventId, sessionId: this._sessionId }
+          {
+            after: this._lastEventId,
+            sessionId: this._sessionId,
+            // Keep crash recovery reasonably quick. Long-running tasks stay
+            // safe because in-flight duplicate polls below renew the lease
+            // without queuing the same delivery a second time.
+            leaseSeconds: 300,
+          }
         );
         messages = result.messages;
         rawCursor = result.cursor;
@@ -523,11 +531,18 @@ class BaseAdapter {
       // Deduplicate
       const incoming = [];
       for (const msg of messages) {
-        const msgId = msg.id || msg.messageId;
-        if (msgId && this._processedIds.has(msgId)) {
+        if (this._isProcessedMessage(msg)) {
           await this._ackMessage(msg);
           continue;
         }
+        if (this._isInFlightMessage(msg)) {
+          // Durable polling may re-lease the same message after its lease
+          // expires while the agent is still working. Treat that as a lease
+          // renewal, not a second work item. Do not ack yet; the active worker
+          // owns final completion/failure.
+          continue;
+        }
+        const msgId = msg.id || msg.messageId;
         if (msg.messageType === 'status') {
           if (msgId) this._processedIds.add(msgId);
           await this._ackMessage(msg);
@@ -538,7 +553,7 @@ class BaseAdapter {
           if (msgId) this._processedIds.add(msgId);
           const channel = msg.sessionId || this.channelName || 'general';
           const queueId = msg.metadata?.queue_id || (msg.content || '').replace('__queue_cancel:', '');
-          if (queueId) this._cancelQueuedMessage(channel, queueId);
+          if (queueId) await this._cancelQueuedMessage(channel, queueId);
           await this._ackMessage(msg);
           continue;
         }
@@ -620,6 +635,8 @@ class BaseAdapter {
       channel = msg.sessionId;
     }
 
+    this._markMessageInFlight(msg);
+
     if (this._channelBusy.has(channel)) {
       if (!this._channelQueues[channel]) this._channelQueues[channel] = [];
       const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -639,12 +656,14 @@ class BaseAdapter {
     this._wakeControlPoller();
   }
 
-  _cancelQueuedMessage(channel, queueId) {
+  async _cancelQueuedMessage(channel, queueId) {
     const queue = this._channelQueues[channel];
     if (!queue) return false;
     const idx = queue.findIndex((m) => m._queueId === queueId);
     if (idx === -1) return false;
-    queue.splice(idx, 1);
+    const [cancelled] = queue.splice(idx, 1);
+    this._clearMessageInFlight(cancelled);
+    await this._ackMessage(cancelled);
     this._log(`Cancelled queued message ${queueId} in ${channel}`);
     return true;
   }
@@ -654,9 +673,12 @@ class BaseAdapter {
     try {
       await this._handleMessage(msg);
       await this._ackMessage(msg);
+      this._clearMessageInFlight(msg);
     } catch (e) {
       this._log(`Error in channel worker for ${channel}: ${e.message}`);
       try { await this.sendError(channel, `Agent error: ${e.message}`); } catch {}
+      await this._failMessage(msg, e);
+      this._clearMessageInFlight(msg);
     }
 
     // Drain queue
@@ -670,9 +692,12 @@ class BaseAdapter {
       try {
         await this._handleMessage(nextMsg);
         await this._ackMessage(nextMsg);
+        this._clearMessageInFlight(nextMsg);
       } catch (e) {
         this._log(`Error processing queued message in ${channel}: ${e.message}`);
         try { await this.sendError(channel, `Agent error: ${e.message}`); } catch {}
+        await this._failMessage(nextMsg, e);
+        this._clearMessageInFlight(nextMsg);
       }
     }
     this._channelBusy.delete(channel);
@@ -723,6 +748,61 @@ class BaseAdapter {
         return;
       }
       this._log(`Delivery ack failed for ${msg._deliveryId}: ${e.message}`);
+    }
+  }
+
+  _messageKeys(msg) {
+    const keys = [];
+    if (!msg) return keys;
+    const msgId = msg.id || msg.messageId;
+    if (msgId) keys.push(`event:${msgId}`);
+    if (msg._deliveryId) keys.push(`delivery:${msg._deliveryId}`);
+    return keys;
+  }
+
+  _isProcessedMessage(msg) {
+    const msgId = msg && (msg.id || msg.messageId);
+    return !!(msgId && this._processedIds.has(msgId));
+  }
+
+  _isInFlightMessage(msg) {
+    return this._messageKeys(msg).some((key) => this._inFlightIds.has(key));
+  }
+
+  _markMessageInFlight(msg) {
+    for (const key of this._messageKeys(msg)) this._inFlightIds.add(key);
+  }
+
+  _clearMessageInFlight(msg) {
+    for (const key of this._messageKeys(msg)) this._inFlightIds.delete(key);
+  }
+
+  async _failMessage(msg, error) {
+    if (!msg || !msg._deliveryId) return;
+    const attempts = Number(msg._deliveryAttempts || 0);
+    const status = attempts >= 3 ? 'acked' : 'failed';
+    try {
+      await this.client.ackDelivery(
+        this.workspaceId,
+        this.agentName,
+        this.token,
+        msg._deliveryId,
+        this._sessionId,
+        {
+          status,
+          error: error && error.message ? error.message : String(error || 'processing failed'),
+        },
+      );
+      if (status === 'acked') {
+        const msgId = msg.id || msg.messageId;
+        if (msgId) this._processedIds.add(msgId);
+      }
+    } catch (e) {
+      if (e instanceof SessionRevokedError) {
+        this._onSessionRevoked();
+        return;
+      }
+      this._log(`Delivery failure ack failed for ${msg._deliveryId}: ${e.message}`);
     }
   }
 

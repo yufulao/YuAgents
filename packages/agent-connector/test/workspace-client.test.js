@@ -158,9 +158,11 @@ describe('WorkspaceClient', () => {
     const result = await client.pollPending('ws-1', 'bary-bot', 'tok', {
       after: 'old-head',
       sessionId: 'sess-read',
+      leaseSeconds: 300,
     });
     assert.ok(capturedPath.startsWith('/v1/agent-deliveries/pending?'));
     assert.ok(capturedPath.includes('agent=bary-bot'));
+    assert.ok(capturedPath.includes('lease_seconds=300'));
     assert.equal(result.durable, true);
     assert.equal(result.cursor, 'old-head');
     assert.equal(result.messages.length, 1);
