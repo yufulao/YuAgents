@@ -1048,8 +1048,8 @@ class BaseAdapter {
           channelName,
           sessionId: this._sessionId,
           currentEventId,
-          recentLimit: 20,
-          ambientLimit: 20,
+          recentLimit: 12,
+          ambientLimit: 6,
         },
       );
       const { buildRuntimeContextPrompt } = require('./workspace-prompt');

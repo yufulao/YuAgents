@@ -129,14 +129,24 @@ function _truncate(text, max) {
   return value.length > max ? value.slice(0, Math.max(0, max - 1)) + '…' : value;
 }
 
+function _statusFrom(value) {
+  return _truncate(value || 'unknown', 40) || 'unknown';
+}
+
 function _messageLine(event) {
   const payload = event && event.payload ? event.payload : {};
   const metadata = event && event.metadata ? event.metadata : {};
   const source = (event && event.source) || 'unknown';
   const kind = payload.message_type || metadata.message_type || 'chat';
-  const content = _truncate(payload.content || '', 500);
+  const content = _truncate(payload.content || '', 220);
   if (!content) return '';
   return `- [${kind}] ${source}: ${content}`;
+}
+
+function _fitBudget(text, maxChars) {
+  if (!maxChars || text.length <= maxChars) return text;
+  const marker = '\n\n[Runtime context truncated by budget. Use workspace_get_history/workspace_list_tasks if you need older or fuller context.]';
+  return `${text.slice(0, Math.max(0, maxChars - marker.length))}${marker}`;
 }
 
 /**
@@ -145,8 +155,9 @@ function _messageLine(event) {
  * ambient deliveries; this section keeps every fresh CLI turn aligned even
  * when the model's prior chat/thread memory is stale.
  */
-function buildRuntimeContextPrompt(context) {
+function buildRuntimeContextPrompt(context, options = {}) {
   if (!context || typeof context !== 'object') return '';
+  const maxChars = Number.isFinite(options.maxChars) ? options.maxChars : 6000;
   const self = context.self || {};
   const channel = context.channel || {};
   const agents = Array.isArray(context.agents) ? context.agents : [];
@@ -158,54 +169,66 @@ function buildRuntimeContextPrompt(context) {
   const parts = [];
   parts.push('## Runtime Context Pack (authoritative)');
   parts.push(
-    `- You are: ${self.agent_name || 'unknown'} | role=${self.role || 'member'} | type=${self.agent_type || 'agent'} | status=${self.status || 'unknown'}`
+    `- You are: ${self.agent_name || 'unknown'} | role=${self.role || 'member'} | type=${self.agent_type || 'agent'} | status=${_statusFrom(self.status)}`
   );
-  if (self.description) parts.push(`- Your role description: ${_truncate(self.description, 700)}`);
+  if (self.description) parts.push(`- Your role description: ${_truncate(self.description, 180)}`);
   parts.push(`- Current channel: ${channel.name || 'general'}${channel.title ? ` (${channel.title})` : ''}`);
   if (channel.master_agent) parts.push(`- Channel master/lead: ${channel.master_agent}`);
 
-  if (agents.length) {
-    parts.push('\n### Team Roster');
-    for (const agent of agents.slice(0, 20)) {
-      const inChannel = agent.in_channel === true ? 'in-channel' : agent.in_channel === false ? 'not-in-channel' : 'workspace';
-      const desc = agent.description ? ` — ${_truncate(agent.description, 220)}` : '';
-      parts.push(`- ${agent.agent_name}: role=${agent.role || 'member'}, type=${agent.agent_type || 'agent'}, ${inChannel}, status=${agent.status || 'unknown'}${desc}`);
+  if (tasks.length) {
+    const ownedTasks = tasks.filter((task) => task.claimed_by === self.agent_name || task.assignee === self.agent_name);
+    const otherTasks = tasks.filter((task) => !(task.claimed_by === self.agent_name || task.assignee === self.agent_name));
+    const shownTasks = [...ownedTasks, ...otherTasks].slice(0, 10);
+    parts.push(`\n### Active Shared Tasks (${shownTasks.length}/${tasks.length})`);
+    parts.push('Shared ownership tasks. Claim before implementation; update status/result when done.');
+    for (const task of shownTasks) {
+      const owner = task.claimed_by || task.assignee || 'unassigned';
+      const desc = task.description ? ` — ${_truncate(task.description, 90)}` : '';
+      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${desc}`);
     }
+    if (tasks.length > shownTasks.length) parts.push(`- … ${tasks.length - shownTasks.length} tasks omitted; use workspace_list_tasks for full board.`);
+  }
+
+  if (agents.length) {
+    const shownAgents = agents.slice(0, 12);
+    parts.push(`\n### Team Roster (${shownAgents.length}/${agents.length})`);
+    for (const agent of shownAgents) {
+      const inChannel = agent.in_channel === true ? 'in-channel' : agent.in_channel === false ? 'not-in-channel' : 'workspace';
+      const desc = agent.description ? ` — ${_truncate(agent.description, 60)}` : '';
+      parts.push(`- ${agent.agent_name}: role=${agent.role || 'member'}, ${inChannel}, status=${_statusFrom(agent.status)}${desc}`);
+    }
+    if (agents.length > shownAgents.length) parts.push(`- … ${agents.length - shownAgents.length} more agents omitted; call workspace_get_agents for full roster.`);
   }
 
   if (recent.length) {
-    parts.push('\n### Recent Channel Context');
-    for (const event of recent.slice(-15)) {
+    const shownRecent = recent.slice(-8);
+    parts.push(`\n### Recent Channel Context (${shownRecent.length}/${recent.length})`);
+    for (const event of shownRecent) {
       const line = _messageLine(event);
       if (line) parts.push(line);
     }
+    if (recent.length > shownRecent.length) parts.push(`- … ${recent.length - shownRecent.length} older messages omitted; use workspace_get_history if needed.`);
   }
 
   if (ambient.length) {
-    parts.push('\n### Passive Ambient Messages');
+    const shownAmbient = ambient.slice(-4);
+    parts.push(`\n### Passive Ambient Messages (${shownAmbient.length}/${ambient.length})`);
     parts.push('You received these as channel context. Do not answer them unless the current request makes them relevant.');
-    for (const delivery of ambient.slice(-10)) {
+    for (const delivery of shownAmbient) {
       const line = _messageLine(delivery.event || {});
       if (line) parts.push(line);
     }
-  }
-
-  if (tasks.length) {
-    parts.push('\n### Active Shared Tasks');
-    parts.push('These are shared ownership tasks, not your private todo list. Claim your task before implementation and update status/result when done.');
-    for (const task of tasks.slice(0, 20)) {
-      const owner = task.claimed_by || task.assignee || 'unassigned';
-      const desc = task.description ? ` — ${_truncate(task.description, 220)}` : '';
-      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${desc}`);
-    }
+    if (ambient.length > shownAmbient.length) parts.push(`- … ${ambient.length - shownAmbient.length} older ambient messages omitted.`);
   }
 
   if (rules.length) {
-    parts.push('\n### Runtime Rules');
-    for (const rule of rules.slice(0, 10)) parts.push(`- ${_truncate(rule, 240)}`);
+    const shownRules = rules.slice(0, 6);
+    parts.push(`\n### Runtime Rules (${shownRules.length}/${rules.length})`);
+    for (const rule of shownRules) parts.push(`- ${_truncate(rule, 160)}`);
+    if (rules.length > shownRules.length) parts.push('- … additional rules available in the generated OpenAgents Runtime Rule Pack skill.');
   }
 
-  return parts.join('\n');
+  return _fitBudget(parts.join('\n'), maxChars);
 }
 
 /**

@@ -120,4 +120,53 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });
+
+  it('keeps runtime context within a hard budget while preserving owned tasks', () => {
+    const longText = 'x'.repeat(1000);
+    const prompt = buildRuntimeContextPrompt({
+      self: {
+        agent_name: '八云紫',
+        role: 'master',
+        agent_type: 'codex',
+        status: 'thinking',
+        description: longText,
+      },
+      channel: { name: '工作室', title: '工作室', master_agent: '八云紫' },
+      agents: Array.from({ length: 30 }, (_, i) => ({
+        agent_name: `agent-${i}`,
+        role: i === 0 ? 'master' : 'member',
+        agent_type: 'codex',
+        status: 'online',
+        in_channel: true,
+        description: longText,
+      })),
+      recent_messages: Array.from({ length: 30 }, (_, i) => ({
+        source: `human:${i}`,
+        payload: { content: `recent-${i} ${longText}`, message_type: 'chat' },
+        metadata: {},
+      })),
+      ambient_messages: Array.from({ length: 20 }, (_, i) => ({
+        event: {
+          source: `openagents:agent-${i}`,
+          payload: { content: `ambient-${i} ${longText}`, message_type: 'chat' },
+          metadata: {},
+        },
+      })),
+      active_tasks: Array.from({ length: 30 }, (_, i) => ({
+        id: `task-${i}`,
+        title: `Task ${i}`,
+        status: 'in_progress',
+        priority: 'normal',
+        assignee: i === 20 ? '八云紫' : `agent-${i}`,
+        claimed_by: i === 20 ? '八云紫' : '',
+        description: longText,
+      })),
+      runtime_rules: Array.from({ length: 20 }, (_, i) => `rule-${i} ${longText}`),
+    }, { maxChars: 2500 });
+
+    assert.ok(prompt.length <= 2500, `runtime context too large: ${prompt.length}`);
+    assert.ok(prompt.includes('task-20: [in_progress] Task 20'));
+    assert.ok(prompt.includes('Runtime context truncated by budget') || prompt.includes('omitted'));
+    assert.equal(prompt.includes('recent-0'), false);
+  });
 });
