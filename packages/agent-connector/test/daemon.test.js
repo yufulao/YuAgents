@@ -259,6 +259,39 @@ describe('Daemon', () => {
     assert.ok(content.includes('docs/*.md'));
   });
 
+  it('BaseAdapter reports locally installed skills back to the workspace', async () => {
+    const workDir = path.join(tmpDir, 'agent-work');
+    const unitySkillDir = path.join(workDir, '.codex', 'skills', 'unity-mcp');
+    fs.mkdirSync(unitySkillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(unitySkillDir, 'SKILL.md'),
+      '---\nname: Unity MCP\ndescription: Unity editor automation\n---\n\n# Unity MCP\n',
+      'utf-8',
+    );
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      agentType: 'codex',
+      workingDir: workDir,
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    const reported = [];
+    adapter.client.reportSkillStatus = async (_workspaceId, _agentName, _token, payload) => {
+      reported.push(payload);
+      return { ok: true };
+    };
+
+    adapter._ensureRuntimeRuleSkill();
+    await adapter._reportInstalledLocalSkills();
+
+    const ids = reported.map((item) => item.skillId).sort();
+    assert.deepEqual(ids, ['openagents-runtime', 'unity-mcp']);
+    assert.ok(reported.every((item) => item.state === 'installed'));
+  });
+
   it('BaseAdapter tracks in-flight durable deliveries by event and delivery id', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

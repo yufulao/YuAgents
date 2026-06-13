@@ -146,6 +146,41 @@ def _default_avatar(handle: str) -> dict:
     return {"type": "pixel", "value": handle}
 
 
+def _merge_enabled_skills(member_skills: dict | None, cfg_skills: dict | None) -> dict | None:
+    """Merge runtime skill install status with Web-managed skill toggles.
+
+    AgentConfig owns user-visible module toggles, while WorkspaceMember receives
+    launcher callbacks (`installed` and `skill_status`). Neither side should
+    erase the other when formatting agents for the UI.
+    """
+    merged: dict = {}
+    if isinstance(member_skills, dict):
+        merged.update(member_skills)
+    if isinstance(cfg_skills, dict):
+        for key, value in cfg_skills.items():
+            if key in {"installed", "skill_status"}:
+                continue
+            merged[key] = value
+
+    installed: list[str] = []
+    for source in (member_skills, cfg_skills):
+        if isinstance(source, dict) and isinstance(source.get("installed"), list):
+            for skill_id in source["installed"]:
+                if isinstance(skill_id, str) and skill_id not in installed:
+                    installed.append(skill_id)
+    if installed:
+        merged["installed"] = installed
+
+    status_map: dict = {}
+    for source in (member_skills, cfg_skills):
+        if isinstance(source, dict) and isinstance(source.get("skill_status"), dict):
+            status_map.update(source["skill_status"])
+    if status_map:
+        merged["skill_status"] = status_map
+
+    return merged or None
+
+
 def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | None = None) -> dict:
     display_name = cfg.display_name if cfg else m.agent_name
     avatar = cfg.avatar if cfg else _default_avatar(m.agent_name)
@@ -171,7 +206,10 @@ def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | N
         "avatarUrl": avatar.get("value") if avatar.get("type") == "upload" else None,
         "serverHost": m.server_host,
         "workingDir": cfg.working_dir if cfg and cfg.working_dir is not None else m.working_dir,
-        "enabledSkills": cfg.enabled_skills if cfg and cfg.enabled_skills is not None else m.enabled_skills,
+        "enabledSkills": _merge_enabled_skills(
+            m.enabled_skills,
+            cfg.enabled_skills if cfg else None,
+        ),
         "modelProvider": cfg.model_provider if cfg else None,
         "model": cfg.model if cfg else None,
         "modelName": cfg.model if cfg else None,
@@ -1275,6 +1313,27 @@ async def report_skill_status(
             skills_data, body.skill_id, body.state, body.path, body.error, body.partial
         )
     member.enabled_skills = skills_data
+
+    cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace.id,
+            AgentConfig.handle == agent_name,
+        )
+    ).scalar_one_or_none()
+    if cfg:
+        cfg_skills = dict(cfg.enabled_skills or {})
+        if body.state == "uninstalled":
+            status_map = dict(cfg_skills.get("skill_status", {}))
+            status_map.pop(body.skill_id, None)
+            cfg_skills["skill_status"] = status_map
+            cfg_skills["installed"] = [
+                s for s in cfg_skills.get("installed", []) if s != body.skill_id
+            ]
+        else:
+            cfg_skills = _set_skill_status(
+                cfg_skills, body.skill_id, body.state, body.path, body.error, body.partial
+            )
+        cfg.enabled_skills = cfg_skills
     db.commit()
 
     if body.state == "failed":

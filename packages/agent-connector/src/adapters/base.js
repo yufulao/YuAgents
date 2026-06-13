@@ -111,6 +111,7 @@ class BaseAdapter {
     }
 
     this._ensureRuntimeRuleSkill();
+    await this._reportInstalledLocalSkills();
 
     // Fast-path operations (control-event cursor + heartbeat + control poll)
     // run BEFORE the message-cursor advance. Even though _skipExistingEvents
@@ -363,6 +364,33 @@ class BaseAdapter {
       this._log(`Ensured runtime rule skill: ${skillPath}`);
     } catch (e) {
       this._log(`Warning: runtime rule skill unavailable: ${e && e.message ? e.message : e}`);
+    }
+  }
+
+  async _reportInstalledLocalSkills() {
+    let skills = [];
+    try {
+      const installer = require('../skill-installer');
+      skills = installer.listInstalledSkills({
+        agentType: this.agentType || 'agent',
+        workingDir: this.workingDir || defaultAgentWorkdir(this.agentName),
+      });
+    } catch (e) {
+      this._log(`Warning: local skill scan failed: ${e && e.message ? e.message : e}`);
+      return;
+    }
+    if (!skills.length) return;
+
+    for (const skill of skills) {
+      try {
+        await this.client.reportSkillStatus(this.workspaceId, this.agentName, this.token, {
+          skillId: skill.id,
+          state: 'installed',
+          path: skill.path,
+        });
+      } catch (e) {
+        this._log(`Warning: failed to report local skill "${skill.id}": ${e && e.message ? e.message : e}`);
+      }
     }
   }
 

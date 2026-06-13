@@ -135,13 +135,27 @@ export function AgentProfilePanel() {
     setControlBusy(action);
     try {
       await workspaceApi.controlManagedAgent(agent.agentName, action);
-      await refreshWorkspace();
-      [1000, 3000, 6000, 10000, 20000].forEach((delay) => {
+      const refreshDelays = [1000, 3000, 6000, 10000, 20000];
+      const scheduleRefreshes = () => refreshDelays.forEach((delay) => {
         window.setTimeout(() => {
           refreshWorkspace().catch(() => undefined);
         }, delay);
       });
-      toast.success(action === 'restart' ? 'Agent 正在重启' : action === 'stop' ? 'Agent 已停止' : 'Agent 正在启动');
+      scheduleRefreshes();
+      let refreshDelayed = false;
+      try {
+        await refreshWorkspace();
+      } catch {
+        // The control command already succeeded. A transient refresh/network
+        // failure should not be shown as a failed start when the daemon may
+        // already be joining and subsequent polls will catch up.
+        refreshDelayed = true;
+      }
+      toast.success(
+        refreshDelayed
+          ? 'Agent 操作已发送，状态稍后自动同步'
+          : action === 'restart' ? 'Agent 正在重启' : action === 'stop' ? 'Agent 已停止' : 'Agent 正在启动',
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Agent 操作失败');
     } finally {

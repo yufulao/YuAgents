@@ -48,6 +48,17 @@ def _member_skills(db, workspace, agent_name):
     return dict(member.enabled_skills or {})
 
 
+def _agent_config_skills(db, workspace, handle):
+    from app.models import AgentConfig
+    cfg = db.execute(
+        select(AgentConfig).where(
+            AgentConfig.workspace_id == workspace["id"],
+            AgentConfig.handle == handle,
+        )
+    ).scalar_one()
+    return dict(cfg.enabled_skills or {})
+
+
 class TestSkillInstallRequest:
     def test_install_marks_installing_not_installed(self, client, workspace, db):
         _join_agent(client, workspace, "claude")
@@ -178,6 +189,45 @@ class TestSkillStatusCallback:
         )
         assert resp.status_code == 200
         assert "mcp-builder" in resp.json()["data"]["installedSkills"]
+
+    def test_status_merges_with_web_managed_agent_config(self, client, workspace, db):
+        resp = client.post(
+            f"/v1/workspaces/{workspace['id']}/agents",
+            json={
+                "agent_name": "codex",
+                "agent_type": "codex",
+                "enabled_skills": {"browser": False},
+            },
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        assert resp.status_code == 200, resp.text
+
+        resp = client.post(
+            f"/v1/workspaces/{workspace['id']}/members/codex/skills/status",
+            json={
+                "skill_id": "openagents-runtime",
+                "state": "installed",
+                "path": "/work/.codex/skills/openagents-runtime",
+            },
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        assert resp.status_code == 200, resp.text
+
+        cfg_skills = _agent_config_skills(db, workspace, "codex")
+        assert cfg_skills["browser"] is False
+        assert "openagents-runtime" in cfg_skills["installed"]
+
+        disc = client.get(
+            "/v1/discover",
+            params={"network": workspace["id"]},
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        assert disc.status_code == 200, disc.text
+        agents = {a["address"]: a for a in disc.json()["data"]["agents"]}
+        skills = agents["openagents:codex"]["enabled_skills"]
+        assert skills["browser"] is False
+        assert "openagents-runtime" in skills["installed"]
+        assert skills["skill_status"]["openagents-runtime"]["state"] == "installed"
 
 
 class TestPerAgentIsolation:
