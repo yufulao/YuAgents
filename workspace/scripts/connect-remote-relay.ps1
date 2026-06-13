@@ -9,6 +9,7 @@ param(
   [switch]$StartLocal,
   [switch]$SkipOpenBrowser,
   [switch]$StopExistingTunnel,
+  [switch]$EnsureGatewayPorts,
   [switch]$TunnelOnly
 )
 
@@ -67,6 +68,10 @@ function Select-LastIpv4([string]$Text) {
   return $matches[$matches.Count - 1].Value
 }
 
+function Join-RemoteCommands([string[]]$Commands) {
+  return ($Commands -join "; ")
+}
+
 Require-Command ssh
 
 if ($StartLocal) {
@@ -81,14 +86,32 @@ if ($StartLocal) {
 Write-Host "Checking local control plane at http://127.0.0.1:8000 ..."
 Wait-Url "http://127.0.0.1:8000/v1/agent-catalog" 90 "local control plane"
 
-if ($StopExistingTunnel) {
+if ($EnsureGatewayPorts) {
+  Write-Host "Checking remote Docker gateway, SSH GatewayPorts, and existing remote listeners..."
+} elseif ($StopExistingTunnel) {
   Write-Host "Checking remote Docker gateway and stopping existing remote listeners if possible..."
-  $preflightCommand = "gateway=`$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1); echo OPENAGENTS_GATEWAY=`$gateway; if command -v fuser >/dev/null 2>&1; then fuser -k ${TunnelPort}/tcp >/dev/null 2>&1 || true; elif command -v lsof >/dev/null 2>&1; then lsof -ti tcp:${TunnelPort} | xargs -r kill; fi"
 } else {
   Write-Host "Checking remote Docker gateway..."
-  $preflightCommand = "docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1"
 }
 
+$preflightCommands = @(
+  "gateway=`$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1)"
+)
+
+if ($EnsureGatewayPorts) {
+  $preflightCommands += @(
+    "sshd_bin=`$(command -v sshd || echo /usr/sbin/sshd)",
+    "current_gateway_ports=`$(`$sshd_bin -T 2>/dev/null | awk 'tolower(`$1)==`"gatewayports`" {print tolower(`$2); exit}')",
+    "if [ `"x`$current_gateway_ports`" != `"xclientspecified`" ]; then echo OPENAGENTS_SETTING_GATEWAYPORTS; cp /etc/ssh/sshd_config /etc/ssh/sshd_config.openagents.bak; if grep -Eiq '^[[:space:]]*GatewayPorts[[:space:]]+' /etc/ssh/sshd_config; then sed -i -E 's/^[[:space:]]*GatewayPorts[[:space:]]+.*/GatewayPorts clientspecified/I' /etc/ssh/sshd_config; elif grep -Eiq '^[[:space:]]*Match[[:space:]]+' /etc/ssh/sshd_config; then sed -i -E '0,/^[[:space:]]*Match[[:space:]]+/s//GatewayPorts clientspecified\n&/' /etc/ssh/sshd_config; else printf '\nGatewayPorts clientspecified\n' >> /etc/ssh/sshd_config; fi; if ! `$sshd_bin -t; then cp /etc/ssh/sshd_config.openagents.bak /etc/ssh/sshd_config; echo OPENAGENTS_GATEWAYPORTS_FAILED; exit 70; fi; if ! (systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || service sshd reload 2>/dev/null); then echo OPENAGENTS_SSHD_RELOAD_FAILED; exit 71; fi; fi"
+  )
+}
+
+if ($StopExistingTunnel) {
+  $preflightCommands += "if command -v fuser >/dev/null 2>&1; then fuser -k ${TunnelPort}/tcp >/dev/null 2>&1 || true; elif command -v lsof >/dev/null 2>&1; then lsof -ti tcp:${TunnelPort} | xargs -r kill; fi"
+}
+
+$preflightCommands += "echo OPENAGENTS_GATEWAY=`$gateway"
+$preflightCommand = Join-RemoteCommands $preflightCommands
 $gatewayOutput = Invoke-SshOutput $preflightCommand
 $gateway = Select-LastIpv4 $gatewayOutput
 if (-not $gateway) {

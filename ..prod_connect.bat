@@ -10,6 +10,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "workspace\scripts\connect-r
   -RemoteDir "/opt/openagents" ^
   -Domain "oa.yodaze.com" ^
   -TunnelOnly ^
+  -EnsureGatewayPorts ^
   -StopExistingTunnel
 
 if errorlevel 1 (
