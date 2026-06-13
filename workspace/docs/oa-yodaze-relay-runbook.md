@@ -26,6 +26,19 @@ This uploads the remote relay files to `/opt/openagents`, ensures Docker is
 available, and configures host nginx so `http://oa.yodaze.com` proxies to
 `127.0.0.1:18080`.
 
+The deploy archive is intentionally small. It is generated with `git archive`
+from tracked source files only:
+
+- `workspace/docker-compose.prod.yml`
+- `workspace/nginx.conf.template`
+- `workspace/start.sh`
+- `workspace/frontend`
+
+It does not upload local runtime state or generated files such as `node_modules`,
+`.next`, logs, screenshots, exports, SQLite DBs, `.env` files, or root-level
+helper scripts. Docker installs frontend dependencies again on the server during
+`docker compose up --build` through the frontend Dockerfile's `npm ci` step.
+
 The underlying command is:
 
 ```powershell

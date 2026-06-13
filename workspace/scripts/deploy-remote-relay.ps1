@@ -31,24 +31,33 @@ function Invoke-Ssh([string]$Command) {
 
 Require-Command ssh
 Require-Command scp
-Require-Command tar
+Require-Command git
+
+$ArchivePaths = @(
+  "workspace/docker-compose.prod.yml",
+  "workspace/nginx.conf.template",
+  "workspace/start.sh",
+  "workspace/frontend",
+  ":(exclude)workspace/frontend/workspace-test-response.png"
+)
+
+$dirtyRelevant = & git -C $RepoRoot status --porcelain -- $ArchivePaths
+if ($LASTEXITCODE -ne 0) {
+  throw "git status failed with exit code $LASTEXITCODE"
+}
+if ($dirtyRelevant) {
+  Write-Host "[WARN] These deploy-relevant files have uncommitted changes and will not be included by git archive:"
+  $dirtyRelevant | ForEach-Object { Write-Host "  $_" }
+  Write-Host "Commit or stash them first if they must be deployed."
+  Write-Host ""
+}
 
 try {
   Push-Location $RepoRoot
-  Write-Host "Packaging remote relay files..."
-  & tar `
-    --exclude "workspace/frontend/node_modules" `
-    --exclude "workspace/frontend/.next" `
-    --exclude "workspace/frontend/out" `
-    --exclude "workspace/.remote-web-test" `
-    --exclude "workspace/.remote-docker-ui" `
-    -czf $Archive `
-    workspace/docker-compose.prod.yml `
-    workspace/nginx.conf.template `
-    workspace/start.sh `
-    workspace/frontend
+  Write-Host "Packaging tracked remote relay files with git archive..."
+  & git archive --format=tar.gz --output $Archive HEAD -- $ArchivePaths
   if ($LASTEXITCODE -ne 0) {
-    throw "tar failed with exit code $LASTEXITCODE"
+    throw "git archive failed with exit code $LASTEXITCODE"
   }
 } finally {
   Pop-Location
