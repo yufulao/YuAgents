@@ -120,7 +120,7 @@ if (-not $gateway) {
 }
 
 Write-Host "Opening SSH reverse tunnel: server $gateway`:$TunnelPort -> local 127.0.0.1:8000"
-Write-Host "If an SSH password prompt appears in the tunnel window, enter the server password there and keep that window open."
+Write-Host "If an SSH password prompt appears, enter the server password in this window and keep this window open."
 $sshArgs = @(
   "-p", [string]$SshPort,
   "-N",
@@ -130,7 +130,7 @@ $sshArgs = @(
   "-R", "$gateway`:$TunnelPort`:127.0.0.1:8000",
   $Remote
 )
-$tunnel = Start-Process -FilePath "ssh" -ArgumentList $sshArgs -WindowStyle Normal -PassThru
+$tunnel = Start-Process -FilePath "ssh" -ArgumentList $sshArgs -NoNewWindow -PassThru
 
 try {
   Start-Sleep -Seconds 2
@@ -155,7 +155,7 @@ try {
   try {
     Wait-Url "$PublicUrl/v1/agent-catalog" 60 "public relay API"
   } catch {
-    throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. Check the visible SSH tunnel window: enter the server password if it is waiting, and leave it open. If the tunnel window exited after login, verify GatewayPorts clientspecified in /etc/ssh/sshd_config and rerun ..prod_connect.bat."
+    throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. Enter the server password in this window if SSH is waiting, and leave this window open. If SSH exited after login, verify GatewayPorts clientspecified in /etc/ssh/sshd_config and rerun ..prod_connect.bat."
   }
 
   Write-Host ""
