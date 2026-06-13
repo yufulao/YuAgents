@@ -6,9 +6,7 @@ import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/lib/workspace-context';
 import { useLayout } from '@/components/layout/layout-context';
 import { timeAgo } from '@/lib/helpers';
-import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { workspaceApi } from '@/lib/api';
-import type { WorkspaceAgent } from '@/lib/types';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,32 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-
-function AvatarStack({ agents, max = 2 }: { agents: WorkspaceAgent[]; max?: number }) {
-  const shown = agents.slice(0, max);
-  const extra = agents.length - max;
-
-  if (shown.length <= 1) {
-    const agent = shown[0];
-    if (!agent) return null;
-    return <AgentAvatar name={agent.agentName} size={30} />;
-  }
-
-  return (
-    <div className="flex -space-x-1.5">
-      {shown.map((agent) => (
-        <div key={agent.agentName} className="ring-2 ring-white dark:ring-zinc-900 rounded-full">
-          <AgentAvatar name={agent.agentName} size={18} />
-        </div>
-      ))}
-      {extra > 0 && (
-        <div className="size-[18px] rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-medium text-zinc-600 ring-2 ring-white dark:ring-zinc-900">
-          +{extra}
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface SearchHit {
   channelName: string;
@@ -373,13 +345,6 @@ export function ThreadList() {
                   isCompleted && !isSelected && 'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200/60 dark:ring-amber-700/40 animate-[glow_2s_ease-in-out_infinite]'
                 )}
               >
-                {/* Avatar stack — show only channel participants */}
-                <div className="shrink-0">
-                  <AvatarStack agents={
-                    agents.filter((a) => session.participants.includes(a.agentName))
-                  } />
-                </div>
-
                 {/* Content */}
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5">
@@ -561,11 +526,6 @@ export function ThreadList() {
                           'has-data-[state=open]:bg-zinc-50 dark:has-data-[state=open]:bg-zinc-800/50'
                         )}
                       >
-                        <div className="shrink-0 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 rounded-full size-[30px] bg-white dark:bg-zinc-900">
-                          <AvatarStack agents={
-                            agents.filter((a) => session.participants.includes(a.agentName))
-                          } />
-                        </div>
                         <div className="flex-1 min-w-0 space-y-0.5">
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm flex-1 min-w-0 truncate font-normal text-foreground">
