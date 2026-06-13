@@ -78,25 +78,9 @@ function NavButton({
 }
 
 function getAgentSidebarStatus(agent: WorkspaceAgent) {
-  const displayStatus = agent.displayStatus?.trim();
-  const activityLabel = (agent.activityState || displayStatus || '').replace(/_/g, ' ');
-  if (agent.presenceStatus === 'online' || agent.isConnected) {
-    if (agent.hasActiveWork) {
-      if (agent.activityState === 'running_command') return '在线 · 执行命令';
-      if (agent.activityState === 'editing_file') return '在线 · 编辑文件';
-      if (agent.activityState === 'waiting_input') return '在线 · 等待输入';
-      if (agent.activityState === 'error') return '在线 · 阻塞';
-      if (agent.activityState === 'starting') return '在线 · 启动中';
-      if (agent.activityState === 'thinking') return '在线 · 思考中';
-      if (agent.activityState === 'stopping') return '在线 · 停止中';
-      if (activityLabel && activityLabel !== 'online') return `在线 · ${activityLabel}`;
-      return '在线 · 活跃';
-    }
-    return '在线 · 空闲';
-  }
-  if (agent.presenceStatus === 'stopped' || agent.status === 'stopped') return '已停止';
-  if (agent.presenceStatus === 'starting' || agent.status === 'starting') return '启动中';
-  return '离线';
+  return agent.activityState && agent.activityState !== 'idle'
+    ? agent.activityState
+    : agent.presenceStatus || agent.status || 'offline';
 }
 
 function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; status: string; onClick: () => void }) {
