@@ -4,6 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$RepoRoot = $RepoRoot.Trim().Trim('"')
 $RepoRoot = (Resolve-Path $RepoRoot).Path
 $BackendDir = Join-Path $RepoRoot "workspace\backend"
 $FrontendDir = Join-Path $RepoRoot "workspace\frontend"

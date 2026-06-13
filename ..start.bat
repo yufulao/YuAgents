@@ -3,7 +3,7 @@ setlocal
 
 cd /d "%~dp0"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "workspace\scripts\start-local-web.ps1" -RepoRoot "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "workspace\scripts\start-local-web.ps1" -RepoRoot "%CD%"
 
 if errorlevel 1 (
   echo.
