@@ -40,9 +40,7 @@ def upgrade() -> None:
             sa.Column("status", sa.Text(), nullable=False, server_default="active"),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
             sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
-        )
-        op.create_unique_constraint(
-            "uq_knowledge_workspace_slug", "knowledge_entries", ["workspace_id", "slug"],
+            sa.UniqueConstraint("workspace_id", "slug", name="uq_knowledge_workspace_slug"),
         )
         op.create_index(
             "idx_knowledge_workspace_status", "knowledge_entries", ["workspace_id", "status"],

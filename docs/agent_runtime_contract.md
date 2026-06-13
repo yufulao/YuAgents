@@ -1,0 +1,46 @@
+# Agent Runtime Contract
+
+OpenAgents should treat agent behavior as runtime contracts first, prompt text
+second. Prompt rules are still useful, but they cannot be the only enforcement
+layer for delivery, status, role boundaries, or task ownership.
+
+## Layers
+
+1. Protocol layer: messages, channel membership, mentions, and delivery rows are
+   authoritative. If a message targets an agent, the backend creates a durable
+   delivery row for that agent.
+2. Runtime state layer: presence, activity, workload, leases, and ack state are
+   separate fields. UI badges derive from these fields instead of overloading a
+   single `status` string.
+3. Work graph layer: multi-agent work should move through shared tasks with
+   assignees, dependencies, claims, results, and acceptance, not private todo
+   lists only.
+4. Skill/rule layer: cold-start rules that every agent must follow should be
+   packaged as installable skills or injected rule packs, then referenced by the
+   runtime prompt.
+
+## Delivery Rules
+
+- `events` remains the conversation source of truth.
+- `agent_deliveries` is the per-agent inbox and retry contract.
+- A routed message creates one delivery row per targeted agent.
+- A running agent leases its own pending rows using its current `session_id`.
+- A delivery is acked only after the adapter finishes handling the message.
+- If an agent exits before ack, the lease expires and the row becomes eligible
+  for retry.
+- Stale sessions cannot lease or ack deliveries.
+
+## Skill/Rule Pack Direction
+
+The baseline agent skill should contain rules that should not drift between
+agents:
+
+- Always reply in the exact channel/thread target that received the request.
+- Mention another agent only when intentionally handing work to that agent.
+- Claim shared tasks before implementation work.
+- Keep role boundaries explicit: architect routes and accepts, implementers
+  implement, reviewers verify, QA reproduces and retests.
+- Report concrete state changes, test evidence, blockers, and handoff targets.
+
+This file is the source note for turning those rules into a generated agent
+skill/rule pack after the delivery and shared-task contracts are stable.

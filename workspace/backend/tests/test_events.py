@@ -5,6 +5,8 @@ Tests for the event-native API (POST/GET /v1/events).
 
 import pytest
 
+from app.models import AgentDelivery
+
 
 class TestSendEvent:
     """POST /v1/events — send events through the pipeline."""
@@ -334,3 +336,71 @@ class TestPollEvents:
         """Polling nonexistent network returns 404."""
         resp = client.get("/v1/events", params={"network": "nonexistent"})
         assert resp.status_code == 404
+
+
+class TestAgentDeliveries:
+    """Durable per-agent delivery inbox."""
+
+    def test_targeted_message_creates_leaseable_delivery(self, client, workspace, db):
+        join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert join.status_code == 200
+        session_id = join.json()["data"]["session_id"]
+
+        channel_name = workspace["channel"]["name"]
+        sent = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"content": "please handle this"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert sent.status_code == 200
+        event_id = sent.json()["data"]["id"]
+
+        db.expire_all()
+        delivery = db.query(AgentDelivery).filter_by(
+            event_id=event_id,
+            agent_name="agent-alpha",
+        ).one()
+        assert delivery.status == "pending"
+
+        leased = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": session_id,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert leased.status_code == 200
+        deliveries = leased.json()["data"]["deliveries"]
+        assert len(deliveries) == 1
+        assert deliveries[0]["id"] == delivery.id
+        assert deliveries[0]["event"]["id"] == event_id
+        assert deliveries[0]["event"]["payload"]["content"] == "please handle this"
+        assert deliveries[0]["attempts"] == 1
+
+        ack = client.post(f"/v1/agent-deliveries/{delivery.id}/ack", json={
+            "network": workspace["id"],
+            "agent_name": "agent-alpha",
+            "session_id": session_id,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert ack.status_code == 200
+        assert ack.json()["data"]["status"] == "acked"
+
+        again = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": session_id,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert again.status_code == 200
+        assert again.json()["data"]["deliveries"] == []
+
+    def test_delivery_requires_current_session(self, client, workspace):
+        resp = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": "stale",
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 401

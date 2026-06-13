@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS workspace_members (
     server_host         text,
     working_dir         text,
     description         text,
+    enabled_skills      jsonb,
     status              text        DEFAULT 'offline',
     last_heartbeat      timestamptz,
     joined_at           timestamptz NOT NULL DEFAULT now(),
@@ -54,12 +55,16 @@ CREATE TABLE IF NOT EXISTS channels (
     created_by          text,
     master_agent        text,
     resume_from         text,
+    visibility          text        NOT NULL DEFAULT 'public',
+    mention_policy      text        NOT NULL DEFAULT 'members_only',
     status              text        DEFAULT 'active',
     starred             boolean     NOT NULL DEFAULT false,
     last_event_at       bigint,
     created_at          timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_channels_ws_name ON channels (workspace_id, name);
+CREATE INDEX IF NOT EXISTS idx_channels_workspace_status ON channels (workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_channels_status_last_event ON channels (status, last_event_at);
 
 -- ===========================================================================
 -- Channel members (per-thread participants)
@@ -71,6 +76,17 @@ CREATE TABLE IF NOT EXISTS channel_members (
 );
 
 -- ===========================================================================
+-- Channel human members (per-thread human participants)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS channel_human_members (
+    channel_id  uuid        NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_email  text        NOT NULL,
+    joined_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (channel_id, user_email)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_human_members_email ON channel_human_members (user_email);
+
+-- ===========================================================================
 -- Workspace collaborators (email-based human access list)
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS workspace_collaborators (
@@ -80,6 +96,7 @@ CREATE TABLE IF NOT EXISTS workspace_collaborators (
     role         text        DEFAULT 'editor',
     added_by     text,
     added_at     timestamptz NOT NULL DEFAULT now(),
+    display_name text,
     CONSTRAINT uq_collaborator_workspace_email UNIQUE (workspace_id, email)
 );
 CREATE INDEX IF NOT EXISTS idx_collaborators_workspace ON workspace_collaborators (workspace_id);
@@ -121,6 +138,29 @@ CREATE INDEX IF NOT EXISTS idx_events_network_timestamp ON events (network_id, t
 CREATE INDEX IF NOT EXISTS idx_events_network_type_target_ts ON events (network_id, type, target, timestamp);
 
 -- ===========================================================================
+-- Agent deliveries (durable per-agent inbox rows)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS agent_deliveries (
+    id                      text        PRIMARY KEY,
+    workspace_id            uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    event_id                text        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    agent_name              text        NOT NULL,
+    channel_name            text,
+    status                  text        NOT NULL DEFAULT 'pending',
+    attempts                integer     NOT NULL DEFAULT 0,
+    lease_owner_session_id  text,
+    lease_until             timestamptz,
+    last_delivered_at       timestamptz,
+    acked_at                timestamptz,
+    last_error              text,
+    created_at              timestamptz NOT NULL DEFAULT now(),
+    updated_at              timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_agent_delivery_event_agent UNIQUE (event_id, agent_name)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_deliveries_workspace_agent_status ON agent_deliveries (workspace_id, agent_name, status);
+CREATE INDEX IF NOT EXISTS idx_agent_deliveries_lease_until ON agent_deliveries (lease_until);
+
+-- ===========================================================================
 -- Files (metadata; blobs in S3 keyed by storage_key)
 -- storage_key shape: '{workspace_id}/{file_id}/{filename}'
 -- ===========================================================================
@@ -137,6 +177,50 @@ CREATE TABLE IF NOT EXISTS files (
     created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_files_workspace_status ON files (workspace_id, status);
+
+-- ===========================================================================
+-- Agent configs (web-managed local agent configuration)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS agent_configs (
+    id               text        PRIMARY KEY,
+    workspace_id     uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    handle           text        NOT NULL,
+    display_name     text        NOT NULL,
+    avatar           jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    agent_type       text        NOT NULL,
+    model_provider   text,
+    model            text,
+    mode             text,
+    quality          text,
+    credential_ref   text,
+    working_dir      text,
+    enabled_skills   jsonb,
+    config_metadata  jsonb,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_agent_config_workspace_handle UNIQUE (workspace_id, handle)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_configs_workspace ON agent_configs (workspace_id);
+
+-- ===========================================================================
+-- Knowledge entries (workspace-global markdown documents)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS knowledge_entries (
+    id            text        PRIMARY KEY,
+    workspace_id  uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    slug          text        NOT NULL,
+    title         text        NOT NULL,
+    description   text,
+    storage_key   text,
+    content_size  integer,
+    created_by    text        NOT NULL,
+    updated_by    text,
+    status        text        NOT NULL DEFAULT 'active',
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_knowledge_workspace_slug UNIQUE (workspace_id, slug)
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_workspace_status ON knowledge_entries (workspace_id, status);
 
 -- ===========================================================================
 -- Browser contexts (persistent BrowserBase contexts)
@@ -202,11 +286,13 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     fcm_token     text        NOT NULL,
     device_type   text        NOT NULL,
     bundle_id     text,
+    user_email    text,
     created_at    timestamptz NOT NULL DEFAULT now(),
     last_seen_at  timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_device_token_workspace_fcm UNIQUE (workspace_id, fcm_token)
 );
 CREATE INDEX IF NOT EXISTS idx_device_tokens_workspace ON device_tokens (workspace_id);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_workspace_user ON device_tokens (workspace_id, user_email);
 
 -- ===========================================================================
 -- To-dos (agent planning state)
@@ -256,6 +342,7 @@ CREATE TABLE IF NOT EXISTS routines (
     created_by                 text        NOT NULL,
     name                       text        NOT NULL,
     message                    text        NOT NULL,
+    context                    text,
     schedule_hour              integer,
     schedule_minute            integer,
     schedule_days              jsonb,
@@ -270,6 +357,66 @@ CREATE INDEX IF NOT EXISTS idx_routines_workspace_channel ON routines (workspace
 CREATE INDEX IF NOT EXISTS idx_routines_next_fires_status ON routines (next_fires_at, status);
 
 -- ===========================================================================
+-- Notifications (workspace inbox)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id            text        PRIMARY KEY,
+    workspace_id  uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    created_by    text        NOT NULL,
+    title         text        NOT NULL,
+    message       text        NOT NULL,
+    priority      text        NOT NULL DEFAULT 'normal',
+    is_read       boolean     NOT NULL DEFAULT false,
+    channel_name  text,
+    thread_id     text,
+    link_url      text,
+    status        text        NOT NULL DEFAULT 'active',
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    read_at       timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_workspace_status ON notifications (workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_notifications_workspace_read ON notifications (workspace_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications (created_at);
+
+-- ===========================================================================
+-- Cloud agent configs
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS cloud_agent_configs (
+    id             text        PRIMARY KEY,
+    workspace_id   uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    agent_name     text        NOT NULL,
+    provider       text        NOT NULL,
+    model          text        NOT NULL,
+    category       text        NOT NULL DEFAULT 'chat',
+    api_key        text,
+    base_url       text,
+    system_prompt  text,
+    max_tokens     integer,
+    status         text        NOT NULL DEFAULT 'active',
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_cloud_agent_workspace_name UNIQUE (workspace_id, agent_name)
+);
+CREATE INDEX IF NOT EXISTS idx_cloud_agent_workspace ON cloud_agent_configs (workspace_id);
+
+-- ===========================================================================
+-- Share snapshots
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS share_snapshots (
+    id              text        PRIMARY KEY,
+    workspace_id    uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    channel_name    text        NOT NULL,
+    title           text,
+    created_by      text        NOT NULL,
+    snapshot_data   jsonb       NOT NULL,
+    share_token     text        NOT NULL UNIQUE,
+    message_count   integer     NOT NULL DEFAULT 0,
+    status          text        NOT NULL DEFAULT 'active',
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_share_snapshots_workspace ON share_snapshots (workspace_id);
+CREATE INDEX IF NOT EXISTS idx_share_snapshots_token ON share_snapshots (share_token);
+
+-- ===========================================================================
 -- Standalone agents (only used in IDENTITY_MODE=standalone, kept for compat)
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS agents (
@@ -281,7 +428,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- ===========================================================================
 -- Alembic stamp — schema is at head; backend's `alembic upgrade head` no-ops.
--- Update '015' to match the latest revision in
+-- Update '027' to match the latest revision in
 -- workspace/backend/alembic/versions/ when the source schema changes.
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS alembic_version (
@@ -289,4 +436,4 @@ CREATE TABLE IF NOT EXISTS alembic_version (
     CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
 );
 INSERT INTO alembic_version (version_num)
-SELECT '015' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);
+SELECT '027' WHERE NOT EXISTS (SELECT 1 FROM alembic_version);

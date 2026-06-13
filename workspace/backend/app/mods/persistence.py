@@ -13,6 +13,8 @@ Expects context.extra to contain:
 import logging
 from typing import List, Optional
 
+from sqlalchemy import select
+
 from openagents.core.onm_events import Event
 from openagents.core.onm_mods import ObserveMod, PipelineContext
 
@@ -70,4 +72,47 @@ class PersistenceMod(ObserveMod):
             )
             db.flush()
 
+        if event.type == "workspace.message.posted" and event.target.startswith("channel/"):
+            self._create_agent_deliveries(event, context, record)
+
         return None  # observe mods return value is ignored
+
+    def _create_agent_deliveries(self, event: Event, context: PipelineContext, record) -> None:
+        from app.models import AgentDelivery
+
+        metadata = event.metadata or {}
+        targets = metadata.get("target_agents")
+        if not isinstance(targets, list) or targets == ["__no_response__"]:
+            return
+
+        payload = event.payload or {}
+        if payload.get("message_type") in {"thinking", "status", "todos", "loading"}:
+            return
+
+        db = context.extra.get("db")
+        workspace = context.extra.get("workspace")
+        if not db or not workspace:
+            return
+
+        channel_name = event.target[len("channel/"):] if event.target.startswith("channel/") else None
+        seen = set()
+        for target in targets:
+            if not isinstance(target, str) or not target or target in seen or target == "__no_response__":
+                continue
+            seen.add(target)
+            existing = db.execute(
+                select(AgentDelivery).where(
+                    AgentDelivery.event_id == record.id,
+                    AgentDelivery.agent_name == target,
+                )
+            ).scalar_one_or_none()
+            if existing:
+                continue
+            db.add(AgentDelivery(
+                workspace_id=workspace.id,
+                event_id=record.id,
+                agent_name=target,
+                channel_name=channel_name,
+                status="pending",
+            ))
+        db.flush()

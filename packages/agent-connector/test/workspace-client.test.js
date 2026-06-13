@@ -120,6 +120,9 @@ describe('WorkspaceClient', () => {
     const client = new WorkspaceClient('http://127.0.0.1:19999');
     let capturedPath = null;
     client._get = async (path) => {
+      if (path.startsWith('/v1/agent-deliveries/pending?')) {
+        throw new Error('404 Not Found');
+      }
       capturedPath = path;
       return { data: { events: [] } };
     };
@@ -128,6 +131,60 @@ describe('WorkspaceClient', () => {
         assert.ok(capturedPath.includes('member=bary-bot'));
         assert.ok(capturedPath.includes('session_id=sess-read'));
       });
+  });
+
+  it('pollPending prefers durable deliveries when backend supports them', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    client._get = async (path) => {
+      capturedPath = path;
+      return {
+        data: {
+          deliveries: [{
+            id: 'delivery-1',
+            attempts: 2,
+            event: {
+              id: 'event-1',
+              source: 'human:user',
+              target: 'channel/general',
+              payload: { content: 'hello', message_type: 'chat' },
+              metadata: { target_agents: ['bary-bot'] },
+              timestamp: Date.now(),
+            },
+          }],
+        },
+      };
+    };
+    const result = await client.pollPending('ws-1', 'bary-bot', 'tok', {
+      after: 'old-head',
+      sessionId: 'sess-read',
+    });
+    assert.ok(capturedPath.startsWith('/v1/agent-deliveries/pending?'));
+    assert.ok(capturedPath.includes('agent=bary-bot'));
+    assert.equal(result.durable, true);
+    assert.equal(result.cursor, 'old-head');
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.messages[0].messageId, 'event-1');
+    assert.equal(result.messages[0]._deliveryId, 'delivery-1');
+    assert.equal(result.messages[0]._deliveryAttempts, 2);
+  });
+
+  it('ackDelivery posts current session proof', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    let capturedBody = null;
+    client._post = async (path, body) => {
+      capturedPath = path;
+      capturedBody = body;
+      return { data: { status: 'acked' } };
+    };
+    const result = await client.ackDelivery('ws-1', 'bary-bot', 'tok', 'delivery:1', 'sess-ack');
+    assert.equal(capturedPath, '/v1/agent-deliveries/delivery%3A1/ack');
+    assert.equal(capturedBody.network, 'ws-1');
+    assert.equal(capturedBody.agent_name, 'bary-bot');
+    assert.equal(capturedBody.session_id, 'sess-ack');
+    assert.equal(capturedBody.status, 'acked');
+    assert.equal(result.status, 'acked');
   });
 
   it('getRecentMessages includes member and session_id when provided', () => {

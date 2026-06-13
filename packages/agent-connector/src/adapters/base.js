@@ -524,14 +524,22 @@ class BaseAdapter {
       const incoming = [];
       for (const msg of messages) {
         const msgId = msg.id || msg.messageId;
-        if (msgId && this._processedIds.has(msgId)) continue;
-        if (msg.messageType === 'status') continue;
+        if (msgId && this._processedIds.has(msgId)) {
+          await this._ackMessage(msg);
+          continue;
+        }
+        if (msg.messageType === 'status') {
+          if (msgId) this._processedIds.add(msgId);
+          await this._ackMessage(msg);
+          continue;
+        }
         // Handle queue cancellation signals from frontend
         if (msg.messageType === 'queue_cancel') {
           if (msgId) this._processedIds.add(msgId);
           const channel = msg.sessionId || this.channelName || 'general';
           const queueId = msg.metadata?.queue_id || (msg.content || '').replace('__queue_cancel:', '');
           if (queueId) this._cancelQueuedMessage(channel, queueId);
+          await this._ackMessage(msg);
           continue;
         }
         incoming.push(msg);
@@ -540,8 +548,6 @@ class BaseAdapter {
       if (incoming.length > 0) {
         idleCount = 0;
         for (const msg of incoming) {
-          const msgId = msg.id || msg.messageId;
-          if (msgId) this._processedIds.add(msgId);
           await this._dispatchMessage(msg);
         }
         // Cap dedup set
@@ -647,6 +653,7 @@ class BaseAdapter {
     this._channelBusy.add(channel);
     try {
       await this._handleMessage(msg);
+      await this._ackMessage(msg);
     } catch (e) {
       this._log(`Error in channel worker for ${channel}: ${e.message}`);
       try { await this.sendError(channel, `Agent error: ${e.message}`); } catch {}
@@ -662,6 +669,7 @@ class BaseAdapter {
       }
       try {
         await this._handleMessage(nextMsg);
+        await this._ackMessage(nextMsg);
       } catch (e) {
         this._log(`Error processing queued message in ${channel}: ${e.message}`);
         try { await this.sendError(channel, `Agent error: ${e.message}`); } catch {}
@@ -696,6 +704,27 @@ class BaseAdapter {
   // ------------------------------------------------------------------
   // Message helpers
   // ------------------------------------------------------------------
+
+  async _ackMessage(msg) {
+    const msgId = msg && (msg.id || msg.messageId);
+    if (msgId) this._processedIds.add(msgId);
+    if (!msg || !msg._deliveryId) return;
+    try {
+      await this.client.ackDelivery(
+        this.workspaceId,
+        this.agentName,
+        this.token,
+        msg._deliveryId,
+        this._sessionId,
+      );
+    } catch (e) {
+      if (e instanceof SessionRevokedError) {
+        this._onSessionRevoked();
+        return;
+      }
+      this._log(`Delivery ack failed for ${msg._deliveryId}: ${e.message}`);
+    }
+  }
 
   async sendStatus(channel, content, extraMeta) {
     try {

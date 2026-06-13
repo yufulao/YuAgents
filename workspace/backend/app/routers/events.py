@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json as _json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
@@ -25,7 +26,7 @@ from app.channel_visibility import (
     visible_channel_names,
 )
 from app.database import get_db
-from app.models import EventRecord, Workspace
+from app.models import AgentDelivery, EventRecord, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _verify_workspace_access, _workspace_filter
@@ -51,6 +52,14 @@ class SendEventRequest(BaseModel):
     network: Optional[str] = None   # workspace ID or slug
 
 
+class AckDeliveryRequest(BaseModel):
+    network: str
+    agent_name: str
+    session_id: str
+    status: str = "acked"
+    error: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # POST /v1/events — send an event through the pipeline
 # ---------------------------------------------------------------------------
@@ -60,6 +69,44 @@ def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
     if authorization and authorization.lower().startswith("bearer "):
         return authorization[7:].strip()
     return None
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _current_agent_session(db: Session, workspace: Workspace, agent_name: str, session_id: Optional[str]) -> bool:
+    if not agent_name or not session_id:
+        return False
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    return bool(member and member.session_id and member.session_id == session_id)
+
+
+def _delivery_event_payload(delivery: AgentDelivery, event: EventRecord) -> dict:
+    return {
+        "id": delivery.id,
+        "event_id": delivery.event_id,
+        "agent_name": delivery.agent_name,
+        "channel_name": delivery.channel_name,
+        "status": delivery.status,
+        "attempts": delivery.attempts,
+        "lease_until": delivery.lease_until.isoformat() if delivery.lease_until else None,
+        "event": {
+            "id": event.id,
+            "type": event.type,
+            "source": event.source,
+            "target": event.target,
+            "payload": event.payload,
+            "metadata": event.metadata_,
+            "timestamp": event.timestamp,
+            "visibility": event.visibility,
+        },
+    }
 
 
 @router.post("/events")
@@ -172,6 +219,110 @@ async def send_event(
         "timestamp": result.timestamp,
         "metadata": result.metadata,
     })
+
+
+# ---------------------------------------------------------------------------
+# Durable agent deliveries — lease/ack inbox rows
+# ---------------------------------------------------------------------------
+
+@router.get("/agent-deliveries/pending")
+def lease_pending_deliveries(
+    network: str = Query(..., description="Network (workspace) ID or slug"),
+    agent: str = Query(..., description="Agent handle"),
+    session_id: str = Query(..., description="Current session id from /v1/join"),
+    limit: int = Query(20, ge=1, le=100),
+    lease_seconds: int = Query(1800, ge=30, le=7200),
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(network))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+    if not _current_agent_session(db, workspace, agent, session_id):
+        return json_response(ResponseCode.UNAUTHORIZED, "session_revoked: current agent session required")
+
+    now = _utcnow()
+    lease_until = now + timedelta(seconds=lease_seconds)
+    rows = db.execute(
+        select(AgentDelivery, EventRecord)
+        .join(EventRecord, EventRecord.id == AgentDelivery.event_id)
+        .where(
+            AgentDelivery.workspace_id == workspace.id,
+            AgentDelivery.agent_name == agent,
+            AgentDelivery.status.in_(["pending", "leased"]),
+            or_(
+                AgentDelivery.status == "pending",
+                AgentDelivery.lease_until.is_(None),
+                AgentDelivery.lease_until < now,
+            ),
+        )
+        .order_by(AgentDelivery.created_at.asc(), EventRecord.timestamp.asc(), AgentDelivery.id.asc())
+        .limit(limit)
+    ).all()
+
+    deliveries = []
+    for delivery, event in rows:
+        delivery.status = "leased"
+        delivery.attempts = (delivery.attempts or 0) + 1
+        delivery.lease_owner_session_id = session_id
+        delivery.lease_until = lease_until
+        delivery.last_delivered_at = now
+        delivery.updated_at = now
+        deliveries.append(_delivery_event_payload(delivery, event))
+
+    db.commit()
+    return success_response({
+        "deliveries": deliveries,
+        "lease_seconds": lease_seconds,
+    })
+
+
+@router.post("/agent-deliveries/{delivery_id}/ack")
+def ack_delivery(
+    delivery_id: str,
+    body: AckDeliveryRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(body.network))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+    if not _current_agent_session(db, workspace, body.agent_name, body.session_id):
+        return json_response(ResponseCode.UNAUTHORIZED, "session_revoked: current agent session required")
+
+    delivery = db.get(AgentDelivery, delivery_id)
+    if not delivery or str(delivery.workspace_id) != str(workspace.id) or delivery.agent_name != body.agent_name:
+        return json_response(ResponseCode.NOT_FOUND, "Delivery not found")
+
+    if delivery.status == "acked":
+        return success_response({"id": delivery.id, "status": delivery.status})
+    if delivery.lease_owner_session_id and delivery.lease_owner_session_id != body.session_id:
+        return json_response(ResponseCode.CONFLICT, "delivery leased by another session")
+
+    now = _utcnow()
+    if body.status == "failed":
+        delivery.status = "pending"
+        delivery.lease_owner_session_id = None
+        delivery.lease_until = None
+        delivery.last_error = (body.error or "processing failed")[:2000]
+    else:
+        delivery.status = "acked"
+        delivery.acked_at = now
+        delivery.lease_until = None
+        delivery.last_error = None
+    delivery.updated_at = now
+    db.commit()
+    return success_response({"id": delivery.id, "status": delivery.status})
 
 
 # ---------------------------------------------------------------------------

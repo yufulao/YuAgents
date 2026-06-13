@@ -278,6 +278,36 @@ class WorkspaceClient {
    * Returns { messages, cursor } where cursor is the last event ID.
    */
   async pollPending(workspaceId, agentName, token, { after, limit = 500, sessionId } = {}) {
+    if (sessionId) {
+      try {
+        const params = new URLSearchParams({
+          network: workspaceId,
+          agent: agentName,
+          session_id: sessionId,
+          limit: String(Math.min(limit, 100)),
+        });
+        const data = await this._get(`/v1/agent-deliveries/pending?${params}`, this._wsHeaders(token));
+        const result = data.data || data;
+        const deliveries = (result && result.deliveries) || [];
+        const messages = deliveries
+          .map((d) => {
+            if (!d || !d.event) return null;
+            const msg = this._eventToMessage(d.event);
+            msg._deliveryId = d.id;
+            msg._deliveryAttempts = d.attempts || 0;
+            return msg;
+          })
+          .filter(Boolean);
+        return { messages, cursor: after || null, composing: false, durable: true };
+      } catch (e) {
+        if (!/404|Not Found|agent-deliveries/i.test(e.message || '')) {
+          throw e;
+        }
+        // Older backends do not expose durable deliveries; fall through to
+        // event polling so existing deployments remain usable during rollout.
+      }
+    }
+
     const params = new URLSearchParams({
       network: workspaceId,
       type: 'workspace.message.posted',
@@ -343,6 +373,26 @@ class WorkspaceClient {
 
     const composing = !!(result && result.composing);
     return { messages, cursor, composing };
+  }
+
+  /**
+   * Acknowledge a durable delivery after the adapter finishes processing it.
+   */
+  async ackDelivery(workspaceId, agentName, token, deliveryId, sessionId, { status = 'acked', error } = {}) {
+    if (!deliveryId || !sessionId) return null;
+    const body = {
+      network: workspaceId,
+      agent_name: agentName,
+      session_id: sessionId,
+      status,
+    };
+    if (error) body.error = String(error).slice(0, 2000);
+    const data = await this._post(
+      `/v1/agent-deliveries/${encodeURIComponent(deliveryId)}/ack`,
+      body,
+      this._wsHeaders(token),
+    );
+    return data.data || data;
   }
 
   /**

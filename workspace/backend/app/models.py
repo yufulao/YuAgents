@@ -69,6 +69,38 @@ class EventRecord(Base):
     )
 
 
+class AgentDelivery(Base):
+    """Durable per-agent inbox row for a routed workspace message.
+
+    The event log remains the conversation source of truth. This table is the
+    agent-facing delivery contract: each targeted agent must lease and ack its
+    own row, so restarts and transient disconnects do not silently advance a
+    cursor past unprocessed work.
+    """
+    __tablename__ = "agent_deliveries"
+
+    id = Column(Text, primary_key=True, default=_uuid)
+    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    event_id = Column(Text, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    agent_name = Column(Text, nullable=False)
+    channel_name = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="pending")  # pending | leased | acked | dead
+    attempts = Column(Integer, nullable=False, default=0)
+    lease_owner_session_id = Column(Text, nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    last_delivered_at = Column(DateTime(timezone=True), nullable=True)
+    acked_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
+
+    __table_args__ = (
+        UniqueConstraint("event_id", "agent_name", name="uq_agent_delivery_event_agent"),
+        Index("idx_agent_deliveries_workspace_agent_status", "workspace_id", "agent_name", "status"),
+        Index("idx_agent_deliveries_lease_until", "lease_until"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Materialized state tables (projections maintained by mods)
 # ---------------------------------------------------------------------------
