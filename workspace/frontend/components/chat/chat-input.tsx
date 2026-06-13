@@ -14,6 +14,9 @@ import type { WorkspaceAgent, KnowledgeEntry } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { BookOpen } from 'lucide-react';
 
+const TEXTAREA_MIN_HEIGHT = 112;
+const TEXTAREA_MAX_HEIGHT = 280;
+
 export interface PendingFile {
   file: File;
   preview?: string; // data URL for images
@@ -61,14 +64,22 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const dragCountRef = React.useRef(0);
 
+  const resizeTextarea = React.useCallback((textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(
+      Math.max(textarea.scrollHeight, TEXTAREA_MIN_HEIGHT),
+      TEXTAREA_MAX_HEIGHT,
+    );
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+  }, []);
+
   // Sync message state when draft prop changes (thread switch)
   React.useEffect(() => {
     setMessage(draft ?? '');
-    // Reset textarea height when switching threads
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-  }, [draft]);
+    requestAnimationFrame(() => resizeTextarea(textareaRef.current));
+  }, [draft, resizeTextarea]);
 
   // Auto-focus textarea when focusKey changes (thread opened/switched)
   React.useEffect(() => {
@@ -140,10 +151,8 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
     onDraftChange?.('');
     setPendingFiles([]);
     setShowMentions(false);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.blur();
-    }
+    requestAnimationFrame(() => resizeTextarea(textareaRef.current));
+    textareaRef.current?.blur();
   };
 
   const insertMention = (mentionText: string) => {
@@ -223,8 +232,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
     setMessage(value);
     onDraftChange?.(value);
     const textarea = e.target;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    resizeTextarea(textarea);
 
     // Detect @mention trigger
     const cursorPos = textarea.selectionStart;
@@ -424,7 +432,7 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
           </div>
         )}
 
-        <div className="relative flex-1">
+        <div className="relative min-h-28 flex-1">
           <textarea
             ref={textareaRef}
             value={message}
@@ -434,10 +442,10 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
             onFocus={() => { setIsFocused(true); onFocusChange?.(true); }}
             onBlur={() => { setIsFocused(false); onFocusChange?.(false); }}
             placeholder={agents.length > 1 || knowledge.length > 0 ? '输入消息...（用 @ 提及 Agent 或知识库）' : '输入消息...'}
-            rows={1}
+            rows={4}
             disabled={disabled}
             data-chat-input
-            className="w-full border-0 bg-transparent shadow-none focus:outline-none placeholder:text-muted-foreground h-auto px-0 text-sm py-2 resize-none"
+            className="min-h-28 max-h-[280px] w-full resize-none overflow-hidden border-0 bg-transparent px-0 py-2 text-sm leading-6 shadow-none focus:outline-none placeholder:text-muted-foreground"
           />
           {/* Shortcut hint: always show 'esc' when focused, show 'i' when not focused and empty */}
           {isFocused ? (
