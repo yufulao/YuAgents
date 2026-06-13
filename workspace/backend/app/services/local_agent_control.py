@@ -197,6 +197,8 @@ process.stdout.write(JSON.stringify({
             cwd=str(connector_dir),
             env=env,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=15,
             check=False,
@@ -205,12 +207,20 @@ process.stdout.write(JSON.stringify({
         raise LocalAgentControlError("Node.js not found in PATH") from exc
     except subprocess.TimeoutExpired as exc:
         raise LocalAgentControlError("agent-connector command timed out") from exc
+    except UnicodeDecodeError as exc:
+        raise LocalAgentControlError("agent-connector output could not be decoded as UTF-8") from exc
 
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
     if result.returncode != 0:
-        stderr = (result.stderr or result.stdout or "").strip()
-        raise LocalAgentControlError(stderr or f"agent-connector exited with {result.returncode}")
+        detail = stderr or stdout or f"agent-connector exited with {result.returncode}"
+        raise LocalAgentControlError(detail)
+
+    if not stdout:
+        detail = stderr or "agent-connector returned no output"
+        raise LocalAgentControlError(detail)
 
     try:
-        return json.loads(result.stdout)
+        return json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise LocalAgentControlError(f"Invalid agent-connector output: {result.stdout[:500]}") from exc
+        raise LocalAgentControlError(f"Invalid agent-connector output: {stdout[:500]}") from exc

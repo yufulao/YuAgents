@@ -2,9 +2,13 @@
 """Tests for Web-managed agent configuration APIs."""
 
 import json
+from types import SimpleNamespace
 from datetime import datetime, timezone
 
+import pytest
+
 from app.models import AgentConfig, WorkspaceMember
+from app.services import local_agent_control
 
 
 def _auth(workspace):
@@ -262,6 +266,55 @@ def test_control_managed_agent_keeps_fast_join_online(client, workspace, db, mon
     data = resp.json()["data"]
     assert data["agent"]["agentName"] == "fast-joiner"
     assert data["agent"]["status"] == "online"
+
+
+def test_local_agent_control_uses_utf8_and_rejects_empty_stdout(monkeypatch, tmp_path):
+    connector_dir = tmp_path / "packages" / "agent-connector"
+    (connector_dir / "src").mkdir(parents=True)
+    (connector_dir / "bin").mkdir()
+    (connector_dir / "src" / "index.js").write_text("// connector", encoding="utf-8")
+    (connector_dir / "bin" / "agent-connector.js").write_text("// bin", encoding="utf-8")
+    monkeypatch.setattr(local_agent_control, "_connector_dir", lambda: connector_dir)
+
+    def fake_run(*args, **kwargs):
+        assert kwargs["encoding"] == "utf-8"
+        assert kwargs["errors"] == "replace"
+        return SimpleNamespace(returncode=0, stdout=None, stderr="")
+
+    monkeypatch.setattr(local_agent_control.subprocess, "run", fake_run)
+
+    with pytest.raises(local_agent_control.LocalAgentControlError) as exc:
+        local_agent_control.control_local_agent(
+            action="start",
+            endpoint="http://testserver",
+            workspace={"id": "workspace-id", "slug": "ws", "name": "WS", "token": "token"},
+            agent={"name": "local-runner", "type": "codex", "role": "worker"},
+        )
+
+    assert "returned no output" in str(exc.value)
+
+
+def test_local_agent_control_parses_json_stdout(monkeypatch, tmp_path):
+    connector_dir = tmp_path / "packages" / "agent-connector"
+    (connector_dir / "src").mkdir(parents=True)
+    (connector_dir / "bin").mkdir()
+    (connector_dir / "src" / "index.js").write_text("// connector", encoding="utf-8")
+    (connector_dir / "bin" / "agent-connector.js").write_text("// bin", encoding="utf-8")
+    monkeypatch.setattr(local_agent_control, "_connector_dir", lambda: connector_dir)
+
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=' {"ok": true, "command": "start:local-runner"}\n', stderr="")
+
+    monkeypatch.setattr(local_agent_control.subprocess, "run", fake_run)
+
+    result = local_agent_control.control_local_agent(
+        action="start",
+        endpoint="http://testserver",
+        workspace={"id": "workspace-id", "slug": "ws", "name": "WS", "token": "token"},
+        agent={"name": "local-runner", "type": "codex", "role": "worker"},
+    )
+
+    assert result == {"ok": True, "command": "start:local-runner"}
 
 
 def test_cloud_agent_allows_empty_api_key(client, workspace):
