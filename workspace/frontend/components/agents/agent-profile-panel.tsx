@@ -276,7 +276,7 @@ export function AgentProfilePanel() {
     { icon: <Monitor className="size-3.5" />, label: '类型', value: displayType },
     { icon: <Cpu className="size-3.5" />, label: '模型', value: modelLabel || '—' },
     { icon: <Folder className="size-3.5" />, label: '目录', value: agent.workingDir || '—' },
-    { icon: <UserRoundCog className="size-3.5" />, label: 'Agent ID', value: `openagents:${agent.agentName}`, copyable: true },
+    { icon: <UserRoundCog className="size-3.5" />, label: 'Agent 名称', value: agent.agentName, copyable: true },
   ];
 
   return (

@@ -71,6 +71,13 @@ def _agent_name_from_source(source: str) -> str:
     return source[len("openagents:"):] if source.startswith("openagents:") else source
 
 
+def _is_unknown_source(source: Optional[str]) -> bool:
+    if not source:
+        return True
+    normalized = source.strip()
+    return normalized in {"unknown", "openagents:unknown"}
+
+
 def _normalize_agent_name(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
@@ -80,6 +87,18 @@ def _normalize_agent_name(value: Optional[str]) -> Optional[str]:
     if name.startswith("openagents:"):
         name = name[len("openagents:"):].strip()
     return name or None
+
+
+def _resolve_task_event_source(task: WorkspaceTask, requested_source: Optional[str]) -> str:
+    if not _is_unknown_source(requested_source):
+        return requested_source.strip()
+    if task.claimed_by:
+        return _agent_source(task.claimed_by)
+    if task.assignee:
+        return _agent_source(task.assignee)
+    if task.created_by and not _is_unknown_source(task.created_by):
+        return task.created_by
+    return "openagents:system"
 
 
 def _serialize_task(task: WorkspaceTask) -> dict:
@@ -295,13 +314,14 @@ async def update_workspace_task(
         task.depends_on = body.depends_on
     if body.accepted_by is not None:
         task.accepted_by = body.accepted_by
-    if not task.claimed_by and body.source.startswith("openagents:") and task.status == "in_progress":
-        task.claimed_by = _agent_name_from_source(body.source)
+    event_source = _resolve_task_event_source(task, body.source)
+    if not task.claimed_by and event_source.startswith("openagents:") and task.status == "in_progress":
+        task.claimed_by = _agent_name_from_source(event_source)
         task.claimed_at = now
     task.updated_at = now
 
     action = "completed" if task.status == "done" else "updated"
     db.flush()
-    await _emit_task_event(db, workspace, task, action, body.source, x_workspace_token)
+    await _emit_task_event(db, workspace, task, action, event_source, x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})

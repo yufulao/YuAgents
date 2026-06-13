@@ -136,6 +136,54 @@ def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
     assert deliveries[0]["event"]["metadata"]["target_agents"] == ["agent-beta"]
 
 
+def test_workspace_task_update_with_unknown_source_uses_claimed_agent(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    beta_join = client.post("/v1/join", json={
+        "agent_name": "agent-beta",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert beta_join.status_code == 200
+    beta_session = beta_join.json()["data"]["session_id"]
+
+    created = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "QA复核：全模块性能、规范、依赖边界",
+        "assignee": "agent-beta",
+        "source": "openagents:agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 200
+    task = created.json()["data"]["task"]
+
+    claimed = client.post(f"/v1/workspace-tasks/{task['id']}/claim", json={
+        "network": workspace["id"],
+        "agent_name": "agent-beta",
+        "session_id": beta_session,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert claimed.status_code == 200
+
+    completed = client.patch(f"/v1/workspace-tasks/{task['id']}", json={
+        "network": workspace["id"],
+        "status": "done",
+        "result": "All modules passed.",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert completed.status_code == 200
+
+    events = client.get("/v1/events", params={
+        "network": workspace["id"],
+        "type": "workspace.message.posted",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert events.status_code == 200
+    completed_events = [
+        event for event in events.json()["data"]["events"]
+        if event["payload"].get("message_type") == "task"
+        and "Workspace task completed:" in event["payload"].get("content", "")
+    ]
+    assert completed_events[-1]["source"] == "openagents:agent-beta"
+    assert completed_events[-1]["source"] != "openagents:unknown"
+
+
 def test_workspace_task_normalizes_openagents_prefixed_chinese_assignee(client, workspace):
     channel_name = workspace["channel"]["name"]
     agent_name = "博丽灵梦"
