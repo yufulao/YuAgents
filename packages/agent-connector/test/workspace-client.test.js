@@ -201,6 +201,31 @@ describe('WorkspaceClient', () => {
       assert.ok(capturedPath.includes('channel=private-room'));
       assert.ok(capturedPath.includes('member=bary-bot'));
       assert.ok(capturedPath.includes('session_id=sess-history'));
+      });
+  });
+
+  it('getAgentContext fetches runtime context with current session proof', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    client._get = async (path) => {
+      capturedPath = path;
+      return { data: { self: { agent_name: 'bary-bot' }, agents: [] } };
+    };
+    const result = await client.getAgentContext('ws-1', 'bary-bot', 'tok', {
+      channelName: 'workroom',
+      sessionId: 'sess-context',
+      currentEventId: 'event-current',
+      recentLimit: 12,
+      ambientLimit: 7,
     });
+    assert.ok(capturedPath.startsWith('/v1/agent-context?'));
+    assert.ok(capturedPath.includes('network=ws-1'));
+    assert.ok(capturedPath.includes('agent=bary-bot'));
+    assert.ok(capturedPath.includes('session_id=sess-context'));
+    assert.ok(capturedPath.includes('channel=workroom'));
+    assert.ok(capturedPath.includes('current_event_id=event-current'));
+    assert.ok(capturedPath.includes('recent_limit=12'));
+    assert.ok(capturedPath.includes('ambient_limit=7'));
+    assert.equal(result.self.agent_name, 'bary-bot');
   });
 });

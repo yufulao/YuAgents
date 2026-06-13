@@ -26,7 +26,7 @@ from app.channel_visibility import (
     visible_channel_names,
 )
 from app.database import get_db
-from app.models import AgentDelivery, EventRecord, Workspace, WorkspaceMember
+from app.models import AgentDelivery, Channel, ChannelMember, EventRecord, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _verify_workspace_access, _workspace_filter
@@ -109,6 +109,25 @@ def _delivery_event_payload(delivery: AgentDelivery, event: EventRecord) -> dict
             "visibility": event.visibility,
         },
     }
+
+
+def _event_context_payload(event: EventRecord) -> dict:
+    return {
+        "id": event.id,
+        "type": event.type,
+        "source": event.source,
+        "target": event.target,
+        "payload": event.payload or {},
+        "metadata": event.metadata_ or {},
+        "timestamp": event.timestamp,
+        "visibility": event.visibility,
+    }
+
+
+def _delivery_context_payload(delivery: AgentDelivery, event: EventRecord) -> dict:
+    data = _delivery_event_payload(delivery, event)
+    data["event"] = _event_context_payload(event)
+    return data
 
 
 @router.post("/events")
@@ -327,6 +346,153 @@ def ack_delivery(
     delivery.updated_at = now
     db.commit()
     return success_response({"id": delivery.id, "status": delivery.status})
+
+
+@router.get("/agent-context")
+def get_agent_context(
+    network: str = Query(..., description="Network (workspace) ID or slug"),
+    agent: str = Query(..., description="Agent handle"),
+    session_id: str = Query(..., description="Current session id from /v1/join"),
+    channel: Optional[str] = Query(None, description="Current channel name"),
+    current_event_id: Optional[str] = Query(None, description="Current event to exclude from recaps"),
+    recent_limit: int = Query(20, ge=1, le=50),
+    ambient_limit: int = Query(20, ge=0, le=50),
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Return a compact, authoritative runtime context pack for an agent.
+
+    This endpoint is intentionally read-only: ambient delivery rows are used as
+    passive context but are not leased or acked, so they never become work.
+    """
+    workspace = db.execute(
+        select(Workspace).where(_workspace_filter(network))
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
+    if not _current_agent_session(db, workspace, agent, session_id):
+        return json_response(ResponseCode.UNAUTHORIZED, "session_revoked: current agent session required")
+
+    channel_row = None
+    channel_members = set()
+    if channel:
+        channel_row = db.execute(
+            select(Channel).where(
+                Channel.workspace_id == workspace.id,
+                Channel.name == channel,
+                Channel.status != "deleted",
+            )
+        ).scalar_one_or_none()
+        if channel_row:
+            channel_members = {
+                row.agent_name
+                for row in db.execute(
+                    select(ChannelMember.agent_name).where(ChannelMember.channel_id == channel_row.id)
+                ).all()
+            }
+
+    members = db.execute(
+        select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
+    ).scalars().all()
+    member_by_name = {m.agent_name: m for m in members}
+    self_member = member_by_name.get(agent)
+
+    def _member_payload(m: WorkspaceMember) -> dict:
+        return {
+            "agent_name": m.agent_name,
+            "role": m.role or "member",
+            "description": m.description or "",
+            "agent_type": m.agent_type or "",
+            "status": m.status or "offline",
+            "in_channel": (m.agent_name in channel_members) if channel_row else None,
+        }
+
+    role_order = {"master": 0, "architect": 1, "lead": 1, "reviewer": 2, "qa": 3, "member": 4}
+    agents = sorted(
+        [_member_payload(m) for m in members],
+        key=lambda x: (role_order.get((x.get("role") or "member").lower(), 10), x.get("agent_name") or ""),
+    )
+
+    recent_messages = []
+    if channel:
+        query = select(EventRecord).where(
+            EventRecord.network_id == workspace.id,
+            EventRecord.target == f"channel/{channel}",
+            EventRecord.type.startswith("workspace.message"),
+        )
+        query = apply_event_channel_visibility(
+            query,
+            db,
+            workspace,
+            member=agent,
+            session_id=session_id,
+            human_email=human_email_from_authorization(authorization),
+            include_public=False,
+        )
+        if current_event_id:
+            query = query.where(EventRecord.id != current_event_id)
+        rows = db.execute(
+            query.order_by(EventRecord.timestamp.desc(), EventRecord.id.desc()).limit(recent_limit)
+        ).scalars().all()
+        recent_messages = [_event_context_payload(e) for e in reversed(rows)]
+
+    ambient_messages = []
+    if ambient_limit > 0:
+        ambient_query = (
+            select(AgentDelivery, EventRecord)
+            .join(EventRecord, EventRecord.id == AgentDelivery.event_id)
+            .where(
+                AgentDelivery.workspace_id == workspace.id,
+                AgentDelivery.agent_name == agent,
+                AgentDelivery.delivery_kind == "ambient",
+                AgentDelivery.status != "acked",
+            )
+        )
+        if channel:
+            ambient_query = ambient_query.where(AgentDelivery.channel_name == channel)
+        if current_event_id:
+            ambient_query = ambient_query.where(AgentDelivery.event_id != current_event_id)
+        rows = db.execute(
+            ambient_query
+            .order_by(AgentDelivery.created_at.desc(), EventRecord.timestamp.desc(), AgentDelivery.id.desc())
+            .limit(ambient_limit)
+        ).all()
+        ambient_messages = [_delivery_context_payload(d, e) for d, e in reversed(rows)]
+
+    return success_response({
+        "workspace": {
+            "id": str(workspace.id),
+            "slug": workspace.slug,
+            "name": workspace.name,
+        },
+        "channel": {
+            "name": channel,
+            "title": channel_row.title if channel_row else channel,
+            "visibility": channel_row.visibility if channel_row else None,
+            "master_agent": channel_row.master_agent if channel_row else None,
+        },
+        "self": _member_payload(self_member) if self_member else {
+            "agent_name": agent,
+            "role": "member",
+            "description": "",
+            "agent_type": "",
+            "status": "online",
+            "in_channel": None,
+        },
+        "agents": agents,
+        "recent_messages": recent_messages,
+        "ambient_messages": ambient_messages,
+        "runtime_rules": [
+            "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
+            "Do not flatten roles. Use each agent's role and description when deciding delegation.",
+            "Architect/master agents should split independent work and assign owners instead of doing all implementation themselves.",
+            "QA/reviewer agents should verify, reproduce, and report evidence; implementation agents should own code changes.",
+            "If another agent must act, @mention that agent explicitly and include a concrete handoff.",
+        ],
+    })
 
 
 # ---------------------------------------------------------------------------

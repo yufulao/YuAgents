@@ -184,7 +184,7 @@ class CodexAdapter extends BaseAdapter {
     return null;
   }
 
-  _buildSystemContext(channelName) {
+  _buildSystemContext(channelName, runtimeContextPrompt = '') {
     const base = buildCodexSystemPrompt({
       agentName: this.agentName,
       workspaceId: this.workspaceId,
@@ -194,8 +194,9 @@ class CodexAdapter extends BaseAdapter {
       mode: this._mode,
       disabledModules: this.disabledModules,
     });
+    const withRuntime = runtimeContextPrompt ? `${base}\n\n${runtimeContextPrompt}` : base;
     const skillsSection = this._buildInstalledSkillsSection();
-    return skillsSection ? `${base}\n\n${skillsSection}` : base;
+    return skillsSection ? `${withRuntime}\n\n${skillsSection}` : withRuntime;
   }
 
   /**
@@ -281,11 +282,15 @@ class CodexAdapter extends BaseAdapter {
 
     await this._autoTitleChannel(msgChannel, content);
     await this.sendStatus(msgChannel, 'thinking...');
+    const runtimeContextPrompt = await this._buildRuntimeContextPrompt(
+      msgChannel,
+      msg.id || msg.messageId,
+    );
 
     if (this._useCliMode) {
-      await this._handleViaSubprocess(content, msgChannel);
+      await this._handleViaSubprocess(content, msgChannel, runtimeContextPrompt);
     } else if (this._directMode) {
-      await this._handleViaDirectApi(content, msgChannel);
+      await this._handleViaDirectApi(content, msgChannel, runtimeContextPrompt);
     } else {
       await this.sendError(msgChannel, 'codex CLI not found. Install with: npm install -g @openai/codex');
     }
@@ -295,7 +300,7 @@ class CodexAdapter extends BaseAdapter {
   // CLI subprocess mode (primary)
   // ------------------------------------------------------------------
 
-  async _handleViaSubprocess(content, msgChannel) {
+  async _handleViaSubprocess(content, msgChannel, runtimeContextPrompt = '') {
     const env = { ...(this.agentEnv || process.env) };
     dropEmptyCodexEnv(env);
 
@@ -309,7 +314,7 @@ class CodexAdapter extends BaseAdapter {
     if (this._directApiKey) env.OPENAI_API_KEY = this._directApiKey;
     if (this._directBaseUrl) env.OPENAI_BASE_URL = this._directBaseUrl;
 
-    const context = this._buildSystemContext(msgChannel);
+    const context = this._buildSystemContext(msgChannel, runtimeContextPrompt);
     const fullPrompt = `${context}\n\n---\n\nUser message:\n${content}`;
 
     // Run up to 2 attempts: first with resume, then fresh if stale
@@ -493,9 +498,9 @@ class CodexAdapter extends BaseAdapter {
   // Direct HTTP mode (fallback when CLI not available)
   // ------------------------------------------------------------------
 
-  async _handleViaDirectApi(content, msgChannel) {
+  async _handleViaDirectApi(content, msgChannel, runtimeContextPrompt = '') {
     try {
-      const responseText = await this._callCompletionApi(content, msgChannel);
+      const responseText = await this._callCompletionApi(content, msgChannel, runtimeContextPrompt);
       if (responseText) {
         this._conversationHistory.push({ role: 'user', content });
         this._conversationHistory.push({ role: 'assistant', content: responseText });
@@ -512,8 +517,8 @@ class CodexAdapter extends BaseAdapter {
     }
   }
 
-  async _callCompletionApi(userMessage, channel) {
-    const systemPrompt = this._buildSystemContext(channel);
+  async _callCompletionApi(userMessage, channel, runtimeContextPrompt = '') {
+    const systemPrompt = this._buildSystemContext(channel, runtimeContextPrompt);
     const messages = [{ role: 'system', content: systemPrompt }];
     messages.push(...this._conversationHistory);
     messages.push({ role: 'user', content: userMessage });

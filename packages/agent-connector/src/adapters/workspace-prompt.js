@@ -81,8 +81,9 @@ function buildWorkspaceIdentity(agentName, workspaceId, channelName, mode = 'exe
 function buildCollaborationPrompt() {
   return (
     '\n## Multi-Agent Collaboration\n' +
-    'To delegate work to another agent, @mention them in your response. ' +
-    'Only @mentioned agents will receive the message.\n\n' +
+    'Channel messages are visible to channel members as context. To wake or ' +
+    'delegate work to another agent, @mention them in your response. ' +
+    '@mentions change attention and feedback, not basic channel visibility.\n\n' +
     'IMPORTANT: Do NOT @mention an agent just to say thanks or acknowledge ' +
     '— that wakes them up for nothing. Only @mention when you need them ' +
     'to do work. When the task is complete, report results to the user ' +
@@ -90,6 +91,80 @@ function buildCollaborationPrompt() {
     'To discover available agents, use the workspace discover endpoint ' +
     'or the workspace_get_agents tool (if available).\n'
   );
+}
+
+function _truncate(text, max) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!value) return '';
+  return value.length > max ? value.slice(0, Math.max(0, max - 1)) + '…' : value;
+}
+
+function _messageLine(event) {
+  const payload = event && event.payload ? event.payload : {};
+  const metadata = event && event.metadata ? event.metadata : {};
+  const source = (event && event.source) || 'unknown';
+  const kind = payload.message_type || metadata.message_type || 'chat';
+  const content = _truncate(payload.content || '', 500);
+  if (!content) return '';
+  return `- [${kind}] ${source}: ${content}`;
+}
+
+/**
+ * Format the server-provided runtime context pack. The backend is the source
+ * of truth for roles, channel visibility, recent messages, and passive
+ * ambient deliveries; this section keeps every fresh CLI turn aligned even
+ * when the model's prior chat/thread memory is stale.
+ */
+function buildRuntimeContextPrompt(context) {
+  if (!context || typeof context !== 'object') return '';
+  const self = context.self || {};
+  const channel = context.channel || {};
+  const agents = Array.isArray(context.agents) ? context.agents : [];
+  const recent = Array.isArray(context.recent_messages) ? context.recent_messages : [];
+  const ambient = Array.isArray(context.ambient_messages) ? context.ambient_messages : [];
+  const rules = Array.isArray(context.runtime_rules) ? context.runtime_rules : [];
+
+  const parts = [];
+  parts.push('## Runtime Context Pack (authoritative)');
+  parts.push(
+    `- You are: ${self.agent_name || 'unknown'} | role=${self.role || 'member'} | type=${self.agent_type || 'agent'} | status=${self.status || 'unknown'}`
+  );
+  if (self.description) parts.push(`- Your role description: ${_truncate(self.description, 700)}`);
+  parts.push(`- Current channel: ${channel.name || 'general'}${channel.title ? ` (${channel.title})` : ''}`);
+  if (channel.master_agent) parts.push(`- Channel master/lead: ${channel.master_agent}`);
+
+  if (agents.length) {
+    parts.push('\n### Team Roster');
+    for (const agent of agents.slice(0, 20)) {
+      const inChannel = agent.in_channel === true ? 'in-channel' : agent.in_channel === false ? 'not-in-channel' : 'workspace';
+      const desc = agent.description ? ` — ${_truncate(agent.description, 220)}` : '';
+      parts.push(`- ${agent.agent_name}: role=${agent.role || 'member'}, type=${agent.agent_type || 'agent'}, ${inChannel}, status=${agent.status || 'unknown'}${desc}`);
+    }
+  }
+
+  if (recent.length) {
+    parts.push('\n### Recent Channel Context');
+    for (const event of recent.slice(-15)) {
+      const line = _messageLine(event);
+      if (line) parts.push(line);
+    }
+  }
+
+  if (ambient.length) {
+    parts.push('\n### Passive Ambient Messages');
+    parts.push('You received these as channel context. Do not answer them unless the current request makes them relevant.');
+    for (const delivery of ambient.slice(-10)) {
+      const line = _messageLine(delivery.event || {});
+      if (line) parts.push(line);
+    }
+  }
+
+  if (rules.length) {
+    parts.push('\n### Runtime Rules');
+    for (const rule of rules.slice(0, 10)) parts.push(`- ${_truncate(rule, 240)}`);
+  }
+
+  return parts.join('\n');
 }
 
 /**
@@ -783,6 +858,7 @@ module.exports = {
   buildWorkspaceIdentity,
   buildBrowserDirective,
   buildCollaborationPrompt,
+  buildRuntimeContextPrompt,
   buildModePrompt,
   buildGuardrails,
   buildApiSkillsPrompt,

@@ -895,6 +895,29 @@ class BaseAdapter {
     }
     return this._browserEnabledCache;
   }
+
+  async _buildRuntimeContextPrompt(channelName, currentEventId) {
+    if (!this._sessionId) return '';
+    try {
+      const context = await this.client.getAgentContext(
+        this.workspaceId,
+        this.agentName,
+        this.token,
+        {
+          channelName,
+          sessionId: this._sessionId,
+          currentEventId,
+          recentLimit: 20,
+          ambientLimit: 20,
+        },
+      );
+      const { buildRuntimeContextPrompt } = require('./workspace-prompt');
+      return buildRuntimeContextPrompt(context);
+    } catch (e) {
+      this._log(`Runtime context pack unavailable: ${e && e.message ? e.message : e}`);
+      return '';
+    }
+  }
 }
 
 // ------------------------------------------------------------------

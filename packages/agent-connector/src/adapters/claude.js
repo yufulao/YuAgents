@@ -391,7 +391,7 @@ class ClaudeAdapter extends BaseAdapter {
     return null;
   }
 
-  _buildClaudeCmd(prompt, channelName, { skipResume = false, browserEnabled = false } = {}) {
+  _buildClaudeCmd(prompt, channelName, { skipResume = false, browserEnabled = false, runtimeContextPrompt = '' } = {}) {
     const claudeBin = this._findClaudeBinary();
     if (!claudeBin) {
       throw new Error('claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash');
@@ -404,6 +404,9 @@ class ClaudeAdapter extends BaseAdapter {
       mode: this._mode,
       browserEnabled,
     });
+    if (runtimeContextPrompt) {
+      systemPrompt += '\n\n' + runtimeContextPrompt;
+    }
 
     // In skills mode, replace MCP tool references with curl-based instructions
     if (this.toolMode === 'skills') {
@@ -950,6 +953,13 @@ class ClaudeAdapter extends BaseAdapter {
     }
 
     await this.sendStatus(msgChannel, 'thinking...');
+    const runtimeContextPrompt = await this._buildRuntimeContextPrompt(
+      msgChannel,
+      msg.id || msg.messageId,
+    );
+    const messageWithRuntimeContext = runtimeContextPrompt
+      ? `${runtimeContextPrompt}\n\n---\n\nCurrent user message:\n${content}`
+      : content;
 
     // ── Persistent process fast-path ──
     // If we have a living persistent process for this channel, send via stdin
@@ -959,7 +969,7 @@ class ClaudeAdapter extends BaseAdapter {
       this._log(`Reusing persistent process for ${msgChannel}`);
       this._resetIdleTimer(msgChannel);
       existingPP.msgChannel = msgChannel;
-      const result = await this._sendToPersistentProc(existingPP, content);
+      const result = await this._sendToPersistentProc(existingPP, messageWithRuntimeContext);
       if (result.resultEvent) {
         const fullResponse = existingPP.lastResponseText.join('\n').trim();
         if (fullResponse) {
@@ -1051,6 +1061,7 @@ class ClaudeAdapter extends BaseAdapter {
         const built = this._buildClaudeCmd(effectiveContent, msgChannel, {
           skipResume: attempt > 0,
           browserEnabled,
+          runtimeContextPrompt,
         });
         cmd = built.cmd;
         mcpConfigFile = built.mcpConfigFile;

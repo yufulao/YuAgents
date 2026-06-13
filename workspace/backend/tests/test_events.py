@@ -468,3 +468,87 @@ class TestAgentDeliveries:
         assert len(ambient_deliveries) == 1
         assert ambient_deliveries[0]["delivery_kind"] == "ambient"
         assert ambient_deliveries[0]["event"]["id"] == event_id
+
+    def test_agent_context_pack_includes_roles_recent_and_unleased_ambient(self, client, workspace, db):
+        alpha_join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        beta_join = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert alpha_join.status_code == 200
+        assert beta_join.status_code == 200
+        beta_session = beta_join.json()["data"]["session_id"]
+
+        # Give beta a role description so the context pack can preserve role
+        # boundaries instead of making every agent look interchangeable.
+        patch = client.patch(
+            f"/v1/workspaces/{workspace['id']}/members/agent-beta",
+            json={"role": "qa", "description": "QA agent: reproduce bugs and verify fixes."},
+            headers={"X-Workspace-Token": workspace["token"]},
+        )
+        assert patch.status_code == 200
+
+        channel_name = workspace["channel"]["name"]
+        join_channel = client.post("/v1/events", json={
+            "type": "network.channel.join",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"channel": channel_name, "agent_name": "agent-beta"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert join_channel.status_code == 200
+
+        sent = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"content": "please handle and keep beta in context", "message_type": "chat"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert sent.status_code == 200
+        event_id = sent.json()["data"]["id"]
+
+        db.expire_all()
+        beta_delivery = db.query(AgentDelivery).filter_by(
+            event_id=event_id,
+            agent_name="agent-beta",
+        ).one()
+        assert beta_delivery.delivery_kind == "ambient"
+        assert beta_delivery.status == "pending"
+
+        context = client.get("/v1/agent-context", params={
+            "network": workspace["id"],
+            "agent": "agent-beta",
+            "session_id": beta_session,
+            "channel": channel_name,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert context.status_code == 200
+        data = context.json()["data"]
+        assert data["self"]["agent_name"] == "agent-beta"
+        assert data["self"]["role"] == "qa"
+        assert "verify fixes" in data["self"]["description"]
+        assert any(a["agent_name"] == "agent-alpha" and a["role"] == "master" for a in data["agents"])
+        assert any(m["id"] == event_id for m in data["recent_messages"])
+        assert len(data["ambient_messages"]) == 1
+        assert data["ambient_messages"][0]["id"] == beta_delivery.id
+        assert data["ambient_messages"][0]["event"]["id"] == event_id
+        assert any("role" in rule.lower() for rule in data["runtime_rules"])
+
+        db.expire_all()
+        unchanged = db.query(AgentDelivery).filter_by(id=beta_delivery.id).one()
+        assert unchanged.status == "pending"
+        assert unchanged.lease_owner_session_id is None
+
+    def test_agent_context_pack_requires_current_session(self, client, workspace):
+        resp = client.get("/v1/agent-context", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": "stale",
+            "channel": workspace["channel"]["name"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 401

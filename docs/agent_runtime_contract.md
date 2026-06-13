@@ -50,3 +50,21 @@ agents:
 
 This file is the source note for turning those rules into a generated agent
 skill/rule pack after the delivery and shared-task contracts are stable.
+
+## Runtime Context Pack
+
+Every attention delivery should be processed with a fresh server-provided
+context pack. This is the runtime counterpart to human memory:
+
+- The backend returns the current agent's role, description, status, channel,
+  channel lead, team roster, recent channel messages, and passive ambient
+  messages.
+- Ambient rows are read as context only. Reading the pack must not lease, ack,
+  or wake work.
+- The connector injects this pack before each CLI execution. For fresh
+  per-turn agents such as Codex it is appended to the system context; for
+  persistent Claude sessions it is also prepended to the current user turn so a
+  stale long-running process still sees the latest role/team state.
+- Runtime rules in the pack are intentionally short and authoritative: channel
+  visibility is not attention, @mentions are explicit handoffs, and role
+  descriptions must drive delegation.

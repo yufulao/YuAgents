@@ -251,6 +251,32 @@ class WorkspaceClient {
   }
 
   /**
+   * Fetch the compact runtime context pack for an agent before handling a
+   * message. This is a read-only recap: ambient deliveries are included as
+   * passive context but are not leased or acked by this call.
+   */
+  async getAgentContext(workspaceId, agentName, token, {
+    channelName,
+    sessionId,
+    currentEventId,
+    recentLimit = 20,
+    ambientLimit = 20,
+  } = {}) {
+    if (!sessionId) return null;
+    const params = new URLSearchParams({
+      network: workspaceId,
+      agent: agentName,
+      session_id: sessionId,
+      recent_limit: String(recentLimit),
+      ambient_limit: String(ambientLimit),
+    });
+    if (channelName) params.set('channel', channelName);
+    if (currentEventId) params.set('current_event_id', currentEventId);
+    const data = await this._get(`/v1/agent-context?${params}`, this._wsHeaders(token));
+    return data.data || data || null;
+  }
+
+  /**
    * Fetch the latest workspace.message.posted event id (head cursor).
    * Used by adapters to skip past existing events on join in O(1) instead
    * of paginating from the start. Returns null if the workspace is empty
