@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   Check,
   Copy,
@@ -27,9 +28,10 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function AgentProfilePanel() {
-  const { selectedAgentName, setSelectedAgentName, isMobile, setViewMode } = useLayout();
+  const { selectedAgentName, setSelectedAgentName, isMobile, setViewMode, agentPanelWidth, setAgentPanelWidth } = useLayout();
   const { agents, refreshWorkspace, createSession } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   const agent = agents.find((item) => item.agentName === selectedAgentName);
   const isDisabled = agent?.lifecycleState === 'stopped' || agent?.status === 'stopped';
@@ -216,6 +218,49 @@ export function AgentProfilePanel() {
     }
   }, [agent, isDisabled, refreshWorkspace]);
 
+  const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (isMobile) return;
+    event.preventDefault();
+
+    const right = panelRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+    const body = document.body;
+    const previousCursor = body.style.cursor;
+    const previousUserSelect = body.style.userSelect;
+
+    body.style.cursor = 'col-resize';
+    body.style.userSelect = 'none';
+
+    const updateWidth = (clientX: number) => {
+      setAgentPanelWidth(right - clientX);
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      body.style.cursor = previousCursor;
+      body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handlePointerMove);
+    };
+
+    updateWidth(event.clientX);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  }, [isMobile, setAgentPanelWidth]);
+
+  const handleResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isMobile) return;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setAgentPanelWidth(agentPanelWidth + 16);
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setAgentPanelWidth(agentPanelWidth - 16);
+    }
+  }, [agentPanelWidth, isMobile, setAgentPanelWidth]);
+
   if (!agent) return null;
 
   const isOnline = agent.status === 'online';
@@ -241,10 +286,28 @@ export function AgentProfilePanel() {
         onClick={() => setSelectedAgentName(null)}
       />
 
-      <div className={cn(
-        'absolute bottom-0 right-0 top-0 z-20 flex flex-col border-l bg-background shadow-xl animate-in slide-in-from-right duration-200',
-        isMobile ? 'left-0 w-full' : 'w-[320px]',
-      )}>
+      <div
+        ref={panelRef}
+        style={isMobile ? undefined : { width: 'var(--agent-panel-width)' }}
+        className={cn(
+          'absolute bottom-0 right-0 top-0 z-20 flex flex-col border-l bg-background shadow-xl animate-in slide-in-from-right duration-200',
+          isMobile ? 'left-0 w-full' : '',
+        )}
+      >
+        {!isMobile && (
+          <div
+            role="separator"
+            aria-label="调整右侧边栏宽度"
+            aria-orientation="vertical"
+            aria-valuenow={agentPanelWidth}
+            tabIndex={0}
+            onPointerDown={handleResizePointerDown}
+            onKeyDown={handleResizeKeyDown}
+            className="group absolute left-0 top-0 bottom-0 z-30 hidden w-2 -translate-x-1/2 cursor-col-resize items-stretch justify-center outline-none hover:bg-primary/10 focus-visible:bg-primary/10 lg:flex"
+          >
+            <span className="my-2 w-px rounded-full bg-border opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </div>
+        )}
         <div className="flex items-center justify-end px-3 pt-3">
           <button
             onClick={() => setSelectedAgentName(null)}

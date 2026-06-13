@@ -16,10 +16,31 @@ export type ViewMode = 'threads' | 'files' | 'knowledge' | 'browser' | 'tasks' |
 /** On mobile, which pane is showing: the list or the detail */
 export type MobilePane = 'list' | 'detail';
 
+const DEFAULT_SIDEBAR_WIDTH = 240;
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 360;
+const DEFAULT_AGENT_PANEL_WIDTH = 320;
+const MIN_AGENT_PANEL_WIDTH = 280;
+const MAX_AGENT_PANEL_WIDTH = 520;
+
+function clampWidth(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function readStoredWidth(key: string, fallback: number, min: number, max: number) {
+  if (typeof window === 'undefined') return fallback;
+  const stored = Number(window.localStorage.getItem(key));
+  return Number.isFinite(stored) ? clampWidth(stored, min, max) : fallback;
+}
+
 interface LayoutState {
   isMobile: boolean;
   isSidebarOpen: boolean;
   sidebarToggle: () => void;
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
+  agentPanelWidth: number;
+  setAgentPanelWidth: (width: number) => void;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   selectedAgentName: string | null;
@@ -47,6 +68,8 @@ const LayoutContext = createContext<LayoutState | undefined>(undefined);
 export function LayoutProvider({ children }: { children: ReactNode }) {
   const isMobile = useIsMobile();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidthState] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [agentPanelWidth, setAgentPanelWidthState] = useState(DEFAULT_AGENT_PANEL_WIDTH);
   const [viewMode, setViewMode] = useState<ViewMode>('threads');
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>('list');
@@ -63,16 +86,34 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
 
   const [showBrowserPreview, setShowBrowserPreview] = useState(false);
 
+  useEffect(() => {
+    setSidebarWidthState(readStoredWidth('x-sidebar-width', DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH));
+    setAgentPanelWidthState(readStoredWidth('x-agent-panel-width', DEFAULT_AGENT_PANEL_WIDTH, MIN_AGENT_PANEL_WIDTH, MAX_AGENT_PANEL_WIDTH));
+  }, []);
+
   const isAgentPanelOpen = selectedAgentName !== null;
   const openMobileDetail = () => setMobilePane('detail');
   const openMobileList = () => setMobilePane('list');
   const toggleDetailExpanded = () => setIsDetailExpanded((v) => !v);
 
+  const setSidebarWidth = (width: number) => {
+    const next = clampWidth(width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+    setSidebarWidthState(next);
+    window.localStorage.setItem('x-sidebar-width', String(next));
+  };
+
+  const setAgentPanelWidth = (width: number) => {
+    const next = clampWidth(width, MIN_AGENT_PANEL_WIDTH, MAX_AGENT_PANEL_WIDTH);
+    setAgentPanelWidthState(next);
+    window.localStorage.setItem('x-agent-panel-width', String(next));
+  };
+
   const cssVariables = useMemo(() => ({
-    '--sidebar-width': '240px',
+    '--sidebar-width': `${sidebarWidth}px`,
     '--sidebar-width-collapsed': '52px',
+    '--agent-panel-width': `${agentPanelWidth}px`,
     '--header-height-mobile': '60px',
-  } as React.CSSProperties), []);
+  } as React.CSSProperties), [agentPanelWidth, sidebarWidth]);
 
   const sidebarToggle = () => setIsSidebarOpen((open) => !open);
 
@@ -99,6 +140,10 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       isMobile,
       isSidebarOpen,
       sidebarToggle,
+      sidebarWidth,
+      setSidebarWidth,
+      agentPanelWidth,
+      setAgentPanelWidth,
       viewMode,
       setViewMode,
       selectedAgentName,
