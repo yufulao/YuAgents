@@ -19,6 +19,9 @@ export type MobilePane = 'list' | 'detail';
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 360;
+const DEFAULT_LIST_PANE_WIDTH = 360;
+const MIN_LIST_PANE_WIDTH = 260;
+const MAX_LIST_PANE_WIDTH = 560;
 const DEFAULT_AGENT_PANEL_WIDTH = 320;
 const MIN_AGENT_PANEL_WIDTH = 280;
 const MAX_AGENT_PANEL_WIDTH = 520;
@@ -39,6 +42,10 @@ interface LayoutState {
   sidebarToggle: () => void;
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
+  listPaneWidth: number;
+  setListPaneWidth: (width: number) => void;
+  isListPaneCollapsed: boolean;
+  toggleListPaneCollapsed: () => void;
   agentPanelWidth: number;
   setAgentPanelWidth: (width: number) => void;
   viewMode: ViewMode;
@@ -69,6 +76,8 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
   const isMobile = useIsMobile();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidthState] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [listPaneWidth, setListPaneWidthState] = useState(DEFAULT_LIST_PANE_WIDTH);
+  const [isListPaneCollapsed, setIsListPaneCollapsed] = useState(false);
   const [agentPanelWidth, setAgentPanelWidthState] = useState(DEFAULT_AGENT_PANEL_WIDTH);
   const [viewMode, setViewMode] = useState<ViewMode>('threads');
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
@@ -88,6 +97,8 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setSidebarWidthState(readStoredWidth('x-sidebar-width', DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH));
+    setListPaneWidthState(readStoredWidth('x-list-pane-width', DEFAULT_LIST_PANE_WIDTH, MIN_LIST_PANE_WIDTH, MAX_LIST_PANE_WIDTH));
+    setIsListPaneCollapsed(window.localStorage.getItem('x-list-pane-collapsed') === '1');
     setAgentPanelWidthState(readStoredWidth('x-agent-panel-width', DEFAULT_AGENT_PANEL_WIDTH, MIN_AGENT_PANEL_WIDTH, MAX_AGENT_PANEL_WIDTH));
   }, []);
 
@@ -100,6 +111,20 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     const next = clampWidth(width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
     setSidebarWidthState(next);
     window.localStorage.setItem('x-sidebar-width', String(next));
+  };
+
+  const setListPaneWidth = (width: number) => {
+    const next = clampWidth(width, MIN_LIST_PANE_WIDTH, MAX_LIST_PANE_WIDTH);
+    setListPaneWidthState(next);
+    window.localStorage.setItem('x-list-pane-width', String(next));
+  };
+
+  const toggleListPaneCollapsed = () => {
+    setIsListPaneCollapsed((value) => {
+      const next = !value;
+      window.localStorage.setItem('x-list-pane-collapsed', next ? '1' : '0');
+      return next;
+    });
   };
 
   const setAgentPanelWidth = (width: number) => {
@@ -142,6 +167,10 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       sidebarToggle,
       sidebarWidth,
       setSidebarWidth,
+      listPaneWidth,
+      setListPaneWidth,
+      isListPaneCollapsed,
+      toggleListPaneCollapsed,
       agentPanelWidth,
       setAgentPanelWidth,
       viewMode,

@@ -1,5 +1,8 @@
 'use client';
 
+import { useCallback, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Sidebar } from './sidebar';
 import { MobileHeader } from './mobile-header';
 import { useLayout } from './layout-context';
@@ -18,6 +21,7 @@ import { InboxView } from '@/components/inbox/inbox-view';
 import { KnowledgeView } from '@/components/knowledge/knowledge-view';
 import { useWorkspace } from '@/lib/workspace-context';
 import { EmptyState } from '@/components/chat/empty-state';
+import { cn } from '@/lib/utils';
 
 function WorkspaceLoadingScreen() {
   return (
@@ -75,9 +79,69 @@ function WorkspaceErrorScreen({ error }: { error: string }) {
 }
 
 export function Wrapper() {
-  const { isMobile, viewMode, isAgentPanelOpen, isSidebarOpen, isDetailExpanded, mobilePane, splitBrowser, showBrowserPreview } = useLayout();
+  const {
+    isMobile,
+    viewMode,
+    isAgentPanelOpen,
+    isSidebarOpen,
+    isDetailExpanded,
+    mobilePane,
+    splitBrowser,
+    showBrowserPreview,
+    listPaneWidth,
+    setListPaneWidth,
+    isListPaneCollapsed,
+    toggleListPaneCollapsed,
+  } = useLayout();
   const { monitorMode, agents, loading, error } = useWorkspace();
+  const listPaneRef = useRef<HTMLDivElement | null>(null);
+  const [isListPaneResizing, setIsListPaneResizing] = useState(false);
   const hasAgents = agents.length > 0;
+
+  const handleListPaneResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (isListPaneCollapsed) return;
+    event.preventDefault();
+
+    const left = listPaneRef.current?.getBoundingClientRect().left ?? 0;
+    const body = document.body;
+    const previousCursor = body.style.cursor;
+    const previousUserSelect = body.style.userSelect;
+
+    setIsListPaneResizing(true);
+    body.style.cursor = 'col-resize';
+    body.style.userSelect = 'none';
+
+    const updateWidth = (clientX: number) => {
+      setListPaneWidth(clientX - left);
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      body.style.cursor = previousCursor;
+      body.style.userSelect = previousUserSelect;
+      setIsListPaneResizing(false);
+      window.removeEventListener('pointermove', handlePointerMove);
+    };
+
+    updateWidth(event.clientX);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  }, [isListPaneCollapsed, setListPaneWidth]);
+
+  const handleListPaneResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isListPaneCollapsed) return;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setListPaneWidth(listPaneWidth - 16);
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setListPaneWidth(listPaneWidth + 16);
+    }
+  }, [isListPaneCollapsed, listPaneWidth, setListPaneWidth]);
 
   if (loading) {
     return <WorkspaceLoadingScreen />;
@@ -175,11 +239,53 @@ export function Wrapper() {
               {/* Middle pane — thread list or file list
                   Hidden for: connect view, expanded detail, or when browser preview is active */}
               {viewMode !== 'connect' && viewMode !== 'tasks' && viewMode !== 'inbox' && viewMode !== 'knowledge' && !isDetailExpanded && !(splitBrowser && showBrowserPreview && viewMode === 'threads') && (
-                <div className="shrink-0 w-[300px] xl:w-[400px] bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col">
-                  {viewMode === 'threads' && <ThreadList />}
-                  {viewMode === 'files' && <FileList />}
-                  {viewMode === 'browser' && <BrowserTabList />}
-                  {viewMode === 'routines' && <RoutineList />}
+                <div
+                  ref={listPaneRef}
+                  className={cn(
+                    'relative shrink-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs flex flex-col',
+                    !isListPaneResizing && 'transition-[width] duration-200',
+                  )}
+                  style={{ width: isListPaneCollapsed ? 44 : listPaneWidth }}
+                >
+                  {isListPaneCollapsed ? (
+                    <div className="flex h-full items-start justify-center pt-3">
+                      <button
+                        type="button"
+                        onClick={toggleListPaneCollapsed}
+                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        title="展开列表"
+                      >
+                        <ChevronRight className="size-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {viewMode === 'threads' && <ThreadList />}
+                      {viewMode === 'files' && <FileList />}
+                      {viewMode === 'browser' && <BrowserTabList />}
+                      {viewMode === 'routines' && <RoutineList />}
+                      <button
+                        type="button"
+                        onClick={toggleListPaneCollapsed}
+                        className="absolute right-1 top-1/2 z-40 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
+                        title="收起列表"
+                      >
+                        <ChevronLeft className="size-3.5" />
+                      </button>
+                      <div
+                        role="separator"
+                        aria-label="调整会话列表宽度"
+                        aria-orientation="vertical"
+                        aria-valuenow={listPaneWidth}
+                        tabIndex={0}
+                        onPointerDown={handleListPaneResizePointerDown}
+                        onKeyDown={handleListPaneResizeKeyDown}
+                        className="group absolute right-0 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize items-stretch justify-center outline-none hover:bg-primary/10 focus-visible:bg-primary/10 lg:flex"
+                      >
+                        <span className="absolute right-0 top-2 bottom-2 w-px rounded-full bg-border opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

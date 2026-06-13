@@ -86,7 +86,7 @@ export function Sidebar() {
           onKeyDown={handleResizeKeyDown}
           className="group absolute right-0 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize items-stretch justify-center outline-none hover:bg-primary/10 focus-visible:bg-primary/10 lg:flex"
         >
-          <span className="my-2 w-px rounded-full bg-border opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+          <span className="absolute right-0 top-2 bottom-2 w-px rounded-full bg-border opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
         </div>
       )}
     </aside>
