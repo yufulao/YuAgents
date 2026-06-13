@@ -82,7 +82,16 @@ try {
   Start-Sleep -Seconds 1
 
   Write-Host "Stopping existing agent-connector daemon so local runtime code is reloaded..."
-  & node (Join-Path $RepoRoot "packages\agent-connector\bin\agent-connector.js") down *> $null
+  $connectorBin = Join-Path $RepoRoot "packages\agent-connector\bin\agent-connector.js"
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & cmd.exe /d /c "node `"$connectorBin`" down >nul 2>nul"
+  } catch {
+    Write-Warning "Could not stop existing agent-connector daemon; continuing local Web startup."
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
 
   @(
     "@echo off",
