@@ -1,5 +1,9 @@
 # Remote Docker Deployment Simulation
 
+For the current `oa.yodaze.com` server flow, use
+`workspace/docs/oa-yodaze-relay-runbook.md`. It includes the one-click Windows
+deployment and SSH reverse-tunnel scripts for `159.75.188.203:22222`.
+
 This is the local "remote server" flow. It uses the production Docker Compose
 stack as a relay. It does not create, seed, sync, or enumerate workspaces.
 Workspace authority stays on the local control plane.
