@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen,
@@ -383,17 +383,29 @@ function SettingsDialogPortal({
   const [userName, setUserNameDraft] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
   const [saving, setSaving] = useState(false);
+  const settingsWorkspaceRef = useRef<string | null>(null);
+  const wasOpenRef = useRef(false);
   const { currentUser, setUserProfile, notificationSound, setNotificationSound } = useWorkspace();
   const { splitBrowser, setSplitBrowser } = useLayout();
 
   useEffect(() => {
-    if (open && workspace) {
-      setName(workspace.name);
-      setMonitorMode(!!workspace.settings?.monitorMode);
-      setUserNameDraft(currentUser.name || '');
-      setUserAvatar(currentUser.avatarUrl || '');
+    const justOpened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!open) {
+      settingsWorkspaceRef.current = null;
+      return;
     }
-  }, [open, workspace, currentUser.name, currentUser.avatarUrl]);
+    if (!workspace) return;
+
+    const workspaceChanged = settingsWorkspaceRef.current !== workspace.slug;
+    if (!justOpened && !workspaceChanged) return;
+
+    settingsWorkspaceRef.current = workspace.slug;
+    setName(workspace.name);
+    setMonitorMode(!!workspace.settings?.monitorMode);
+    setUserNameDraft(currentUser.name || '');
+    setUserAvatar(currentUser.avatarUrl || '');
+  }, [open, workspace?.slug, workspace?.name, workspace?.settings?.monitorMode, currentUser.name, currentUser.avatarUrl]);
 
   if (!workspace) return null;
 

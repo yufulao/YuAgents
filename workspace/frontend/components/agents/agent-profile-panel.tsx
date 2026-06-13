@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
   Copy,
@@ -43,17 +43,32 @@ export function AgentProfilePanel() {
   const [codexFastDraft, setCodexFastDraft] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [controlBusy, setControlBusy] = useState<'start' | 'restart' | 'stop' | null>(null);
+  const configDraftAgentRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedAgentName) {
+      configDraftAgentRef.current = null;
+      setEditingConfig(false);
+      return;
+    }
+  }, [selectedAgentName]);
 
   useEffect(() => {
     if (!agent) return;
-    setEditingConfig(false);
+    const agentChanged = configDraftAgentRef.current !== agent.agentName;
+    if (agentChanged) {
+      configDraftAgentRef.current = agent.agentName;
+      setEditingConfig(false);
+    } else if (editingConfig || savingConfig) {
+      return;
+    }
     setDisplayNameDraft(agent.displayName || agent.agentName);
     setAvatarDraft(agent.avatarUrl || (agent.avatar?.type === 'upload' ? agent.avatar.value : ''));
     setWorkingDirDraft(agent.workingDir || '');
     setModelDraft(agent.modelName || agent.model || '');
     setQualityDraft(agent.quality || 'medium');
     setCodexFastDraft(agent.managedMetadata?.codex_service_tier === 'fast');
-  }, [agent?.agentName, agent?.avatarUrl, agent?.avatar?.value, agent?.managedMetadata]);
+  }, [agent, editingConfig, savingConfig]);
 
   const handleAvatarFile = (file: File | undefined) => {
     if (!file) return;
@@ -100,13 +115,27 @@ export function AgentProfilePanel() {
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [descDirty, setDescDirty] = useState(false);
+  const descriptionAgentRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (agent) {
-      setDescription(agent.description || '');
+    if (!selectedAgentName) {
+      descriptionAgentRef.current = null;
       setDescDirty(false);
+      return;
     }
-  }, [agent?.agentName, agent?.description]);
+  }, [selectedAgentName]);
+
+  useEffect(() => {
+    if (!agent) return;
+    const agentChanged = descriptionAgentRef.current !== agent.agentName;
+    if (agentChanged) {
+      descriptionAgentRef.current = agent.agentName;
+    } else if (descDirty || saving) {
+      return;
+    }
+    setDescription(agent.description || '');
+    setDescDirty(false);
+  }, [agent?.agentName, agent?.description, descDirty, saving]);
 
   const handleSaveDescription = useCallback(async () => {
     if (!agent || !descDirty) return;
