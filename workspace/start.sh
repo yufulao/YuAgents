@@ -63,16 +63,14 @@ fetch_ok() {
 
 echo
 echo "Checking local control plane at ${CONTROL_CHECK_URL} ..."
-if ! fetch_ok "${CONTROL_CHECK_URL%/}/v1/agent-catalog"; then
-  echo "[ERROR] Local control plane is not reachable from the server host at ${CONTROL_CHECK_URL}." >&2
-  echo "Start the local control plane first, or create an SSH reverse tunnel to this server." >&2
-  echo "Example from your local machine:" >&2
-  echo "  ssh -N -R ${DOCKER_HOST_GATEWAY}:8000:127.0.0.1:8000 root@YOUR_SERVER" >&2
-  echo "If sshd rejects that bind address, set 'GatewayPorts clientspecified' on the server and reload sshd." >&2
-  echo "Then rerun with:" >&2
-  echo "  LOCAL_CONTROL_API_URL=http://host.docker.internal:8000 CONTROL_CHECK_URL=http://${DOCKER_HOST_GATEWAY}:8000 bash start.sh" >&2
-  echo "If your tunnel listens on a different server port, set both LOCAL_CONTROL_API_URL and CONTROL_CHECK_URL." >&2
-  exit 1
+if fetch_ok "${CONTROL_CHECK_URL%/}/v1/agent-catalog"; then
+  CONTROL_READY=1
+  echo "Local control API is reachable."
+else
+  CONTROL_READY=0
+  echo "[WARN] Local control API is not reachable yet."
+  echo "The remote relay will still start. Start the local reverse tunnel from"
+  echo "the local machine with ..prod_connect.bat, then /v1 will become ready."
 fi
 
 echo
@@ -96,7 +94,7 @@ if [ "$i" -ge 60 ]; then
   exit 1
 fi
 
-if ! fetch_ok "${PUBLIC_URL}/v1/agent-catalog"; then
+if [ "$CONTROL_READY" -eq 1 ] && ! fetch_ok "${PUBLIC_URL}/v1/agent-catalog"; then
   echo "[ERROR] Remote relay is running, but /v1 cannot reach the local control API." >&2
   echo "Upstream configured for nginx: ${LOCAL_CONTROL_API_URL}" >&2
   echo "Host preflight URL: ${CONTROL_CHECK_URL}" >&2
@@ -108,4 +106,7 @@ echo
 echo "OpenAgents is running at ${PUBLIC_URL}"
 echo "Use an existing workspace slug/name and token/password."
 echo "The server forwards /v1 requests to the local control plane; it does not store workspace authority."
+if [ "$CONTROL_READY" -eq 0 ]; then
+  echo "Waiting for the local reverse tunnel before workspace APIs can work."
+fi
 echo "To stop: docker compose -f docker-compose.prod.yml down"

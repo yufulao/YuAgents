@@ -8,7 +8,8 @@ param(
   [int]$TunnelPort = 8000,
   [switch]$StartLocal,
   [switch]$SkipOpenBrowser,
-  [switch]$StopExistingTunnel
+  [switch]$StopExistingTunnel,
+  [switch]$TunnelOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,7 +55,10 @@ Require-Command ssh
 
 if ($StartLocal) {
   Write-Host "Starting local OpenAgents control plane..."
-  $localStart = Join-Path $RepoRoot "start.bat"
+  $localStart = Join-Path $RepoRoot "..start.bat"
+  if (-not (Test-Path $localStart)) {
+    $localStart = Join-Path $RepoRoot "start.bat"
+  }
   Start-Process -FilePath $localStart -WorkingDirectory $RepoRoot
 }
 
@@ -92,9 +96,13 @@ try {
   Write-Host "Checking tunnel from remote host..."
   Invoke-Ssh "curl -fsS --max-time 5 http://$gateway`:$TunnelPort/v1/agent-catalog >/dev/null"
 
-  Write-Host "Starting remote Docker relay..."
-  $remoteCommand = "cd '$RemoteDir/workspace' && REMOTE_WEB_BIND=127.0.0.1 REMOTE_WEB_PORT=$RemoteWebPort PUBLIC_URL=http://127.0.0.1:$RemoteWebPort LOCAL_CONTROL_API_URL=http://host.docker.internal:$TunnelPort CONTROL_CHECK_URL=http://$gateway`:$TunnelPort bash start.sh"
-  Invoke-Ssh $remoteCommand
+  if (-not $TunnelOnly) {
+    Write-Host "Starting remote Docker relay..."
+    $remoteCommand = "cd '$RemoteDir/workspace' && REMOTE_WEB_BIND=127.0.0.1 REMOTE_WEB_PORT=$RemoteWebPort PUBLIC_URL=http://127.0.0.1:$RemoteWebPort LOCAL_CONTROL_API_URL=http://host.docker.internal:$TunnelPort CONTROL_CHECK_URL=http://$gateway`:$TunnelPort bash start.sh"
+    Invoke-Ssh $remoteCommand
+  } else {
+    Write-Host "Tunnel only mode: assuming remote start.sh is already running."
+  }
 
   Write-Host "Checking public URL $PublicUrl ..."
   Wait-Url "$PublicUrl/relay-health" 60 "public relay"

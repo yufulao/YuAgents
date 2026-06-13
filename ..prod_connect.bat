@@ -9,12 +9,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "workspace\scripts\connect-r
   -User "root" ^
   -RemoteDir "/opt/openagents" ^
   -Domain "oa.yodaze.com" ^
-  -StartLocal ^
+  -TunnelOnly ^
   -StopExistingTunnel
 
 if errorlevel 1 (
   echo.
-  echo [ERROR] Remote relay connection failed.
+  echo [ERROR] Production tunnel failed.
+  echo Make sure ..start.bat is running locally, and server workspace/start.sh is running remotely.
   pause
   exit /b 1
 )
