@@ -36,7 +36,6 @@ import { Switch } from '@/components/ui/switch';
 import { useLayout } from './layout-context';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
-import { getAgentModelLabel } from '@/lib/agent-display';
 import { withWorkspaceIdentityProfile } from '@/lib/identity';
 import type { WorkspaceAgent } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
@@ -77,8 +76,25 @@ function NavButton({
   );
 }
 
+function getAgentSidebarStatus(agent: WorkspaceAgent) {
+  if (agent.presenceStatus === 'online' || agent.isConnected) {
+    if (agent.hasActiveWork) {
+      if (agent.activityState === 'running_command') return '在线 · 执行命令';
+      if (agent.activityState === 'editing_file') return '在线 · 编辑文件';
+      if (agent.activityState === 'waiting_input') return '在线 · 等待输入';
+      if (agent.activityState === 'error') return '在线 · 阻塞';
+      if (agent.activityState === 'starting') return '在线 · 启动中';
+      return '在线 · 工作中';
+    }
+    return '在线 · 空闲';
+  }
+  if (agent.presenceStatus === 'stopped' || agent.status === 'stopped') return '已停止';
+  if (agent.presenceStatus === 'starting' || agent.status === 'starting') return '启动中';
+  return '离线';
+}
+
 function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; status: string; onClick: () => void }) {
-  const modelLabel = getAgentModelLabel(agent);
+  const statusLabel = getAgentSidebarStatus(agent);
   return (
     <button
       onClick={onClick}
@@ -96,11 +112,9 @@ function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; st
         <span className="block truncate text-[13px] font-normal leading-tight text-foreground group-hover:text-primary">
           {agent.agentName}
         </span>
-        {modelLabel && (
-          <span className="block truncate font-mono text-[10px] leading-tight text-muted-foreground">
-            {modelLabel}
-          </span>
-        )}
+        <span className="block truncate text-[10px] leading-tight text-muted-foreground">
+          {statusLabel}
+        </span>
       </span>
     </button>
   );
