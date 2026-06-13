@@ -77,6 +77,8 @@ def _normalize_agent_name(value: Optional[str]) -> Optional[str]:
     name = value.strip()
     if name.startswith("@"):
         name = name[1:].strip()
+    if name.startswith("openagents:"):
+        name = name[len("openagents:"):].strip()
     return name or None
 
 
@@ -204,8 +206,9 @@ def list_workspace_tasks(
         query = query.where(WorkspaceTask.channel_name == channel)
     if status:
         query = query.where(WorkspaceTask.status == status)
-    if assignee:
-        query = query.where(or_(WorkspaceTask.assignee == assignee, WorkspaceTask.claimed_by == assignee))
+    normalized_assignee = _normalize_agent_name(assignee)
+    if normalized_assignee:
+        query = query.where(or_(WorkspaceTask.assignee == normalized_assignee, WorkspaceTask.claimed_by == normalized_assignee))
     if created_by:
         query = query.where(WorkspaceTask.created_by == created_by)
     if active:
@@ -229,7 +232,8 @@ async def claim_workspace_task(
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
-    if body.session_id and not _current_agent_session(db, str(workspace.id), body.agent_name, body.session_id):
+    agent_name = _normalize_agent_name(body.agent_name) or body.agent_name
+    if body.session_id and not _current_agent_session(db, str(workspace.id), agent_name, body.session_id):
         return json_response(ResponseCode.UNAUTHORIZED, "session_revoked: current agent session required")
 
     task = db.get(WorkspaceTask, task_id)
@@ -237,17 +241,17 @@ async def claim_workspace_task(
         return json_response(ResponseCode.NOT_FOUND, "Task not found")
     if task.status in {"done", "cancelled"}:
         return json_response(ResponseCode.CONFLICT, "Task is already closed")
-    if task.claimed_by and task.claimed_by != body.agent_name:
+    if task.claimed_by and task.claimed_by != agent_name:
         return json_response(ResponseCode.CONFLICT, f"Task already claimed by {task.claimed_by}")
 
     now = _utcnow()
-    task.claimed_by = body.agent_name
+    task.claimed_by = agent_name
     task.claimed_at = task.claimed_at or now
-    task.assignee = task.assignee or body.agent_name
+    task.assignee = task.assignee or agent_name
     task.status = "in_progress" if task.status == "todo" else task.status
     task.updated_at = now
     db.flush()
-    await _emit_task_event(db, workspace, task, "claimed", _agent_source(body.agent_name), x_workspace_token)
+    await _emit_task_event(db, workspace, task, "claimed", _agent_source(agent_name), x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})
 

@@ -136,6 +136,60 @@ def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
     assert deliveries[0]["event"]["metadata"]["target_agents"] == ["agent-beta"]
 
 
+def test_workspace_task_normalizes_openagents_prefixed_chinese_assignee(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    agent_name = "博丽灵梦"
+    join = client.post("/v1/join", json={
+        "agent_name": agent_name,
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert join.status_code == 200
+    session_id = join.json()["data"]["session_id"]
+
+    join_channel = client.post("/v1/events", json={
+        "type": "network.channel.join",
+        "source": "human:user1",
+        "target": f"channel/{channel_name}",
+        "payload": {"channel": channel_name, "agent_name": agent_name},
+        "network": workspace["id"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert join_channel.status_code == 200
+
+    created = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "QA复核：全模块性能、规范、依赖边界",
+        "assignee": "openagents:博丽灵梦",
+        "source": "openagents:八云紫",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 200
+    task = created.json()["data"]["task"]
+    assert task["assignee"] == agent_name
+
+    listed = client.get("/v1/workspace-tasks", params={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "assignee": "openagents:博丽灵梦",
+        "active": True,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert listed.status_code == 200
+    assert [t["id"] for t in listed.json()["data"]["tasks"]] == [task["id"]]
+
+    pending = client.get("/v1/agent-deliveries/pending", params={
+        "network": workspace["id"],
+        "agent": agent_name,
+        "session_id": session_id,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert pending.status_code == 200
+    deliveries = pending.json()["data"]["deliveries"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["delivery_kind"] == "attention"
+    assert deliveries[0]["event"]["payload"]["content"].startswith("@博丽灵梦 Workspace task created:")
+    assert "@openagents:" not in deliveries[0]["event"]["payload"]["content"]
+    assert deliveries[0]["event"]["metadata"]["target_agents"] == ["博丽灵梦"]
+
+
 def test_agent_context_pack_includes_active_workspace_tasks(client, workspace):
     alpha_join = client.post("/v1/join", json={
         "agent_name": "agent-alpha",
