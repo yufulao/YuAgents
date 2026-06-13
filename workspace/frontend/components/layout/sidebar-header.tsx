@@ -69,6 +69,9 @@ export function SidebarHeader() {
         )}
         <p className="text-xs text-muted-foreground truncate font-mono">{workspace?.slug || ''}</p>
       </div>
+      <Button mode="icon" variant="ghost" onClick={sidebarToggle} className="hidden lg:inline-flex shrink-0" title="收起左侧栏">
+        <PanelLeft />
+      </Button>
     </div>
   );
 }

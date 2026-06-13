@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Sidebar } from './sidebar';
 import { MobileHeader } from './mobile-header';
 import { useLayout } from './layout-context';
@@ -252,7 +252,7 @@ export function Wrapper() {
                       <button
                         type="button"
                         onClick={toggleListPaneCollapsed}
-                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-zinc-100 hover:text-foreground"
                         title="展开列表"
                       >
                         <ChevronRight className="size-4" />
@@ -264,14 +264,6 @@ export function Wrapper() {
                       {viewMode === 'files' && <FileList />}
                       {viewMode === 'browser' && <BrowserTabList />}
                       {viewMode === 'routines' && <RoutineList />}
-                      <button
-                        type="button"
-                        onClick={toggleListPaneCollapsed}
-                        className="absolute right-1 top-1/2 z-40 flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
-                        title="收起列表"
-                      >
-                        <ChevronLeft className="size-3.5" />
-                      </button>
                       <div
                         role="separator"
                         aria-label="调整会话列表宽度"

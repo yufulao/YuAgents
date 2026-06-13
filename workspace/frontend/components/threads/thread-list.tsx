@@ -146,7 +146,7 @@ function DMSection({
 
 export function ThreadList() {
   const { sessions, currentSessionId, setCurrentSessionId, agents, lastMessageBySession, activeSessionIds, completedSessionIds, updateSession, renameSession, dmConversations, refreshWorkspace } = useWorkspace();
-  const { sidebarToggle, isMobile, openMobileDetail } = useLayout();
+  const { toggleListPaneCollapsed, isMobile, openMobileDetail } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -267,8 +267,9 @@ export function ThreadList() {
       <div className="flex items-center gap-1 px-2 py-3 shrink-0">
         {!isMobile && (
           <button
-            onClick={sidebarToggle}
+            onClick={toggleListPaneCollapsed}
             className="size-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-muted-foreground transition-colors shrink-0"
+            title="收起列表"
           >
             <PanelLeft className="size-4" />
           </button>
