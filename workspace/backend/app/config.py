@@ -45,6 +45,7 @@ class Config:
 
     # Agent offline timeout in seconds
     AGENT_TIMEOUT_SECONDS: int = int(os.environ.get("AGENT_TIMEOUT_SECONDS", "60"))
+    LOCAL_AGENT_CONTROL_ENDPOINT: str = os.environ.get("LOCAL_AGENT_CONTROL_ENDPOINT", "").strip()
 
     # Public workspace entry policy. Local control-plane deployments can create
     # and list workspaces; remote/public relay deployments should require users

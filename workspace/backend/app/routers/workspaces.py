@@ -287,6 +287,20 @@ def _workspace_name_exists(db: Session, name: str, *, exclude_id: UUID | None = 
     return db.execute(query).scalar_one_or_none() is not None
 
 
+def _local_agent_control_endpoint() -> str:
+    """Return the local backend URL that on-machine agents should call.
+
+    The request base URL may be the public relay host when the UI is opened via
+    oa.yodaze.com. Local agents must still talk to the local control plane
+    directly; otherwise redirects or public relay routing can make heartbeats
+    silently fail while the local daemon keeps running.
+    """
+    configured = (config.LOCAL_AGENT_CONTROL_ENDPOINT or "").strip().rstrip("/")
+    if configured:
+        return configured
+    return f"http://127.0.0.1:{config.PORT}"
+
+
 # ---------------------------------------------------------------------------
 # POST /v1/workspaces — Create workspace
 # ---------------------------------------------------------------------------
@@ -876,7 +890,7 @@ def control_managed_agent(
     if metadata.get("disabled"):
         return json_response(ResponseCode.BAD_REQUEST, "Agent is disabled; enable it before starting")
 
-    endpoint = str(request.base_url).rstrip("/")
+    endpoint = _local_agent_control_endpoint()
     control_started_at = datetime.now(timezone.utc)
     try:
         result = control_local_agent(

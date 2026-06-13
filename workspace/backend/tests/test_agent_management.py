@@ -233,7 +233,33 @@ def test_control_managed_agent_starts_local_daemon_bridge(client, workspace, mon
     assert calls[0]["agent"]["type"] == "codex"
     assert calls[0]["agent"]["workingDir"] == "C:/repo"
     assert calls[0]["workspace"]["token"] == workspace["token"]
-    assert calls[0]["endpoint"] == "http://testserver"
+    assert calls[0]["endpoint"] == "http://127.0.0.1:8000"
+
+
+def test_control_managed_agent_uses_configured_local_endpoint(client, workspace, monkeypatch):
+    client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={"agent_name": "local-endpoint", "agent_type": "codex"},
+    )
+
+    calls = []
+
+    def fake_control_local_agent(**kwargs):
+        calls.append(kwargs)
+        return {"ok": True, "command": "start:local-endpoint", "pid": 1234}
+
+    monkeypatch.setattr("app.routers.workspaces.config.LOCAL_AGENT_CONTROL_ENDPOINT", "http://127.0.0.1:8123/")
+    monkeypatch.setattr("app.routers.workspaces.control_local_agent", fake_control_local_agent)
+
+    resp = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents/local-endpoint/control",
+        headers=_auth(workspace),
+        json={"action": "start"},
+    )
+
+    assert resp.status_code == 200
+    assert calls[0]["endpoint"] == "http://127.0.0.1:8123"
 
 
 def test_control_managed_agent_keeps_fast_join_online(client, workspace, db, monkeypatch):
