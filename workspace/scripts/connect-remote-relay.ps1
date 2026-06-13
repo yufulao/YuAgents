@@ -51,6 +51,14 @@ function Invoke-Ssh([string]$Command) {
   }
 }
 
+function Invoke-SshOutput([string]$Command) {
+  $output = (& ssh -p $SshPort $Remote $Command 2>&1) -join "`n"
+  if ($LASTEXITCODE -ne 0) {
+    throw "ssh command failed with exit code $LASTEXITCODE. Output: $output"
+  }
+  return $output
+}
+
 function Select-LastIpv4([string]$Text) {
   $matches = [regex]::Matches($Text, "(?<![\d.])(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?![\d.])")
   if ($matches.Count -eq 0) {
@@ -73,16 +81,19 @@ if ($StartLocal) {
 Write-Host "Checking local control plane at http://127.0.0.1:8000 ..."
 Wait-Url "http://127.0.0.1:8000/v1/agent-catalog" 90 "local control plane"
 
-$gatewayOutput = (& ssh -p $SshPort $Remote "docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1") -join "`n"
+if ($StopExistingTunnel) {
+  Write-Host "Checking remote Docker gateway and stopping existing remote listeners if possible..."
+  $preflightCommand = "gateway=`$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1); echo OPENAGENTS_GATEWAY=`$gateway; if command -v fuser >/dev/null 2>&1; then fuser -k ${TunnelPort}/tcp >/dev/null 2>&1 || true; elif command -v lsof >/dev/null 2>&1; then lsof -ti tcp:${TunnelPort} | xargs -r kill; fi"
+} else {
+  Write-Host "Checking remote Docker gateway..."
+  $preflightCommand = "docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1"
+}
+
+$gatewayOutput = Invoke-SshOutput $preflightCommand
 $gateway = Select-LastIpv4 $gatewayOutput
 if (-not $gateway) {
   Write-Warning "Could not parse Docker bridge gateway from remote output; using 172.17.0.1."
   $gateway = "172.17.0.1"
-}
-
-if ($StopExistingTunnel) {
-  Write-Host "Stopping existing remote listeners on $gateway`:$TunnelPort if possible..."
-  Invoke-Ssh "if command -v fuser >/dev/null 2>&1; then fuser -k ${TunnelPort}/tcp >/dev/null 2>&1 || true; elif command -v lsof >/dev/null 2>&1; then lsof -ti tcp:${TunnelPort} | xargs -r kill; fi"
 }
 
 Write-Host "Opening SSH reverse tunnel: server $gateway`:$TunnelPort -> local 127.0.0.1:8000"
@@ -103,9 +114,6 @@ try {
     throw "SSH reverse tunnel exited early with code $($tunnel.ExitCode). If sshd rejected the bind address, set 'GatewayPorts clientspecified' on the server and reload sshd."
   }
 
-  Write-Host "Checking tunnel from remote host..."
-  Invoke-Ssh "curl -fsS --max-time 5 http://$gateway`:$TunnelPort/v1/agent-catalog >/dev/null"
-
   if (-not $TunnelOnly) {
     Write-Host "Starting remote Docker relay..."
     $remoteCommand = "cd '$RemoteDir/workspace' && REMOTE_WEB_BIND=127.0.0.1 REMOTE_WEB_PORT=$RemoteWebPort PUBLIC_URL=http://127.0.0.1:$RemoteWebPort LOCAL_CONTROL_API_URL=http://host.docker.internal:$TunnelPort CONTROL_CHECK_URL=http://$gateway`:$TunnelPort bash start.sh"
@@ -115,8 +123,16 @@ try {
   }
 
   Write-Host "Checking public URL $PublicUrl ..."
-  Wait-Url "$PublicUrl/relay-health" 60 "public relay"
-  Wait-Url "$PublicUrl/v1/agent-catalog" 60 "public relay API"
+  try {
+    Wait-Url "$PublicUrl/relay-health" 60 "public relay"
+  } catch {
+    throw "Remote relay is not reachable at $PublicUrl/relay-health. Make sure server workspace/start.sh is running and the domain points to this server."
+  }
+  try {
+    Wait-Url "$PublicUrl/v1/agent-catalog" 60 "public relay API"
+  } catch {
+    throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. The SSH server likely did not bind the reverse tunnel on $gateway`:$TunnelPort. On the server, set 'GatewayPorts clientspecified' in /etc/ssh/sshd_config, reload sshd, then rerun ..prod_connect.bat."
+  }
 
   Write-Host ""
   Write-Host "Remote OpenAgents relay is ready:"
