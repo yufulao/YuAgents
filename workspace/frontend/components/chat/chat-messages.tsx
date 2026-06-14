@@ -5,7 +5,7 @@ import { ChatMessage } from './chat-message';
 import { IntermediateSteps } from './intermediate-steps';
 import { Button } from '@/components/ui/button';
 import { ArrowDown } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 
@@ -193,6 +193,44 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
 
   // Track scroll position for "scroll to bottom" button + infinite scroll upward
   const loadingOlderInternalRef = useRef(false);
+  const pendingOlderRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+
+  const loadOlderAndPreserveScroll = useCallback(async () => {
+    const el = containerRef.current;
+    if (!el || !loadOlder || loadingOlderInternalRef.current) return;
+
+    loadingOlderInternalRef.current = true;
+    pendingOlderRestoreRef.current = {
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+    };
+    userScrolledUpRef.current = true;
+
+    try {
+      await loadOlder();
+    } finally {
+      loadingOlderInternalRef.current = false;
+    }
+  }, [loadOlder]);
+
+  useLayoutEffect(() => {
+    const snapshot = pendingOlderRestoreRef.current;
+    const el = containerRef.current;
+    if (!snapshot || !el) return;
+
+    const restore = () => {
+      const delta = el.scrollHeight - snapshot.scrollHeight;
+      el.scrollTop = snapshot.scrollTop + delta;
+      userScrolledUpRef.current = true;
+    };
+
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      pendingOlderRestoreRef.current = null;
+    });
+  }, [messages.length, totalCount]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -210,21 +248,13 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
         !loadingOlderInternalRef.current &&
         loadOlder
       ) {
-        loadingOlderInternalRef.current = true;
-        const prevScrollHeight = el.scrollHeight;
-        await loadOlder();
-        // Maintain scroll position after prepending older messages
-        requestAnimationFrame(() => {
-          const newScrollHeight = el.scrollHeight;
-          el.scrollTop = newScrollHeight - prevScrollHeight;
-          loadingOlderInternalRef.current = false;
-        });
+        await loadOlderAndPreserveScroll();
       }
     };
 
     el.addEventListener('scroll', onScroll);
     return () => el.removeEventListener('scroll', onScroll);
-  }, [hasOlder, loadingOlder, loadOlder]);
+  }, [hasOlder, loadingOlder, loadOlder, loadOlderAndPreserveScroll]);
 
   return (
     <div className="relative flex-1 min-h-0">
@@ -240,13 +270,7 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
         {hasOlder && !loadingOlder && loadOlder && (
           <button
             onClick={async () => {
-              const el = containerRef.current;
-              if (!el) return;
-              const prevScrollHeight = el.scrollHeight;
-              await loadOlder();
-              requestAnimationFrame(() => {
-                el.scrollTop = el.scrollHeight - prevScrollHeight;
-              });
+              await loadOlderAndPreserveScroll();
             }}
             className="flex items-center justify-center py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >

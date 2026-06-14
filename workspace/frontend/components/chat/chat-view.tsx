@@ -146,7 +146,7 @@ export function ChatView() {
     initialMessagesRef.current = currentSessionId ? messageCache.get(currentSessionId) : undefined;
   }
 
-  const { messages, loading, forceRefresh, generation, loadOlder, hasOlder, loadingOlder } = useMessagePolling({
+  const { messages, loading, forceRefresh, loadOlder, hasOlder, loadingOlder } = useMessagePolling({
     sessionId: currentSessionId,
     initialMessages: initialMessagesRef.current,
   });
@@ -159,14 +159,9 @@ export function ChatView() {
 
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
-  // scrollKey triggers scroll-to-bottom: incremented on user send + backfill completion
+  // scrollKey triggers scroll-to-bottom after explicit user sends.
   const [scrollKey, setScrollKey] = useState(0);
   const [focusKey, setFocusKey] = useState(0);
-
-  // Scroll to bottom when backfill replaces messages (generation changes)
-  useEffect(() => {
-    if (generation > 0) setScrollKey((k) => k + 1);
-  }, [generation]);
 
   // Per-thread message drafts
   const draftsRef = useRef<Record<string, string>>({});
