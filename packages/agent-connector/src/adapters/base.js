@@ -1072,7 +1072,7 @@ class BaseAdapter {
       return [
         'Delivery kind: ambient channel context.',
         'This normal channel message is visible to every agent in the channel. Read it and update your understanding.',
-        'Only take work or send a visible reply if your role, an assigned shared task, or the current request makes your participation relevant.',
+        'Ambient is passive: do not create/claim tasks, @mention, assign, or visibly coordinate unless named, already owning the task, or acting as channel lead.',
         'If no visible action is needed from you, return exactly: __no_response__',
       ].join('\n');
     }

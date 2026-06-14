@@ -397,6 +397,23 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general || [], []);
   });
 
+  it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+
+    const prompt = adapter._buildDeliveryPrompt({ _deliveryKind: 'ambient' });
+
+    assert.ok(prompt.includes('Ambient is passive'));
+    assert.ok(prompt.includes('create/claim tasks'));
+    assert.ok(prompt.includes('visibly coordinate'));
+    assert.ok(prompt.includes('__no_response__'));
+  });
+
   it('readDaemonPid returns null when no pid file', () => {
     assert.equal(Daemon.readDaemonPid(tmpDir), null);
   });

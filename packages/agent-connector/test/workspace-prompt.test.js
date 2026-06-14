@@ -54,6 +54,8 @@ describe('workspace prompt budget', () => {
 
     assert.ok(prompt.includes('docs/*.md'));
     assert.ok(prompt.includes('Scheduling is context-driven'));
+    assert.ok(prompt.includes('Ambient is passive'));
+    assert.ok(prompt.includes('Non-leads report evidence'));
     assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));

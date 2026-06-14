@@ -28,6 +28,10 @@ layer for delivery, status, role boundaries, or task ownership.
   should not wake or answer.
 - `delivery_kind=attention` means the agent was mentioned or routed to and
   should wake for work.
+- Ambient context is not permission to coordinate. An ambient recipient must not
+  create tasks, claim tasks, @mention others, assign work, or send visible
+  coordination unless it was explicitly addressed, already owns the referenced
+  task, or is the channel lead making a required coordination decision.
 - A running agent leases its own pending attention rows using its current
   `session_id`. Ambient rows are available for future context packs and passive
   memory, but are not pulled into the execution loop by default.
@@ -66,6 +70,9 @@ The baseline rule skill contains rules that should not drift between agents:
 - Claim shared tasks before implementation work.
 - Keep role boundaries explicit: architect routes and accepts, implementers
   implement, reviewers verify, QA reproduces and retests.
+- Non-lead implementers and QA agents report evidence or blockers; they do not
+  assign or direct the channel lead unless the lead explicitly delegated that
+  authority.
 - Report concrete state changes, test evidence, blockers, and handoff targets.
 
 This file remains the design source and audit trail. The generated prompt

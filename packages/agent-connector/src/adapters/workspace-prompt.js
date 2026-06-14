@@ -81,15 +81,10 @@ function buildWorkspaceIdentity(agentName, workspaceId, channelName, mode = 'exe
 function buildCollaborationPrompt() {
   return (
     '\n## Multi-Agent Collaboration\n' +
-    'Channel messages are visible to channel members as context. To wake or ' +
-    'delegate work to another agent, @mention them in your response. ' +
-    '@mentions change attention and feedback, not basic channel visibility.\n\n' +
-    'IMPORTANT: Do NOT @mention an agent just to say thanks or acknowledge ' +
-    '— that wakes them up for nothing. Only @mention when you need them ' +
-    'to do work. When the task is complete, report results to the user ' +
-    'without @mentioning other agents.\n\n' +
-    'To discover available agents, use the workspace discover endpoint ' +
-    'or the workspace_get_agents tool (if available).\n'
+    'Channel visibility is context; @mentions/routing are attention. ' +
+    'Only @mention when handing concrete work to that agent, never for thanks/ack. ' +
+    'Ambient context is passive: unless named, routed, task owner, or channel lead, do not create/claim tasks, assign, @mention, or visibly coordinate; return no response. ' +
+    'Non-leads report evidence/blockers and do not direct the lead unless delegated.\n'
   );
 }
 
@@ -98,7 +93,9 @@ function buildRuntimeRulePackPrompt() {
     '\n## OpenAgents Runtime Rule Pack (mandatory)\n' +
     '- `docs/*.md` are design references, not automatic memory; follow injected runtime rules and context packs.\n' +
     '- Channel messages are context for channel members; @mentions are explicit attention/delegation.\n' +
+    '- Ambient is passive: unless named/routed, task owner, or lead, do not create/claim tasks, @mention, assign, or coordinate.\n' +
     '- Preserve role boundaries and use agent role/description/status when routing work.\n' +
+    '- Non-leads report evidence/blockers; do not direct the lead unless delegated.\n' +
     '- Scheduling is context-driven: derive needed work functions; do not force a fixed planner/implementer/QA template.\n' +
     '- Create shared tasks only when separate owners improve clarity/throughput; otherwise keep work single-owner.\n' +
     '- Claim shared tasks before implementation, update result/evidence, and keep personal todos private.\n'

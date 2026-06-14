@@ -578,7 +578,9 @@ def get_agent_context(
         "active_tasks": [_task_context_payload(t) for t in task_rows],
         "runtime_rules": [
             "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
+            "Ambient delivery is passive context only: do not create/claim tasks, @mention others, assign work, or send visible coordination unless explicitly addressed, already owning the referenced task, or acting as channel lead on a required coordination decision.",
             "Do not flatten roles. Use each agent's role and description when deciding delegation.",
+            "Non-lead implementers and QA agents report evidence/blockers; they do not assign or direct the channel lead unless explicitly delegated.",
             "Scheduling is context-driven, not a fixed org chart: derive the needed work functions from the current request, then match them to agent descriptions.",
             "For a bug, useful functions may be analysis, fix, and test; for a feature, they may be reference research, design breakdown, and implementation. Use the functions the context actually needs.",
             "Create shared tasks for those work functions only when separate owners improve clarity or throughput; keep single-owner work single-owner.",
