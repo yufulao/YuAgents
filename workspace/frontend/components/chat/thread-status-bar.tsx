@@ -43,6 +43,14 @@ export function ThreadStatusBar({
   const [timers, setTimers] = useState<TimerItem[]>([]);
   const [cancelledQueueIds, setCancelledQueueIds] = useState<Set<string>>(new Set());
 
+  const todoRefreshSignal = useMemo(() => {
+    const relevant = messages.filter((m) =>
+      m.messageType === 'todos' ||
+      (m.messageType === 'status' && (m.metadata as Record<string, unknown> | undefined)?.queue_id)
+    );
+    return relevant[relevant.length - 1]?.messageId || '';
+  }, [messages]);
+
   const pollTimers = useCallback(async () => {
     try {
       const result = await workspaceApi.listTimers(channelName);
@@ -60,6 +68,20 @@ export function ThreadStatusBar({
     const interval = setInterval(poll, 15000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [channelName]);
+
+  useEffect(() => {
+    if (!todoRefreshSignal) return;
+    const quickRefresh = setTimeout(() => {
+      refreshTodos();
+    }, 300);
+    const committedRefresh = setTimeout(() => {
+      refreshTodos();
+    }, 1500);
+    return () => {
+      clearTimeout(quickRefresh);
+      clearTimeout(committedRefresh);
+    };
+  }, [todoRefreshSignal, refreshTodos]);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -133,7 +155,8 @@ export function ThreadStatusBar({
     try {
       await workspaceApi.cancelQueuedMessage(channelName, queueId);
     } catch {}
-  }, [channelName]);
+    refreshTodos();
+  }, [channelName, refreshTodos]);
 
   const hasContent = pendingCount > 0 || inProgressCount > 0 || activeTimers.length > 0 || queuedMessages.length > 0;
   if (!hasContent) {

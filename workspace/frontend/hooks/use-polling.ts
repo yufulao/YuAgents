@@ -130,6 +130,41 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
     }
   }, [sessionId]);
 
+  const reconcileLatest = useCallback(async () => {
+    if (!sessionId || !historyLoadedRef.current) return;
+
+    try {
+      const result = await workspaceApi.loadMessageHistory(sessionId, { limit: 50 });
+
+      if (sessionId !== currentSessionRef.current) return;
+
+      if (result.events.length > 0) {
+        const latestMessages = result.events.map(eventToMessage).reverse();
+        const newest = result.newest_id || latestMessages[latestMessages.length - 1]?.messageId;
+        if (newest) newestIdRef.current = newest;
+
+        setMessages((prev) => {
+          const byId = new Map(prev.map((m) => [m.messageId, m]));
+          let changed = false;
+
+          for (const msg of latestMessages) {
+            if (!byId.has(msg.messageId)) {
+              byId.set(msg.messageId, msg);
+              changed = true;
+            }
+          }
+
+          if (!changed) return prev;
+          return Array.from(byId.values()).sort(
+            (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
+          );
+        });
+      }
+    } catch {
+      // Best-effort reconciliation; normal polling/SSE continues.
+    }
+  }, [sessionId]);
+
   // Load older messages (infinite scroll upward)
   const loadOlder = useCallback(async () => {
     if (!sessionId || !hasOlder || loadingOlder) return;
@@ -222,6 +257,14 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
       if (timeout) clearTimeout(timeout);
     };
   }, [sessionId, enabled, poll, loadHistory]);
+
+  useEffect(() => {
+    if (!sessionId || !enabled) return;
+    const interval = setInterval(() => {
+      reconcileLatest();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [sessionId, enabled, reconcileLatest]);
 
   // If seeded with cache, do a background refresh to catch any new messages
   useEffect(() => {
