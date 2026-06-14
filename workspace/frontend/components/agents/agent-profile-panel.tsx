@@ -7,7 +7,6 @@ import {
   Copy,
   Cpu,
   Folder,
-  MessageCircle,
   Monitor,
   Pencil,
   Power,
@@ -28,8 +27,8 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function AgentProfilePanel() {
-  const { selectedAgentName, setSelectedAgentName, isMobile, setViewMode, openMobileDetail, agentPanelWidth, setAgentPanelWidth } = useLayout();
-  const { agents, currentUser, refreshWorkspace, setCurrentSessionId } = useWorkspace();
+  const { selectedAgentName, setSelectedAgentName, isMobile, agentPanelWidth, setAgentPanelWidth } = useLayout();
+  const { agents, refreshWorkspace } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -153,15 +152,6 @@ export function AgentProfilePanel() {
       setSaving(false);
     }
   }, [agent, description, descDirty, refreshWorkspace]);
-
-  const handleStartDM = useCallback(() => {
-    if (!agent) return;
-    const sender = currentUser.id || currentUser.name || 'user';
-    setCurrentSessionId(`dm:human:${sender},openagents:${agent.agentName}`);
-    setSelectedAgentName(null);
-    setViewMode('threads');
-    if (isMobile) openMobileDetail();
-  }, [agent, currentUser.id, currentUser.name, isMobile, openMobileDetail, setCurrentSessionId, setSelectedAgentName, setViewMode]);
 
   const handleLocalAgentControl = useCallback(async (action: 'start' | 'restart' | 'stop') => {
     if (!agent) return;
@@ -540,13 +530,6 @@ export function AgentProfilePanel() {
 
         <div className="border-t px-3.5 py-3">
           <div className="flex gap-2">
-            <button
-              onClick={handleStartDM}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-medium transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800"
-            >
-              <MessageCircle className="size-3" />
-              发起私聊
-            </button>
             {!isDisabled && (
               <button
                 onClick={() => handleLocalAgentControl(localPrimaryAction)}

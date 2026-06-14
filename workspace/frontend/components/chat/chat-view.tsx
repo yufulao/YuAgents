@@ -50,23 +50,6 @@ function cacheMessages(sessionId: string, msgs: WorkspaceMessage[]) {
 const PREFETCH_COUNT = 6;
 const CACHE_REFRESH_INTERVAL = 5_000; // refresh caches every 5s
 
-function parseDMSessionId(sessionId: string | null): [string, string] | null {
-  if (!sessionId?.startsWith('dm:')) return null;
-  const parts = sessionId.slice(3).split(',', 2);
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
-  return [parts[0], parts[1]];
-}
-
-function humanAddressMatches(address: string, currentUser: { id: string; name: string }) {
-  if (!address.startsWith('human:')) return false;
-  const value = address.slice('human:'.length);
-  return value === currentUser.id || value === currentUser.name;
-}
-
-function agentNameFromAddress(address: string): string | null {
-  return address.startsWith('openagents:') ? address.slice('openagents:'.length) : null;
-}
-
 /** Fetch recent messages for a session (cache prefetch). */
 async function fetchSessionMessages(sessionId: string): Promise<WorkspaceMessage[]> {
   try {
@@ -265,25 +248,6 @@ export function ChatView() {
     notifyTyping();
   }, [currentSessionId, notifyTyping]);
 
-  const dmPair = useMemo(() => parseDMSessionId(currentSessionId), [currentSessionId]);
-  const isDM = dmPair !== null;
-  const dmAgentName = useMemo(() => {
-    if (!dmPair) return null;
-    const [first, second] = dmPair;
-    if (humanAddressMatches(first, currentUser)) return agentNameFromAddress(second);
-    if (humanAddressMatches(second, currentUser)) return agentNameFromAddress(first);
-    return null;
-  }, [dmPair, currentUser]);
-  const canSendInCurrentSession = !isDM || dmAgentName !== null;
-  const dmTitle = useMemo(() => {
-    if (!dmPair) return '';
-    return dmPair.map((address) => {
-      const agentName = agentNameFromAddress(address);
-      if (agentName) return agentName;
-      if (humanAddressMatches(address, currentUser)) return currentUser.name || '我';
-      return address.replace(/^human:/, '');
-    }).join(' ↔ ');
-  }, [dmPair, currentUser]);
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   // Merge real messages with optimistic messages for display
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
@@ -388,7 +352,7 @@ export function ChatView() {
       const loadingOptimisticMsg: WorkspaceMessage = {
         messageId: `optimistic-loading-${timestamp}`,
         sessionId: currentSessionId,
-        senderName: dmAgentName || agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || 'Agent',
+        senderName: agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || 'Agent',
         senderType: 'agent',
         content: '',
         messageType: 'loading',
@@ -407,7 +371,7 @@ export function ChatView() {
         let attachments: { fileId: string; filename: string; contentType: string; url: string }[] | undefined;
         if (files.length > 0) {
           const uploaded = await Promise.all(
-            files.map((pf) => workspaceApi.uploadFile(pf.file, isDM ? undefined : currentSessionId))
+            files.map((pf) => workspaceApi.uploadFile(pf.file, currentSessionId))
           );
           attachments = uploaded.map((f) => ({
             fileId: f.id,
@@ -418,26 +382,15 @@ export function ChatView() {
         }
 
         const finalContent = content || (attachments ? attachments.map((a) => a.filename).join(', ') : '');
-        if (dmAgentName) {
-          await workspaceApi.sendDirectMessage(
-            dmAgentName,
-            finalContent,
-            currentUser.name,
-            attachments,
-            currentUser.id,
-            currentUser.avatarUrl || null,
-          );
-        } else {
-          await workspaceApi.sendMessage(
-            currentSessionId,
-            finalContent,
-            currentUser.name,
-            mentions.length > 0 ? mentions : undefined,
-            attachments,
-            currentUser.id,
-            currentUser.avatarUrl || null,
-          );
-        }
+        await workspaceApi.sendMessage(
+          currentSessionId,
+          finalContent,
+          currentUser.name,
+          mentions.length > 0 ? mentions : undefined,
+          attachments,
+          currentUser.id,
+          currentUser.avatarUrl || null,
+        );
         forceRefresh();
       } catch {
         // Error is visible via missing message
@@ -445,7 +398,7 @@ export function ChatView() {
         setOptimisticMessages([]);
       }
     },
-    [currentSessionId, currentUser.id, currentUser.name, currentUser.avatarUrl, forceRefresh, agents, isDM, dmAgentName]
+    [currentSessionId, currentUser.id, currentUser.name, currentUser.avatarUrl, forceRefresh, agents]
   );
 
   const hasStatusMessages = displayMessages.some(
@@ -490,15 +443,7 @@ export function ChatView() {
               <ChevronLeft className="size-5" />
             </button>
           )}
-          {isDM ? (
-            <h2 className="text-sm font-semibold truncate flex items-center gap-1.5">
-              <MessageSquare className="size-3.5 text-muted-foreground" />
-              {dmTitle}
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium">
-                {canSendInCurrentSession ? '私聊' : 'read-only'}
-              </span>
-            </h2>
-          ) : editingTitle ? (
+          {editingTitle ? (
             <input
               ref={titleInputRef}
               value={titleDraft}
@@ -535,8 +480,8 @@ export function ChatView() {
           })()}
         </div>
         <div className="flex items-center gap-1 lg:gap-1.5">
-          {/* Participant chips — hidden on mobile, shown on desktop, not shown for DMs */}
-          {!isDM && <div className="hidden lg:flex items-center gap-1 overflow-x-auto">
+          {/* Participant chips — hidden on mobile, shown on desktop */}
+          <div className="hidden lg:flex items-center gap-1 overflow-x-auto">
             {(() => {
               const participants = currentSession?.participants || [];
               const sessionAgents = agents.filter((a) => participants.includes(a.agentName));
@@ -558,7 +503,7 @@ export function ChatView() {
                 );
               });
             })()}
-          </div>}
+          </div>
 
           {/* Compact avatar stack on mobile */}
           {isMobile && (() => {
@@ -753,24 +698,21 @@ export function ChatView() {
           />
         )}
 
-        {/* Input — hidden for read-only agent-agent DM views */}
-        {canSendInCurrentSession && (
-          <div className="px-3 lg:px-4 py-2 lg:py-3">
-            <div className="max-w-3xl mx-auto w-full">
-              <ChatInput
-                onSend={handleSend}
-                agents={agents}
-                knowledge={knowledge}
-                draft={currentDraft}
-                onDraftChange={handleDraftChange}
-                onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
-                focusKey={focusKey}
-                onCreateRoutine={() => setShowCreateRoutine(true)}
-                disabled={!currentUser.name.trim()}
-              />
-            </div>
+        <div className="px-3 lg:px-4 py-2 lg:py-3">
+          <div className="max-w-3xl mx-auto w-full">
+            <ChatInput
+              onSend={handleSend}
+              agents={agents}
+              knowledge={knowledge}
+              draft={currentDraft}
+              onDraftChange={handleDraftChange}
+              onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
+              focusKey={focusKey}
+              onCreateRoutine={() => setShowCreateRoutine(true)}
+              disabled={!currentUser.name.trim()}
+            />
           </div>
-        )}
+        </div>
 
         <CreateRoutineDialog
           open={showCreateRoutine}

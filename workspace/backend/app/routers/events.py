@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, case, cast, func, or_, select, Text
+from sqlalchemy import and_, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
 
 from app import cache
@@ -229,6 +229,15 @@ async def send_event(
     if not workspace:
         return json_response(ResponseCode.NOT_FOUND, "Network not found")
 
+    if (
+        body.type == "workspace.message.posted"
+        and (
+            (body.visibility or "").lower() == "direct"
+            or (body.target or "").startswith("openagents:")
+        )
+    ):
+        return json_response(ResponseCode.BAD_REQUEST, "Direct chat is disabled; post to a channel")
+
     # Build ONM Event
     event = Event(
         type=body.type,
@@ -352,6 +361,10 @@ def lease_pending_deliveries(
             AgentDelivery.agent_name == agent,
             AgentDelivery.status.in_(["pending", "leased"]),
             AgentDelivery.delivery_kind.in_(["attention", "ambient"] if include_ambient else ["attention"]),
+            or_(
+                EventRecord.type != "workspace.message.posted",
+                EventRecord.visibility != "direct",
+            ),
             or_(
                 AgentDelivery.status == "pending",
                 AgentDelivery.lease_until.is_(None),
@@ -523,6 +536,10 @@ def get_agent_context(
                 AgentDelivery.agent_name == agent,
                 AgentDelivery.delivery_kind == "ambient",
                 AgentDelivery.status != "acked",
+                or_(
+                    EventRecord.type != "workspace.message.posted",
+                    EventRecord.visibility != "direct",
+                ),
             )
         )
         if channel:
@@ -603,7 +620,6 @@ def poll_events(
     target: Optional[str] = Query(None, description="Filter by target address"),
     channel: Optional[str] = Query(None, description="Filter by channel name"),
     type: Optional[str] = Query(None, description="Filter by event type prefix"),
-    conversation: Optional[str] = Query(None, description="Filter to DM conversation between two agents (comma-separated addresses)"),
     search: Optional[str] = Query(None, description="Search message content (case-insensitive)"),
     member: Optional[str] = Query(None, description="Filter to channels where this agent is a member"),
     session_id: Optional[str] = Query(None, description="Session id proving the member agent identity"),
@@ -656,7 +672,7 @@ def poll_events(
     if not search and not member and not human_email:
         key_parts = [
             str(workspace.id), target or "", channel or "",
-            type or "", conversation or "",
+            type or "",
             after or "", before or "",
             sort or "asc", str(limit),
         ]
@@ -668,7 +684,7 @@ def poll_events(
         # this filter the last time we saw any events). Cursor-free.
         filter_parts = [
             str(workspace.id), target or "", channel or "",
-            type or "", conversation or "",
+            type or "",
             sort or "asc", str(limit),
         ]
         filter_hash = hashlib.sha1("|".join(filter_parts).encode("utf-8")).hexdigest()
@@ -702,6 +718,12 @@ def poll_events(
                             pass
 
     query = select(EventRecord).where(EventRecord.network_id == workspace.id)
+    query = query.where(
+        or_(
+            EventRecord.type != "workspace.message.posted",
+            EventRecord.visibility != "direct",
+        )
+    )
     query = apply_event_channel_visibility(
         query,
         db,
@@ -711,20 +733,6 @@ def poll_events(
         human_email=human_email,
         include_public=member is None,
     )
-
-    if conversation:
-        parts = [p.strip() for p in conversation.split(",", 1)]
-        if len(parts) != 2 or not parts[0] or not parts[1]:
-            return json_response(ResponseCode.BAD_REQUEST, "conversation must be two comma-separated addresses")
-        a, b = parts
-        query = query.where(
-            EventRecord.visibility == "direct",
-            ~EventRecord.target.startswith("channel/"),
-            or_(
-                and_(EventRecord.source == a, EventRecord.target == b),
-                and_(EventRecord.source == b, EventRecord.target == a),
-            ),
-        )
 
     if after:
         cursor_row = db.execute(
@@ -776,7 +784,7 @@ def poll_events(
     events = rows[:limit]
 
     composing = False
-    if not search and not conversation:
+    if not search:
         from app.composing import has_any_composing
         composing = has_any_composing(str(workspace.id))
 
@@ -849,102 +857,6 @@ def poll_events(
             pass
 
     return response
-
-
-# ---------------------------------------------------------------------------
-# GET /v1/events/conversations — discover agent-to-agent DM conversations
-# ---------------------------------------------------------------------------
-
-@router.get("/events/conversations")
-def list_conversations(
-    network: str = Query(..., description="Network (workspace) ID or slug"),
-    agent: Optional[str] = Query(None, description="Filter to conversations involving this agent"),
-    limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    x_workspace_token: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None),
-):
-    """
-    List active agent-to-agent DM conversations.
-
-    Returns distinct conversation pairs with their latest message,
-    ordered by most recent activity.
-    """
-    workspace = db.execute(
-        select(Workspace).where(_workspace_filter(network))
-    ).scalar_one_or_none()
-
-    if not workspace:
-        return json_response(ResponseCode.NOT_FOUND, "Network not found")
-
-    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
-        return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
-
-    # Build a subquery to find the latest event per conversation pair.
-    # Normalize pairs so (A→B) and (B→A) are the same conversation.
-    # Use case() instead of func.least/greatest for SQLite compatibility.
-    lesser = case(
-        (EventRecord.source <= EventRecord.target, EventRecord.source),
-        else_=EventRecord.target,
-    )
-    greater = case(
-        (EventRecord.source > EventRecord.target, EventRecord.source),
-        else_=EventRecord.target,
-    )
-
-    base = (
-        select(
-            lesser.label("agent_a"),
-            greater.label("agent_b"),
-            func.max(EventRecord.timestamp).label("last_ts"),
-            func.count().label("msg_count"),
-        )
-        .where(
-            EventRecord.network_id == workspace.id,
-            EventRecord.visibility == "direct",
-            # Exclude channel targets — those are not DMs
-            ~EventRecord.target.startswith("channel/"),
-        )
-    )
-
-    if agent:
-        base = base.where(
-            or_(EventRecord.source == agent, EventRecord.target == agent)
-        )
-
-    base = base.group_by("agent_a", "agent_b").order_by(func.max(EventRecord.timestamp).desc()).limit(limit)
-
-    pairs = db.execute(base).all()
-
-    # For each pair, fetch the actual latest event
-    conversations = []
-    for row in pairs:
-        latest_event = db.execute(
-            select(EventRecord)
-            .where(
-                EventRecord.network_id == workspace.id,
-                EventRecord.timestamp == row.last_ts,
-                or_(
-                    and_(EventRecord.source == row.agent_a, EventRecord.target == row.agent_b),
-                    and_(EventRecord.source == row.agent_b, EventRecord.target == row.agent_a),
-                ),
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-
-        if latest_event:
-            payload = latest_event.payload or {}
-            conversations.append({
-                "agents": [row.agent_a, row.agent_b],
-                "last_message": {
-                    "content": payload.get("content", ""),
-                    "sender": latest_event.source,
-                    "timestamp": latest_event.timestamp,
-                },
-                "message_count": row.msg_count,
-            })
-
-    return success_response({"conversations": conversations})
 
 
 # ---------------------------------------------------------------------------

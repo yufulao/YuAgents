@@ -1090,7 +1090,7 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
 
     participant_names = _channel_participant_names(channel)
 
-    # Private/dm/system channels are closed worlds: an agent that is not an
+    # Private/system channels are closed worlds: an agent that is not an
     # explicit participant may not post, even if it somehow learned the target.
     if event.source.startswith("openagents:") and is_closed_channel(channel):
         sender = event.source[len("openagents:"):]

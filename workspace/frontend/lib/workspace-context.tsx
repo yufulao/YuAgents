@@ -4,7 +4,7 @@ import React, { createContext, useContext, useCallback, useEffect, useRef, useSt
 import { workspaceApi } from './api';
 import { generateUserId, getStoredIdentity, getWorkspaceIdentityProfile, storeIdentity } from './identity';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, KnowledgeEntry, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, KnowledgeEntry, NotificationItem, OnlineUser, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceFile, WorkspaceIdentity, WorkspaceSession } from './types';
 
 function useWorkspaceIdentity() {
   const [localIdentity, setLocalIdentity] = useState<WorkspaceIdentity>(() => {
@@ -83,7 +83,7 @@ interface WorkspaceContextValue {
     master?: string;
     participants?: string[];
     resumeFrom?: string;
-    visibility?: 'public' | 'private' | 'dm' | 'system';
+    visibility?: 'public' | 'private' | 'system';
     mentionPolicy?: 'members_only' | 'workspace_members' | 'disabled';
   }) => Promise<WorkspaceSession>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -110,8 +110,6 @@ interface WorkspaceContextValue {
   unpersistBrowserTab: (tabId: string) => Promise<void>;
   deleteBrowserContext: (contextId: string) => Promise<void>;
   openBrowserTabWithContext: (contextId: string, url?: string) => Promise<BrowserTab>;
-  dmConversations: DMConversation[];
-  refreshDMConversations: () => Promise<void>;
   todos: TodoItem[];
   refreshTodos: () => Promise<void>;
   routines: RoutineItem[];
@@ -201,7 +199,6 @@ export function WorkspaceProvider({
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
-  const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[]>([]);
@@ -544,7 +541,6 @@ export function WorkspaceProvider({
       workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {});
       workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {});
       workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {});
-      workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
       workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
       workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {});
       workspaceApi.listKnowledge().then((r) => setKnowledge(r.entries)).catch(() => {});
@@ -752,15 +748,6 @@ export function WorkspaceProvider({
     return tab;
   }, [refreshBrowserTabs]);
 
-  const refreshDMConversations = useCallback(async () => {
-    try {
-      const convos = await workspaceApi.listConversations();
-      setDMConversations(convos);
-    } catch {
-      // Non-critical
-    }
-  }, []);
-
   // Initial load: workspace metadata + discover for channels
   useEffect(() => {
     let cancelled = false;
@@ -832,11 +819,6 @@ export function WorkspaceProvider({
             } catch { /* storage full */ }
           }
         } catch { /* non-critical */ }
-
-        // Also fetch DM conversations
-        workspaceApi.listConversations().then((c) => {
-          if (!cancelled) setDMConversations(c);
-        }).catch(() => {});
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load workspace');
@@ -878,7 +860,7 @@ export function WorkspaceProvider({
     master?: string;
     participants?: string[];
     resumeFrom?: string;
-    visibility?: 'public' | 'private' | 'dm' | 'system';
+    visibility?: 'public' | 'private' | 'system';
     mentionPolicy?: 'members_only' | 'workspace_members' | 'disabled';
   }) => {
     const masterAgent = opts?.master || agents.find((a) => a.role === 'master')?.agentName;
@@ -1085,8 +1067,6 @@ export function WorkspaceProvider({
         unpersistBrowserTab,
         deleteBrowserContext,
         openBrowserTabWithContext,
-        dmConversations,
-        refreshDMConversations,
         todos,
         refreshTodos,
         routines,

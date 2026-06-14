@@ -1534,7 +1534,7 @@ def update_channel(
     if body.master_agent is not None:
         channel.master_agent = body.master_agent
     if body.visibility is not None:
-        if body.visibility not in {"public", "private", "dm", "system"}:
+        if body.visibility not in {"public", "private", "system"}:
             return json_response(ResponseCode.BAD_REQUEST, f"Invalid visibility: {body.visibility}")
         channel.visibility = body.visibility
     if body.mention_policy is not None:

@@ -5,7 +5,7 @@ Tests for the event-native API (POST/GET /v1/events).
 
 import pytest
 
-from app.models import AgentDelivery
+from app.models import AgentDelivery, EventRecord
 
 
 class TestSendEvent:
@@ -96,6 +96,23 @@ class TestSendEvent:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["metadata"]["custom_key"] == "custom_value"
+
+    def test_direct_agent_control_still_allowed(self, client, workspace):
+        """Direct visibility remains available for internal agent control events."""
+        resp = client.post("/v1/events", json={
+            "type": "workspace.agent.control",
+            "source": "human:user1",
+            "target": "openagents:agent-alpha",
+            "payload": {"action": "stop"},
+            "visibility": "direct",
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["type"] == "workspace.agent.control"
+        assert data["target"] == "openagents:agent-alpha"
+        assert data["payload"]["action"] == "stop"
 
     def test_human_message_routes_to_master(self, client, workspace):
         """Human messages are routed to the channel master agent."""
@@ -337,18 +354,25 @@ class TestPollEvents:
         resp = client.get("/v1/events", params={"network": "nonexistent"})
         assert resp.status_code == 404
 
+    def test_conversations_endpoint_removed(self, client, workspace):
+        """DM conversation discovery is no longer exposed."""
+        resp = client.get("/v1/events/conversations", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 404
+
 
 class TestAgentDeliveries:
     """Durable per-agent delivery inbox."""
 
-    def test_direct_message_creates_leaseable_delivery(self, client, workspace, db):
+    def test_direct_message_is_rejected_without_delivery(self, client, workspace, db):
         join = client.post("/v1/join", json={
             "agent_name": "agent-alpha",
             "token": workspace["token"],
             "network": workspace["id"],
         })
         assert join.status_code == 200
-        session_id = join.json()["data"]["session_id"]
+
+        before_count = db.query(AgentDelivery).count()
 
         sent = client.post("/v1/events", json={
             "type": "workspace.message.posted",
@@ -358,30 +382,54 @@ class TestAgentDeliveries:
             "visibility": "direct",
             "network": workspace["id"],
         }, headers={"X-Workspace-Token": workspace["token"]})
-        assert sent.status_code == 200
-        event_id = sent.json()["data"]["id"]
+        assert sent.status_code == 400
+        assert "Direct chat is disabled" in sent.json()["message"]
 
         db.expire_all()
-        delivery = db.query(AgentDelivery).filter_by(
-            event_id=event_id,
+        assert db.query(AgentDelivery).count() == before_count
+
+    def test_legacy_direct_message_delivery_is_not_leaseable(self, client, workspace, db):
+        join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert join.status_code == 200
+        session_id = join.json()["data"]["session_id"]
+
+        event = EventRecord(
+            id="legacy-direct-message",
+            network_id=workspace["id"],
+            type="workspace.message.posted",
+            source="human:user1",
+            target="openagents:agent-alpha",
+            payload={"content": "old private hello"},
+            metadata_={},
+            timestamp=1,
+            visibility="direct",
+        )
+        delivery = AgentDelivery(
+            event_id=event.id,
+            workspace_id=workspace["id"],
             agent_name="agent-alpha",
-        ).one()
-        assert delivery.status == "pending"
-        assert delivery.delivery_kind == "attention"
-        assert delivery.attention_reason == "direct"
-        assert delivery.channel_name is None
+            delivery_kind="attention",
+            attention_reason="direct",
+            status="pending",
+        )
+        db.add(event)
+        db.commit()
+
+        db.add(delivery)
+        db.commit()
 
         leased = client.get("/v1/agent-deliveries/pending", params={
             "network": workspace["id"],
             "agent": "agent-alpha",
             "session_id": session_id,
         }, headers={"X-Workspace-Token": workspace["token"]})
+
         assert leased.status_code == 200
-        deliveries = leased.json()["data"]["deliveries"]
-        assert len(deliveries) == 1
-        assert deliveries[0]["event"]["id"] == event_id
-        assert deliveries[0]["event"]["target"] == "openagents:agent-alpha"
-        assert deliveries[0]["event"]["visibility"] == "direct"
+        assert leased.json()["data"]["deliveries"] == []
 
     def test_targeted_message_creates_leaseable_delivery(self, client, workspace, db):
         join = client.post("/v1/join", json={

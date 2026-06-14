@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import Channel, ChannelHumanMember, ChannelMember, EventRecord, Workspace, WorkspaceMember
 
 
-CLOSED_CHANNEL_VISIBILITIES = {"private", "dm", "system"}
+CLOSED_CHANNEL_VISIBILITIES = {"private", "system"}
 
 
 def is_closed_channel(channel: Channel) -> bool:

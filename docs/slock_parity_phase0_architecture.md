@@ -156,7 +156,7 @@ Backend canonical tables should split `WorkspaceMember` from runtime config:
 ### Channel / Thread
 
 ```ts
-type ChannelVisibility = 'public' | 'private' | 'dm' | 'system';
+type ChannelVisibility = 'public' | 'private' | 'system';
 type MentionPolicy = 'members_only' | 'workspace_members' | 'disabled';
 
 interface WorkspaceChannel {
@@ -178,7 +178,6 @@ Rules:
 
 - `public`: workspace members may discover it; posting may still require join depending on UI policy.
 - `private`: only explicit members can discover, poll, post, or be mentioned in that channel.
-- `dm`: exactly the DM participants; no ambient workspace routing.
 - `system`: readonly or system-managed.
 - Human `@agent` in private channels must not auto-add the target. If target is not a member, backend returns a structured error: `mention_target_not_in_channel`.
 - Agent-to-agent routing must be restricted to existing channel members.

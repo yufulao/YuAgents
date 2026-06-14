@@ -112,7 +112,7 @@ export interface WorkspaceSession {
   workspaceId: string;
   createdBy: string | null;
   title: string;
-  visibility: 'public' | 'private' | 'dm' | 'system';
+  visibility: 'public' | 'private' | 'system';
   mentionPolicy: 'members_only' | 'workspace_members' | 'disabled';
   status: string;
   starred: boolean;
@@ -344,7 +344,7 @@ export interface NetworkChannel {
   title: string | null;
   master: string | null;
   participants: string[];
-  visibility?: 'public' | 'private' | 'dm' | 'system';
+  visibility?: 'public' | 'private' | 'system';
   mention_policy?: 'members_only' | 'workspace_members' | 'disabled';
   created_at: number | null;
   last_event_at: number | null;
@@ -396,12 +396,6 @@ export interface PaginatedResponse<T> {
 export interface MessagePollResponse {
   messages: WorkspaceMessage[];
   hasMore: boolean;
-}
-
-export interface DMConversation {
-  agents: [string, string];
-  lastMessage: { content: string; sender: string; timestamp: number };
-  messageCount: number;
 }
 
 // ---------------------------------------------------------------------------
