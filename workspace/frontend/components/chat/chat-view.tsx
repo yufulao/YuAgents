@@ -682,6 +682,7 @@ export function ChatView() {
           <EmptyState />
         ) : (
           <ChatMessages
+            sessionId={currentSessionId}
             messages={displayMessages}
             agents={agents}
             showAllSteps={showAllSteps}

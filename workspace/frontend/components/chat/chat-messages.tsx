@@ -69,11 +69,12 @@ function isTerminalStatus(msg: WorkspaceMessage) {
 // ── Component ──
 
 interface ChatMessagesProps {
+  sessionId?: string | null;
   messages: WorkspaceMessage[];
   agents?: WorkspaceAgent[];
   showAllSteps: boolean;
   className?: string;
-  /** Increment to force scroll to bottom (e.g. after user sends a message). */
+  /** Increment to force scroll to bottom after explicit user actions. */
   scrollKey?: number;
   /** Callback to load older messages (infinite scroll upward). */
   loadOlder?: () => Promise<void>;
@@ -83,13 +84,13 @@ interface ChatMessagesProps {
   loadingOlder?: boolean;
 }
 
-export function ChatMessages({ messages, agents, showAllSteps, className, scrollKey, loadOlder, hasOlder, loadingOlder }: ChatMessagesProps) {
+export function ChatMessages({ sessionId, messages, agents, showAllSteps, className, scrollKey, loadOlder, hasOlder, loadingOlder }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  const prevLengthRef = useRef(0);
   // Track session identity to reset scroll state on thread switch
   const prevSessionRef = useRef<string | null>(null);
+  const pendingInitialScrollRef = useRef<string | null>(null);
   // True when the user has intentionally scrolled away from the bottom.
   // Prevents auto-scroll from yanking them back while reading history.
   const userScrolledUpRef = useRef(false);
@@ -157,33 +158,25 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
         if (containerRef.current) {
           containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
+        setShowScrollBtn(false);
+        userScrolledUpRef.current = false;
       });
     }
   }, [totalCount, virtualizer]);
 
-  // Derive the current session from messages for thread-switch detection
-  const currentSessionId = messages.length > 0 ? messages[0].sessionId : null;
-
-  // Auto-scroll on new messages — but NOT when user has scrolled up to read history
+  // New messages should not move the viewport. Only entering a different
+  // session, explicit sends, or the manual button can scroll to the bottom.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    // Detect thread switch: reset scroll state
+    const currentSessionId = sessionId ?? null;
     if (currentSessionId !== prevSessionRef.current) {
       prevSessionRef.current = currentSessionId;
-      prevLengthRef.current = 0;
       userScrolledUpRef.current = false;
+      setShowScrollBtn(false);
+      pendingInitialScrollRef.current = currentSessionId;
     }
+  }, [sessionId]);
 
-    prevLengthRef.current = messages.length;
-
-    if (userScrolledUpRef.current) return;
-
-    requestAnimationFrame(() => scrollToBottom());
-  }, [messages.length, currentSessionId, scrollToBottom]);
-
-  // Force scroll when scrollKey changes (user sent a message)
+  // Force scroll when scrollKey changes (user sent a message).
   useEffect(() => {
     if (scrollKey) {
       userScrolledUpRef.current = false;
@@ -230,6 +223,25 @@ export function ChatMessages({ messages, agents, showAllSteps, className, scroll
       pendingOlderRestoreRef.current = null;
     });
   }, [messages.length, totalCount]);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const pendingInitialSession = pendingInitialScrollRef.current;
+    if (pendingInitialSession && pendingInitialSession === (sessionId ?? null) && totalCount > 0) {
+      requestAnimationFrame(() => {
+        scrollToBottom();
+        pendingInitialScrollRef.current = null;
+      });
+      return;
+    }
+
+    if (pendingOlderRestoreRef.current) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    setShowScrollBtn(!isNearBottom);
+    userScrolledUpRef.current = !isNearBottom;
+  }, [sessionId, messages.length, totalCount, scrollToBottom]);
 
   useEffect(() => {
     const el = containerRef.current;
