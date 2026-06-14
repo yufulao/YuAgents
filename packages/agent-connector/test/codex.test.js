@@ -52,4 +52,15 @@ describe('CodexAdapter', () => {
     assert.equal(cmd[5], '11111111-2222-3333-4444-555555555555');
     assert.equal(cmd.includes('-C', 4), false);
   });
+
+  it('summarizes command status without exposing workspace tokens', () => {
+    const adapter = makeAdapter();
+    const command = String.raw`"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Command '$headers = @{ "X-Workspace-Token" = "abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG" }; Invoke-RestMethod -Headers $headers -Uri http://127.0.0.1:8000/v1/workspace-tasks'`;
+
+    const status = adapter._formatCommandStatus(command, 0);
+
+    assert.equal(status, '**Running:** `workspace API request` (exit 0)');
+    assert.equal(status.includes('abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG'), false);
+    assert.equal(status.includes('X-Workspace-Token'), false);
+  });
 });

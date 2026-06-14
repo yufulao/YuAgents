@@ -199,6 +199,34 @@ class CodexAdapter extends BaseAdapter {
     return skillsSection ? `${withRuntime}\n\n${skillsSection}` : withRuntime;
   }
 
+  _summarizeCommandForStatus(command) {
+    const text = this._redactSensitiveText(command || '').replace(/\s+/g, ' ').trim();
+    if (!text) return 'command';
+
+    const lower = text.toLowerCase();
+    if (
+      lower.includes('x-workspace-token') ||
+      lower.includes('authorization') ||
+      lower.includes('invoke-restmethod') ||
+      lower.includes('invoke-webrequest') ||
+      /\bcurl(?:\.exe)?\b/i.test(text)
+    ) {
+      return 'workspace API request';
+    }
+
+    const powershell = text.match(/(?:pwsh|powershell)(?:\.exe)?["']?\s+(?:-[A-Za-z]+\s+)*['"]?(.+)$/i);
+    const summary = powershell ? `PowerShell: ${powershell[1]}` : text;
+    return summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
+  }
+
+  _formatCommandStatus(command, exitCode) {
+    let status = `**Running:** \`${this._summarizeCommandForStatus(command)}\``;
+    if (exitCode !== undefined && exitCode !== null) {
+      status += ` (exit ${exitCode})`;
+    }
+    return status;
+  }
+
   /**
    * Codex has no native skills-directory discovery (unlike Claude Code), so
    * we inject installed Skill Hub skills directly into its context. Each
@@ -441,13 +469,9 @@ class CodexAdapter extends BaseAdapter {
             try { await this.sendThinking(msgChannel, item.text); } catch {}
           } else if (item.type === 'command_execution') {
             hasToolUseSinceLastText = true;
-            const cmdText = (item.command || '').slice(0, 200);
+            const cmdText = this._summarizeCommandForStatus(item.command || '');
             const exitCode = item.exit_code;
-            const output = (item.output || '').slice(0, 500);
-            let status = `**Running:** \`${cmdText}\``;
-            if (exitCode !== undefined && exitCode !== null) {
-              status += ` (exit ${exitCode})`;
-            }
+            const status = this._formatCommandStatus(item.command || '', exitCode);
             try { await this.sendStatus(msgChannel, status); } catch {}
             this._log(`Command: ${cmdText} → exit ${exitCode}`);
           } else if (item.type === 'file_change') {

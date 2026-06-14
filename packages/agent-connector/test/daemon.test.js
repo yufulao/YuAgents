@@ -345,6 +345,34 @@ describe('Daemon', () => {
     assert.equal(sent, 0);
   });
 
+  it('BaseAdapter suppresses placeholder status and redacts status secrets', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    const sent = [];
+    adapter.client.sendMessage = async (_workspaceId, _channel, _token, content, opts) => {
+      sent.push({ content, opts });
+      return { ok: true };
+    };
+
+    await adapter.sendStatus('general', 'thinking...');
+    await adapter.sendStatus(
+      'general',
+      "Invoke-RestMethod -Headers @{ 'X-Workspace-Token' = 'abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG' }",
+      { queued_message: 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890' },
+    );
+
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].content, /X-Workspace-Token/);
+    assert.equal(sent[0].content.includes('abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG'), false);
+    assert.equal(String(sent[0].opts.metadata.queued_message).includes('abcdefghijklmnopqrstuvwxyz1234567890'), false);
+    assert.match(String(sent[0].opts.metadata.queued_message), /<redacted>/);
+  });
+
   it('BaseAdapter requeues failed deliveries only for limited retries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

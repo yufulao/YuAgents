@@ -876,17 +876,51 @@ class BaseAdapter {
   }
 
   async sendStatus(channel, content, extraMeta) {
+    const cleanContent = this._sanitizeStatusContent(content);
+    if (!cleanContent) return;
     try {
-      await this.client.sendMessage(this.workspaceId, channel, this.token, content, {
+      await this.client.sendMessage(this.workspaceId, channel, this.token, cleanContent, {
         senderType: 'agent',
         senderName: this.agentName,
         messageType: 'status',
-        metadata: { agent_mode: this._mode, ...extraMeta },
+        metadata: this._sanitizeStatusMetadata({ agent_mode: this._mode, ...extraMeta }),
         sessionId: this._sessionId,
       });
     } catch (e) {
       if (e instanceof SessionRevokedError) this._onSessionRevoked();
     }
+  }
+
+  _sanitizeStatusContent(content) {
+    const text = this._redactSensitiveText(content).trim();
+    if (!text) return '';
+    if (/^thinking(?:\.\.\.)?$/i.test(text)) return '';
+    if (text.length <= 1000) return text;
+    return `${text.slice(0, 997)}...`;
+  }
+
+  _sanitizeStatusMetadata(value) {
+    if (typeof value === 'string') return this._redactSensitiveText(value);
+    if (Array.isArray(value)) return value.map((entry) => this._sanitizeStatusMetadata(entry));
+    if (value && typeof value === 'object') {
+      const result = {};
+      for (const [key, entry] of Object.entries(value)) {
+        result[key] = this._sanitizeStatusMetadata(entry);
+      }
+      return result;
+    }
+    return value;
+  }
+
+  _redactSensitiveText(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/\b(sk_(?:agent|machine))_[A-Za-z0-9_-]+/g, '$1_<redacted>')
+      .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1<redacted>')
+      .replace(/((?:X-Workspace-Token|Authorization|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|GEMINI_API_KEY|API[_-]?KEY|TOKEN|token)['"]?\s*[:=]\s*['"]?)[^'"\s,;}]+/gi, '$1<redacted>')
+      .replace(/((?:X-Workspace-Token|Authorization|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|GEMINI_API_KEY|API[_-]?KEY|TOKEN|token)[^:=\n\r]{0,40}[:=]\s*['"]?)[A-Za-z0-9._~+/-]{16,}['"]?/gi, '$1<redacted>')
+      .replace(/((?:X-Workspace-Token|Authorization|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|GEMINI_API_KEY|API[_-]?KEY|TOKEN|token)['"]?\s*=>?\s*['"]?)[A-Za-z0-9._~+/-]{16,}['"]?/gi, '$1<redacted>')
+      .replace(/((?:X-Workspace-Token|Authorization|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|GEMINI_API_KEY|API[_-]?KEY|TOKEN|token)['"]?\s*,\s*['"]?)[A-Za-z0-9._~+/-]{16,}['"]?/gi, '$1<redacted>');
   }
 
   async sendThinking(channel, content) {
