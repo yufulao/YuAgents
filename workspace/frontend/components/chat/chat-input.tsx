@@ -338,7 +338,14 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
                   insertMention(agent.agentName);
                 }}
               >
-                <AgentAvatar name={agent.agentName} size={24} status={status} showStatus />
+                <AgentAvatar
+                  name={agent.agentName}
+                  avatar={agent.avatar}
+                  avatarUrl={agent.avatarUrl}
+                  size={24}
+                  status={status}
+                  showStatus
+                />
                 <span className="font-medium">{agent.agentName}</span>
                 <span className={cn(
                   'text-[10px] px-1.5 py-0.5 rounded-full ml-auto',
