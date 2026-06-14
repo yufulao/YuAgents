@@ -77,14 +77,32 @@ function NavButton({
   );
 }
 
-function getAgentSidebarStatus(agent: WorkspaceAgent) {
-  return agent.activityState && agent.activityState !== 'idle'
-    ? agent.activityState
-    : agent.presenceStatus || agent.status || 'offline';
+function normalizeStatus(status?: string | null) {
+  return status?.trim().toLowerCase() || '';
+}
+
+function getAgentBaseStatus(agent: WorkspaceAgent) {
+  const activity = normalizeStatus(agent.activityState || agent.lifecycleState);
+  if (activity && activity !== 'idle') return activity;
+
+  const display = normalizeStatus(agent.displayStatus);
+  if (display && display !== 'idle') return display;
+
+  return normalizeStatus(agent.presenceStatus || agent.status)
+    || (agent.isConnected ? 'online' : 'offline');
+}
+
+function getAgentSidebarStatus(agent: WorkspaceAgent, liveStatus?: string) {
+  return normalizeStatus(liveStatus) || getAgentBaseStatus(agent);
+}
+
+function isOfflineStatus(status?: string | null) {
+  const normalized = normalizeStatus(status);
+  return !normalized || normalized === 'offline' || normalized === 'stopped' || normalized === 'disabled';
 }
 
 function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; status: string; onClick: () => void }) {
-  const statusLabel = getAgentSidebarStatus(agent);
+  const statusLabel = getAgentSidebarStatus(agent, status);
   return (
     <button
       onClick={onClick}
@@ -161,6 +179,8 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
     knowledge,
     unreadNotificationCount,
     currentSessionId,
+    lastMessageBySession,
+    activeSessionIds,
   } = useWorkspace();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -195,15 +215,21 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
   };
 
   const visibleAgents = agents;
-  const onlineCount = agents.filter((agent) => agent.status === 'online').length;
   const activeTaskCount = todos.filter((todo) => todo.status === 'pending' || todo.status === 'in_progress').length;
   const currentThreadTaskCount = todos.filter((todo) =>
     todo.channelName === currentSessionId && (todo.status === 'pending' || todo.status === 'in_progress')
   ).length;
-  const agentStatusDot = (agent: typeof agents[number]) =>
-    agent.activityState && agent.activityState !== 'idle'
-      ? agent.activityState
-      : agent.presenceStatus || agent.status;
+  const liveAgentStatus = (agent: typeof agents[number]) => {
+    const names = new Set([agent.agentName, agent.displayName, agent.handle].filter(Boolean));
+    const activeStatusMessage = Object.entries(lastMessageBySession).some(([sessionId, message]) => {
+      if (!message.isStatus || !names.has(message.senderName)) return false;
+      if (!activeSessionIds.has(sessionId)) return false;
+      return true;
+    });
+    return activeStatusMessage ? 'thinking' : undefined;
+  };
+  const agentStatusDot = (agent: typeof agents[number]) => liveAgentStatus(agent) || getAgentBaseStatus(agent);
+  const nonOfflineCount = visibleAgents.filter((agent) => !isOfflineStatus(agentStatusDot(agent))).length;
   const isSectionCollapsed = (key: string) => collapsedSections[key] ?? false;
   const toggleSection = (key: string) => {
     setCollapsedSections((prev) => ({ ...prev, [key]: !(prev[key] ?? false) }));
@@ -302,7 +328,7 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
 
           <div className="space-y-3 px-2.5">
             <SidebarSection
-              title={`Agents（${onlineCount}/${visibleAgents.length}）`}
+              title={`Agents（${nonOfflineCount}/${visibleAgents.length}）`}
               collapsed={isSectionCollapsed('agents')}
               onToggle={() => toggleSection('agents')}
             >
