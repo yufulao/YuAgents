@@ -38,7 +38,7 @@ class CreateWorkspaceTaskRequest(BaseModel):
     status: str = "todo"
     depends_on: List[str] = Field(default_factory=list)
     parent_task_id: Optional[str] = None
-    source: str = "openagents:unknown"
+    source: Optional[str] = None
 
 
 class ClaimWorkspaceTaskRequest(BaseModel):
@@ -177,8 +177,11 @@ async def create_workspace_task(
         return json_response(ResponseCode.BAD_REQUEST, "Invalid task status")
     if body.priority not in TASK_PRIORITIES:
         return json_response(ResponseCode.BAD_REQUEST, "Invalid task priority")
+    if _is_unknown_source(body.source):
+        return json_response(ResponseCode.BAD_REQUEST, "source is required")
 
     now = _utcnow()
+    created_by = body.source.strip()
     task = WorkspaceTask(
         workspace_id=str(workspace.id),
         channel_name=body.channel,
@@ -188,7 +191,7 @@ async def create_workspace_task(
         status=body.status,
         priority=body.priority,
         assignee=_normalize_agent_name(body.assignee),
-        created_by=body.source,
+        created_by=created_by,
         depends_on=body.depends_on or [],
         updated_at=now,
     )
@@ -196,7 +199,7 @@ async def create_workspace_task(
         task.completed_at = now
     db.add(task)
     db.flush()
-    await _emit_task_event(db, workspace, task, "created", body.source, x_workspace_token)
+    await _emit_task_event(db, workspace, task, "created", created_by, x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})
 

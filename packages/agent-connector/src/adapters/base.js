@@ -897,6 +897,7 @@ class BaseAdapter {
     // skip it entirely.
     const { cleanContent } = extractA2UISpec(content);
     if (!cleanContent || !cleanContent.trim()) return;
+    if (this._isNoResponseText(cleanContent)) return;
     try {
       await this.client.sendMessage(this.workspaceId, channel, this.token, cleanContent, {
         senderType: 'agent',

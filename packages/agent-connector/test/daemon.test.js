@@ -326,6 +326,25 @@ describe('Daemon', () => {
     assert.equal(adapter._deliveryLeaseSeconds, 21600);
   });
 
+  it('BaseAdapter suppresses no-response thinking messages', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    let sent = 0;
+    adapter.client.sendMessage = async () => {
+      sent += 1;
+      return { ok: true };
+    };
+
+    await adapter.sendThinking('general', '__no_response__');
+
+    assert.equal(sent, 0);
+  });
+
   it('BaseAdapter requeues failed deliveries only for limited retries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

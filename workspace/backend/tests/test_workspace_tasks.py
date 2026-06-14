@@ -86,6 +86,28 @@ def test_create_list_claim_and_update_workspace_task(client, workspace):
     assert "invalid token" in updated_task["result"]
 
 
+def test_create_workspace_task_requires_source(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    missing = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Missing source should not create unknown task",
+        "assignee": "agent-beta",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert missing.status_code == 400
+    assert "source is required" in missing.json()["message"]
+
+    unknown = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Unknown source should not create unknown task",
+        "assignee": "agent-beta",
+        "source": "openagents:unknown",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert unknown.status_code == 400
+    assert "source is required" in unknown.json()["message"]
+
+
 def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
     channel_name = workspace["channel"]["name"]
     beta_join = client.post("/v1/join", json={
