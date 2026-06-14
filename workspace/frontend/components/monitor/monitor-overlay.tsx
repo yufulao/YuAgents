@@ -113,9 +113,12 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
 
       // Optimistic messages
       const timestamp = Date.now();
+      const clientMessageId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${timestamp}-${Math.random().toString(36).slice(2)}`;
       const userContent = content || (files.length > 0 ? files.map((f) => f.file.name).join(', ') : '');
       const userOptimisticMsg: WorkspaceMessage = {
-        messageId: `optimistic-user-${timestamp}`,
+        messageId: `optimistic-user-${clientMessageId}`,
         sessionId,
         senderId: currentUser.id,
         senderName: currentUser.name,
@@ -129,7 +132,7 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
       };
 
       const loadingOptimisticMsg: WorkspaceMessage = {
-        messageId: `optimistic-loading-${timestamp}`,
+        messageId: `optimistic-loading-${clientMessageId}`,
         sessionId,
         senderName: agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || 'Agent',
         senderType: 'agent',
@@ -165,6 +168,8 @@ export function MonitorOverlay({ sessionId, session, initialMessages, open, onOp
           mentions.length > 0 ? mentions : undefined,
           attachments,
           currentUser.id,
+          undefined,
+          clientMessageId,
         );
         forceRefresh();
       } catch {

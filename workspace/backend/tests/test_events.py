@@ -30,6 +30,92 @@ class TestSendEvent:
         assert "id" in data
         assert "timestamp" in data
 
+    def test_human_message_client_id_is_idempotent(self, client, workspace, db):
+        """Retries with the same client message id return the original event."""
+        channel_name = workspace["channel"]["name"]
+        body = {
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"content": "retry once", "sender_type": "human"},
+            "metadata": {"client_message_id": "client-msg-1"},
+            "network": workspace["id"],
+        }
+        first = client.post("/v1/events", json=body, headers={"X-Workspace-Token": workspace["token"]})
+        second = client.post("/v1/events", json=body, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["data"]["id"] == first.json()["data"]["id"]
+        events = db.query(EventRecord).filter_by(
+            network_id=workspace["id"],
+            type="workspace.message.posted",
+            source="human:user1",
+            target=f"channel/{channel_name}",
+        ).all()
+        deliveries = db.query(AgentDelivery).filter_by(event_id=first.json()["data"]["id"]).all()
+        assert len(events) == 1
+        assert len(deliveries) == 1
+
+    def test_human_message_exact_short_retry_is_deduped(self, client, workspace, db):
+        """Short-window duplicate human posts are treated as send retries."""
+        channel_name = workspace["channel"]["name"]
+        body = {
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {
+                "content": "@agent-alpha please check this",
+                "sender_type": "human",
+                "mentions": ["agent-alpha"],
+            },
+            "network": workspace["id"],
+        }
+        first = client.post("/v1/events", json=body, headers={"X-Workspace-Token": workspace["token"]})
+        second = client.post("/v1/events", json=body, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["data"]["id"] == first.json()["data"]["id"]
+        events = db.query(EventRecord).filter_by(
+            network_id=workspace["id"],
+            type="workspace.message.posted",
+            source="human:user1",
+            target=f"channel/{channel_name}",
+        ).all()
+        deliveries = db.query(AgentDelivery).filter_by(event_id=first.json()["data"]["id"]).all()
+        assert len(events) == 1
+        assert len(deliveries) == 1
+
+    def test_human_message_dedupe_respects_payload(self, client, workspace, db):
+        """Different payloads from the same user and channel still create distinct events."""
+        channel_name = workspace["channel"]["name"]
+        base = {
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "network": workspace["id"],
+        }
+        first = client.post("/v1/events", json={
+            **base,
+            "payload": {"content": "same visible text", "mentions": ["agent-alpha"]},
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        second = client.post("/v1/events", json={
+            **base,
+            "payload": {"content": "same visible text", "mentions": []},
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["data"]["id"] != first.json()["data"]["id"]
+        events = db.query(EventRecord).filter_by(
+            network_id=workspace["id"],
+            type="workspace.message.posted",
+            source="human:user1",
+            target=f"channel/{channel_name}",
+        ).all()
+        assert len(events) == 2
+
     def test_send_event_missing_network(self, client, workspace):
         """Events without network field are rejected."""
         resp = client.post("/v1/events", json={

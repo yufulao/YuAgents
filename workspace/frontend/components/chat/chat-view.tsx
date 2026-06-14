@@ -329,9 +329,12 @@ export function ChatView() {
 
       // Create optimistic messages for instant feedback
       const timestamp = Date.now();
+      const clientMessageId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${timestamp}-${Math.random().toString(36).slice(2)}`;
       const userContent = content || (files.length > 0 ? files.map((f) => f.file.name).join(', ') : '');
       const userOptimisticMsg: WorkspaceMessage = {
-        messageId: `optimistic-user-${timestamp}`,
+        messageId: `optimistic-user-${clientMessageId}`,
         sessionId: currentSessionId,
         senderId: currentUser.id,
         senderName: currentUser.name,
@@ -345,7 +348,7 @@ export function ChatView() {
         metadata: {},
       };
       const loadingOptimisticMsg: WorkspaceMessage = {
-        messageId: `optimistic-loading-${timestamp}`,
+        messageId: `optimistic-loading-${clientMessageId}`,
         sessionId: currentSessionId,
         senderName: agents.find((a) => a.role === 'master')?.agentName || agents[0]?.agentName || 'Agent',
         senderType: 'agent',
@@ -385,6 +388,7 @@ export function ChatView() {
           attachments,
           currentUser.id,
           currentUser.avatarUrl || null,
+          clientMessageId,
         );
         forceRefresh();
       } catch {

@@ -41,6 +41,7 @@ router = APIRouter(prefix="/v1", tags=["Events"])
 _PROCESS_CONTEXT_MESSAGE_TYPES = {"status", "thinking", "todos"}
 _DURABLE_CONTEXT_CONTENT_LIMIT = 500
 _PROCESS_CONTEXT_CONTENT_LIMIT = 160
+_HUMAN_MESSAGE_DEDUPE_WINDOW_MS = 120_000
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +205,75 @@ def _task_context_payload(task: WorkspaceTask) -> dict:
     }
 
 
+def _event_response_data(event: EventRecord | Event) -> dict:
+    metadata = event.metadata_ if isinstance(event, EventRecord) else event.metadata
+    return {
+        "id": event.id,
+        "type": event.type,
+        "source": event.source,
+        "target": event.target,
+        "payload": event.payload,
+        "timestamp": event.timestamp,
+        "metadata": metadata,
+    }
+
+
+def _client_message_id(metadata: Optional[dict], payload: Optional[dict]) -> Optional[str]:
+    for value in (
+        (metadata or {}).get("client_message_id"),
+        (payload or {}).get("client_message_id"),
+    ):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _normalized_human_payload(payload: Optional[dict]) -> dict:
+    normalized = dict(payload or {})
+    normalized.pop("client_message_id", None)
+    return normalized
+
+
+def _find_duplicate_human_message(
+    db: Session,
+    workspace: Workspace,
+    body: SendEventRequest,
+) -> Optional[EventRecord]:
+    if body.type != "workspace.message.posted":
+        return None
+    if not (body.source or "").startswith("human:"):
+        return None
+    if not (body.target or "").startswith("channel/"):
+        return None
+    if (body.visibility or "channel").lower() == "direct":
+        return None
+
+    client_message_id = _client_message_id(body.metadata, body.payload)
+    query = select(EventRecord).where(
+        EventRecord.network_id == workspace.id,
+        EventRecord.type == body.type,
+        EventRecord.source == body.source,
+        EventRecord.target == body.target,
+    )
+    if not client_message_id:
+        cutoff = int(datetime.now(timezone.utc).timestamp() * 1000) - _HUMAN_MESSAGE_DEDUPE_WINDOW_MS
+        query = query.where(EventRecord.timestamp >= cutoff)
+
+    candidates = db.execute(
+        query.order_by(EventRecord.timestamp.desc(), EventRecord.id.desc()).limit(50)
+    ).scalars().all()
+    requested_payload = _normalized_human_payload(body.payload)
+    for event in candidates:
+        metadata = event.metadata_ or {}
+        if client_message_id:
+            if _client_message_id(metadata, event.payload) == client_message_id:
+                return event
+            continue
+        if _normalized_human_payload(event.payload) == requested_payload:
+            return event
+    return None
+
+
 @router.post("/events")
 async def send_event(
     body: SendEventRequest,
@@ -237,6 +307,11 @@ async def send_event(
         )
     ):
         return json_response(ResponseCode.BAD_REQUEST, "Direct chat is disabled; post to a channel")
+
+    if _verify_workspace_access(workspace, x_workspace_token, authorization):
+        existing_event = _find_duplicate_human_message(db, workspace, body)
+        if existing_event:
+            return success_response(_event_response_data(existing_event))
 
     # Build ONM Event
     event = Event(
@@ -291,13 +366,7 @@ async def send_event(
     # its own short-lived DB session because `db` here is request-scoped.
     from app.services.push import fanout_for_event
     event_snapshot = {
-        "id": result.id,
-        "type": result.type,
-        "source": result.source,
-        "target": result.target,
-        "payload": result.payload,
-        "metadata": result.metadata,
-        "timestamp": result.timestamp,
+        **_event_response_data(result),
     }
     background_tasks.add_task(fanout_for_event, str(workspace.id), event_snapshot)
 
@@ -314,15 +383,7 @@ async def send_event(
         from app.services.cloud_agent import invoke_cloud_agents
         background_tasks.add_task(invoke_cloud_agents, str(workspace.id), event_snapshot)
 
-    return success_response({
-        "id": result.id,
-        "type": result.type,
-        "source": result.source,
-        "target": result.target,
-        "payload": result.payload,
-        "timestamp": result.timestamp,
-        "metadata": result.metadata,
-    })
+    return success_response(_event_response_data(result))
 
 
 # ---------------------------------------------------------------------------

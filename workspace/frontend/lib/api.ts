@@ -245,6 +245,7 @@ class WorkspaceApi {
     attachments?: { fileId: string; filename: string; contentType: string; url: string }[],
     senderId?: string,
     senderAvatarUrl?: string | null,
+    clientMessageId?: string,
   ): Promise<ONMEvent> {
     return this.sendEvent({
       type: 'workspace.message.posted',
@@ -258,6 +259,9 @@ class WorkspaceApi {
         ...(senderAvatarUrl ? { sender_avatar_url: senderAvatarUrl } : {}),
         ...(mentions && mentions.length > 0 ? { mentions } : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      },
+      metadata: {
+        ...(clientMessageId ? { client_message_id: clientMessageId } : {}),
       },
       visibility: 'channel',
     });
