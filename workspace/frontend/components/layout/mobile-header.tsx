@@ -63,12 +63,12 @@ export function MobileHeader() {
                   <Menu className="size-4" />
                 </Button>
               </SheetTrigger>
-              <SheetContent className="p-0 gap-0 w-[280px]" side="left" close={false}>
+              <SheetContent className="w-[min(88vw,340px)] p-0 gap-0" side="left" close={false}>
                 <SheetHeader className="p-0 space-y-0">
                   <SheetTitle className="sr-only">Navigation</SheetTitle>
                 </SheetHeader>
-                <SheetBody className="flex grow p-0">
-                  <SidebarContent />
+                <SheetBody className="flex min-w-0 grow p-0">
+                  <SidebarContent forceExpanded />
                 </SheetBody>
               </SheetContent>
             </Sheet>

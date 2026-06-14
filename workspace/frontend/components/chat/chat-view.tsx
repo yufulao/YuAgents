@@ -289,7 +289,13 @@ export function ChatView() {
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
 
   useEffect(() => {
-    setStatusPortalTarget(document.getElementById('thread-status-sidebar-slot'));
+    const updatePortalTarget = () => {
+      setStatusPortalTarget(document.getElementById('thread-status-sidebar-slot'));
+    };
+    updatePortalTarget();
+    const observer = new MutationObserver(updatePortalTarget);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [currentSessionId, viewMode, isSidebarOpen]);
 
   const startEditingTitle = () => {

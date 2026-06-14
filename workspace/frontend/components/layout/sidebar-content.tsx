@@ -144,7 +144,7 @@ function SidebarSection({
   );
 }
 
-export function SidebarContent() {
+export function SidebarContent({ forceExpanded = false }: { forceExpanded?: boolean } = {}) {
   const router = useRouter();
   const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
   const {
@@ -209,7 +209,9 @@ export function SidebarContent() {
     setCollapsedSections((prev) => ({ ...prev, [key]: !(prev[key] ?? false) }));
   };
 
-  if (!isSidebarOpen) {
+  const isExpanded = forceExpanded || isSidebarOpen;
+
+  if (!isExpanded) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex justify-center px-2.5 py-1">
