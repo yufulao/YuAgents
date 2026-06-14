@@ -430,7 +430,10 @@ def lease_pending_deliveries(
                 AgentDelivery.status == "pending",
                 AgentDelivery.lease_until.is_(None),
                 AgentDelivery.lease_until < now,
-                AgentDelivery.lease_owner_session_id != session_id,
+                and_(
+                    AgentDelivery.delivery_kind == "attention",
+                    AgentDelivery.lease_owner_session_id != session_id,
+                ),
             ),
         )
         .order_by(AgentDelivery.created_at.asc(), EventRecord.timestamp.asc(), AgentDelivery.id.asc())

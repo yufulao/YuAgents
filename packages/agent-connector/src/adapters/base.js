@@ -26,7 +26,9 @@ const { skillsDirForAgentType } = require('../skill-installer');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 const DELIVERY_LEASE_SECONDS = 6 * 60 * 60;
-const STALE_AGENT_QUEUE_MS = 2 * 60 * 1000;
+const STALE_AGENT_QUEUE_MS = 30 * 1000;
+const STATUS_DEDUPE_MS = 30 * 1000;
+const GENERIC_STATUS_DEDUPE_MS = 2 * 60 * 1000;
 
 class BaseAdapter {
   /**
@@ -60,6 +62,8 @@ class BaseAdapter {
     this._controlWake = null;
     this._deliveryLeaseSeconds = DELIVERY_LEASE_SECONDS;
     this._agentQueueTtlMs = Number.parseInt(this.agentEnv.OPENAGENTS_AGENT_QUEUE_TTL_MS || '', 10) || STALE_AGENT_QUEUE_MS;
+    this._statusDedupeMs = Number.parseInt(this.agentEnv.OPENAGENTS_STATUS_DEDUPE_MS || '', 10) || STATUS_DEDUPE_MS;
+    this._recentStatusPosts = new Map();
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
@@ -714,12 +718,14 @@ class BaseAdapter {
       msg._queueId = queueId;
       msg._queuedAt = Date.now();
       this._channelQueues[channel].push(msg);
-      try {
-        await this.sendStatus(channel, 'message queued — will process after current task', {
-          queued_message: (msg.content || '').slice(0, 200),
-          queue_id: queueId,
-        });
-      } catch {}
+      if ((msg.senderType || '') !== 'agent') {
+        try {
+          await this.sendStatus(channel, 'message queued — will process after current task', {
+            queued_message: (msg.content || '').slice(0, 200),
+            queue_id: queueId,
+          });
+        } catch {}
+      }
       return;
     }
 
@@ -761,7 +767,7 @@ class BaseAdapter {
       if (await this._dropStaleQueuedMessage(channel, nextMsg)) {
         continue;
       }
-      if (nextMsg._queueId) {
+      if (nextMsg._queueId && (nextMsg.senderType || '') !== 'agent') {
         try { await this.sendStatus(channel, 'processing queued message', { queue_id: nextMsg._queueId, queue_status: 'processed' }); } catch {}
       }
       try {
@@ -904,17 +910,42 @@ class BaseAdapter {
   async sendStatus(channel, content, extraMeta) {
     const cleanContent = this._sanitizeStatusContent(content);
     if (!cleanContent) return;
+    const metadata = this._sanitizeStatusMetadata({ agent_mode: this._mode, ...extraMeta });
+    if (this._shouldSuppressStatus(channel, cleanContent, metadata)) return;
     try {
       await this.client.sendMessage(this.workspaceId, channel, this.token, cleanContent, {
         senderType: 'agent',
         senderName: this.agentName,
         messageType: 'status',
-        metadata: this._sanitizeStatusMetadata({ agent_mode: this._mode, ...extraMeta }),
+        metadata,
         sessionId: this._sessionId,
       });
     } catch (e) {
       if (e instanceof SessionRevokedError) this._onSessionRevoked();
     }
+  }
+
+  _statusDedupeWindowMs(content) {
+    if (/workspace api request/i.test(content)) return GENERIC_STATUS_DEDUPE_MS;
+    if (/git status --short --branch/i.test(content)) return GENERIC_STATUS_DEDUPE_MS;
+    if (/^message queued|^processing queued/i.test(content)) return GENERIC_STATUS_DEDUPE_MS;
+    return this._statusDedupeMs;
+  }
+
+  _shouldSuppressStatus(channel, content, metadata) {
+    const key = `${channel || ''}\n${content}`;
+    const now = Date.now();
+    const windowMs = this._statusDedupeWindowMs(content);
+    const previous = this._recentStatusPosts.get(key);
+    if (previous && now - previous < windowMs) return true;
+    this._recentStatusPosts.set(key, now);
+    if (this._recentStatusPosts.size > 200) {
+      const cutoff = now - Math.max(windowMs, GENERIC_STATUS_DEDUPE_MS);
+      for (const [entryKey, ts] of this._recentStatusPosts) {
+        if (ts < cutoff) this._recentStatusPosts.delete(entryKey);
+      }
+    }
+    return false;
   }
 
   _sanitizeStatusContent(content) {

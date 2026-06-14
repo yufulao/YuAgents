@@ -373,6 +373,33 @@ describe('Daemon', () => {
     assert.match(String(sent[0].opts.metadata.queued_message), /<redacted>/);
   });
 
+  it('BaseAdapter dedupes repeated status updates in a short window', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    const sent = [];
+    adapter.client.sendMessage = async (_workspaceId, _channel, _token, content) => {
+      sent.push(content);
+      return { ok: true };
+    };
+
+    await adapter.sendStatus('general', '**Running:** `workspace API request` (exit 0)');
+    await adapter.sendStatus('general', '**Running:** `workspace API request` (exit 0)');
+    await adapter.sendStatus('general', '**Running:** `git status --short --branch` (exit 0)');
+    await adapter.sendStatus('general', '**Running:** `git status --short --branch` (exit 0)');
+    await adapter.sendStatus('general', '**Running:** `different command` (exit 0)');
+
+    assert.deepEqual(sent, [
+      '**Running:** `workspace API request` (exit 0)',
+      '**Running:** `git status --short --branch` (exit 0)',
+      '**Running:** `different command` (exit 0)',
+    ]);
+  });
+
   it('BaseAdapter requeues failed deliveries only for limited retries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
@@ -498,6 +525,35 @@ describe('Daemon', () => {
     assert.equal(adapter._processedIds.has('event-ambient'), true);
     assert.equal(adapter._isInFlightMessage({ messageId: 'event-ambient' }), false);
     assert.deepEqual(adapter._channelQueues.general || [], []);
+  });
+
+  it('BaseAdapter does not emit visible queue status for agent deliveries', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    let statusCount = 0;
+    adapter.sendStatus = async () => { statusCount += 1; };
+
+    await adapter._dispatchMessage({
+      messageId: 'event-agent',
+      _deliveryId: 'delivery-agent',
+      _deliveryKind: 'attention',
+      _attentionReason: 'routed',
+      sessionId: 'general',
+      senderType: 'agent',
+      content: 'agent coordination',
+    });
+
+    assert.equal(statusCount, 0);
+    assert.equal(adapter._channelQueues.general.length, 1);
+    assert.equal(adapter._channelQueues.general[0].messageId, 'event-agent');
   });
 
   it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
