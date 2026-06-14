@@ -494,24 +494,8 @@ export class HttpEventConnector {
   }
 
   /**
-   * Convenience methods for common thread messaging operations
+   * Convenience methods for common channel messaging operations
    */
-  async sendDirectMessage(
-    targetAgentId: string,
-    content: string
-  ): Promise<EventResponse> {
-    return this.sendEvent({
-      event_name: EventNames.THREAD_DIRECT_MESSAGE_SEND,
-      source_id: this.agentId,
-      destination_id: `agent:${targetAgentId}`,
-      payload: {
-        target_agent_id: targetAgentId,
-        content: { text: content },
-        message_type: "direct_message",
-      },
-    });
-  }
-
   async sendChannelMessage(
     channel: string,
     content: string,
@@ -595,32 +579,6 @@ export class HttpEventConnector {
         limit: limit,
         offset: offset,
       },
-    });
-  }
-
-  async getDirectMessages(
-    targetAgentId: string,
-    limit: number = 200,
-    offset: number = 0
-  ): Promise<EventResponse> {
-    return this.sendEvent({
-      event_name: EventNames.THREAD_DIRECT_MESSAGES_RETRIEVE,
-      source_id: this.agentId,
-      destination_id: "mod:openagents.mods.workspace.messaging",
-      payload: {
-        target_agent_id: targetAgentId,
-        limit: limit,
-        offset: offset,
-      },
-    });
-  }
-
-  async getConversationsList(): Promise<EventResponse> {
-    return this.sendEvent({
-      event_name: EventNames.THREAD_CONVERSATIONS_LIST,
-      source_id: this.agentId,
-      destination_id: "mod:openagents.mods.workspace.messaging",
-      payload: {},
     });
   }
 

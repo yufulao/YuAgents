@@ -72,7 +72,7 @@ const MessagingMainPage: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
         <Routes>
-          {/* Project private chat room independent route */}
+          {/* Project room independent route */}
           <Route
             path="project/:projectId"
             element={<ProjectChatRoom />}

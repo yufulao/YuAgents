@@ -75,7 +75,7 @@ export const OpenAgentsProvider: React.FC<OpenAgentsProviderProps> = ({
   children,
 }) => {
   const { agentName, selectedNetwork, getPasswordHash, agentGroup, setAgentGroup, passwordHashEncrypted } = useAuthStore();
-  const { selectChannel, selectDirectMessage } = useChatStore();
+  const { selectChannel } = useChatStore();
   const { setConnection, setupEventListeners, cleanupEventListeners } =
     useDocumentStore();
   const navigate = useNavigate();
@@ -361,26 +361,6 @@ export const OpenAgentsProvider: React.FC<OpenAgentsProviderProps> = ({
           }
         }
 
-        // Handle direct message notifications
-        else if (
-          event.event_name === "thread.direct_message.notification" &&
-          event.payload
-        ) {
-          const messageData = event.payload;
-          if (messageData.content) {
-            const senderName =
-              event.source_id || messageData.sender_id || "Unknown user";
-            const content =
-              typeof messageData.content === "string"
-                ? messageData.content
-                : messageData.content.text || "";
-
-            notificationService.showDirectMessageNotification(
-              senderName,
-              content
-            );
-          }
-        }
       };
 
       globalNotificationHandlerRef.current = globalNotificationHandler;
@@ -596,11 +576,6 @@ export const OpenAgentsProvider: React.FC<OpenAgentsProviderProps> = ({
           if (channel) {
             console.log(`🔄 Selecting channel from global handler: ${channel}`);
             selectChannel(channel);
-          } else if (sender) {
-            console.log(
-              `🔄 Selecting direct message from global handler: ${sender}`
-            );
-            selectDirectMessage(sender);
           }
         }, 100);
       } else {
@@ -608,13 +583,10 @@ export const OpenAgentsProvider: React.FC<OpenAgentsProviderProps> = ({
         if (channel) {
           console.log(`🔄 Selecting channel: ${channel}`);
           selectChannel(channel);
-        } else if (sender) {
-          console.log(`🔄 Selecting direct message: ${sender}`);
-          selectDirectMessage(sender);
         }
       }
     },
-    [location.pathname, navigate, selectChannel, selectDirectMessage]
+    [location.pathname, navigate, selectChannel]
   );
 
   // Global notification click event listener

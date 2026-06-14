@@ -12,9 +12,9 @@ import ProjectChatRoom from "@/pages/messaging/components/ProjectChatRoom"
  * Project main page
  * Route: /project/*
  *
- * This page provides project management and private chat room functionality
+ * This page provides project management and project room functionality
  * - Left side: Project list and New Project button
- * - Right side: Private chat room based on selected project ID
+ * - Right side: Project room based on selected project ID
  * Contains sidebar and main content area
  */
 const ProjectMainPage: React.FC = () => {

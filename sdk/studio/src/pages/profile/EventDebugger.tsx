@@ -53,19 +53,6 @@ const EventDebugger: React.FC = () => {
       string,
       { eventName: string; destinationId: string; payload: string }
     > = {
-      directMessage: {
-        eventName: "thread.direct_message.send",
-        destinationId: "agent:target_agent_id",
-        payload: JSON.stringify(
-          {
-            target_agent_id: "target_agent_id",
-            content: { text: "Hello, this is a test message" },
-            message_type: "direct_message",
-          },
-          null,
-          2
-        ),
-      },
       channelMessage: {
         eventName: "thread.channel_message.post",
         destinationId: "channel:general",
@@ -231,15 +218,6 @@ const EventDebugger: React.FC = () => {
 
       {/* Example Events */}
       <div className="mb-4 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => loadExample("directMessage")}
-          className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 bg-white dark:bg-zinc-900 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        >
-          {t("eventDebugger.examples.directMessage")}
-        </Button>
         <Button
           type="button"
           variant="outline"

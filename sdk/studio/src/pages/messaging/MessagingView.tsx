@@ -30,7 +30,7 @@ const ThreadMessagingViewEventBased: React.FC = () => {
   const { theme: currentTheme } = useThemeStore()
 
   // Get current selection state and selection methods from chatStore
-  const { currentChannel, currentDirectMessage, currentAgentConversation, selectChannel } = useChatStore()
+  const { currentChannel, selectChannel } = useChatStore()
 
   // Check if current channel is project channel
   const isProjectChannelActive = useMemo(() => {
@@ -40,18 +40,16 @@ const ThreadMessagingViewEventBased: React.FC = () => {
   // Debug log: monitor selection state changes
   useEffect(() => {
     console.log(
-      `📋 Selection changed: channel="${currentChannel || ""}", direct="${
-        currentDirectMessage || ""
-      }"`
+      `📋 Selection changed: channel="${currentChannel || ""}"`
     )
-  }, [currentChannel, currentDirectMessage])
+  }, [currentChannel])
 
-  // Clear reply and quote states when channel or direct message changes
+  // Clear reply and quote states when channel changes
   useEffect(() => {
-    console.log(`🧹 Clearing reply/quote states due to channel/DM change`)
+    console.log(`🧹 Clearing reply/quote states due to channel change`)
     setReplyingTo(null)
     setQuotingMessage(null)
-  }, [currentChannel, currentDirectMessage])
+  }, [currentChannel])
 
   // These local states are for UI control, don't affect channel selection logic
 
@@ -75,15 +73,11 @@ const ThreadMessagingViewEventBased: React.FC = () => {
     agentsError,
     messagesLoading,
     messagesError,
-    // Directly get message data instead of getter methods, so React can detect changes
     channelMessages,
-    directMessages,
     loadChannels,
     loadChannelMessages,
-    loadDirectMessages,
     loadAgents,
     sendChannelMessage,
-    sendDirectMessage,
     addReaction,
     removeReaction,
     setupEventListeners,
@@ -111,47 +105,20 @@ const ThreadMessagingViewEventBased: React.FC = () => {
   const prevMessagesLength = useRef<number>(0)
   const prevScrollHeight = useRef<number>(0)
 
-  // Get messages for current channel, DM, or agent conversation
+  // Get messages for current channel.
   const messages = useMemo(() => {
-    if (currentAgentConversation) {
-      // Agent-to-agent conversation — stored in directMessages under conversation key
-      const msgs = directMessages.get(currentAgentConversation) || []
-      return msgs
-    } else if (currentChannel) {
+    if (currentChannel) {
       // Get data directly from Map
       const msgs = channelMessages.get(currentChannel) || []
       console.log(
         `MessagingView: Channel #${currentChannel} has ${msgs.length} messages`
       )
       return msgs
-    } else if (currentDirectMessage) {
-      const currentAgentId = connectionStatus.agentId || agentName
-      const directMsgs = directMessages.get(currentDirectMessage) || []
-
-      // Filter messages belonging to current conversation
-      const filteredMsgs = directMsgs.filter(
-        (message) =>
-          message.type === "direct_message" &&
-          ((message.senderId === currentAgentId &&
-            message.targetUserId === currentDirectMessage) ||
-            (message.senderId === currentDirectMessage &&
-              message.targetUserId === currentAgentId) ||
-            message.senderId === currentDirectMessage) // Compatible with old format
-      )
-      console.log(
-        `MessagingView: Direct messages with ${currentDirectMessage}: ${filteredMsgs.length} messages`
-      )
-      return filteredMsgs
     }
     return []
   }, [
     currentChannel,
-    currentDirectMessage,
-    currentAgentConversation,
     channelMessages,
-    directMessages,
-    connectionStatus.agentId,
-    agentName,
   ])
 
   // Load announcements for current channel
@@ -264,10 +231,9 @@ const ThreadMessagingViewEventBased: React.FC = () => {
       } else if (channels.length > 0) {
         console.log(`🔍 Channel selection logic:`, {
           currentChannel,
-          currentDirectMessage,
           availableChannels: channels.map((c) => c.name),
           availableAgents: filteredAgents.map((a) => a.agent_id),
-          selectionStateFromChatStore: { currentChannel, currentDirectMessage },
+          selectionStateFromChatStore: { currentChannel },
         })
 
         let selectedChannel = null
@@ -293,24 +259,6 @@ const ThreadMessagingViewEventBased: React.FC = () => {
               `⚠️ Previously selected channel "${currentChannel}" no longer exists, falling back to first channel`
             )
           }
-        } else if (currentDirectMessage) {
-          // Check if currently selected DM target is still in connected agents list
-          const agentExists = filteredAgents.some(
-            (agent) => agent.agent_id === currentDirectMessage
-          )
-          console.log(
-            `🔍 Current DM agent "${currentDirectMessage}" exists: ${agentExists}`
-          )
-
-          if (!agentExists) {
-            // If DM agent is no longer available, fallback to first channel
-            selectedChannel = channels[0].name
-            selectionReason = "DM agent unavailable, fallback to first channel"
-            console.warn(
-              `⚠️ DM agent "${currentDirectMessage}" is no longer available, falling back to first channel`
-            )
-          }
-          // If agent exists, dont set selectedChannel, keep current DM state
         } else {
           // No selection, select first channel
           selectedChannel = channels[0].name
@@ -328,13 +276,6 @@ const ThreadMessagingViewEventBased: React.FC = () => {
           selectChannel(selectedChannel)
         } else if (selectedChannel === currentChannel) {
           console.log(`✅ Keep current channel selection: ${selectedChannel}`)
-        } else if (
-          currentDirectMessage &&
-          filteredAgents.some(
-            (agent) => agent.agent_id === currentDirectMessage
-          )
-        ) {
-          console.log(`✅ Keep current DM selection: ${currentDirectMessage}`)
         }
       }
     } catch (error) {
@@ -350,7 +291,6 @@ const ThreadMessagingViewEventBased: React.FC = () => {
     channels,
     filteredAgents,
     currentChannel,
-    currentDirectMessage,
     selectChannel,
   ])
 
@@ -412,20 +352,13 @@ const ThreadMessagingViewEventBased: React.FC = () => {
           `🔄 Loading messages for restored channel: ${currentChannel}`
         )
         loadChannelMessages(currentChannel)
-      } else if (currentDirectMessage) {
-        console.log(
-          `🔄 Loading messages for restored direct message: ${currentDirectMessage}`
-        )
-        loadDirectMessages(currentDirectMessage)
       }
     }
   }, [
     isConnected,
     channels.length,
     currentChannel,
-    currentDirectMessage,
     loadChannelMessages,
-    loadDirectMessages,
   ])
 
   // Handle sending messages
@@ -453,7 +386,6 @@ const ThreadMessagingViewEventBased: React.FC = () => {
         content,
         replyToId,
         currentChannel,
-        currentDirectMessage,
         isProjectChannel: isProjectChannelActive,
       })
       setSendingMessage(true)
@@ -511,11 +443,8 @@ const ThreadMessagingViewEventBased: React.FC = () => {
               attachmentData
             )
           }
-        } else if (currentDirectMessage) {
-          success = await sendDirectMessage(currentDirectMessage, content)
-          // TODO: Add attachment support for direct messages
         } else {
-          console.error("No channel or direct message selected")
+          console.error("No channel selected")
           return
         }
 
@@ -533,10 +462,8 @@ const ThreadMessagingViewEventBased: React.FC = () => {
     },
     [
       currentChannel,
-      currentDirectMessage,
       sendingMessage,
       sendChannelMessage,
-      sendDirectMessage,
       isProjectChannelActive,
       connector,
       connectionStatus.agentId,
@@ -658,14 +585,9 @@ const ThreadMessagingViewEventBased: React.FC = () => {
 
   // Get current view title
   const getCurrentViewTitle = useMemo(() => {
-    if (currentAgentConversation) {
-      const [a, b] = currentAgentConversation.split(",", 2)
-      return `${a} ↔ ${b}`
-    }
     if (currentChannel) return `#${currentChannel}`
-    if (currentDirectMessage) return `@${currentDirectMessage}`
     return t("header.selectChannel")
-  }, [currentChannel, currentDirectMessage, currentAgentConversation, t])
+  }, [currentChannel, t])
 
   // Check if its a project channel, if so use ProjectChatRoom component
   const projectId = useMemo(() => {
@@ -764,7 +686,7 @@ const ThreadMessagingViewEventBased: React.FC = () => {
             className="flex-1 overflow-y-auto p-4"
           >
             {(() => {
-              // Filter messages based on current channel or direct message
+              // Filter messages based on current channel
               const filteredMessages = messages.filter((message) => {
                 // Debug: uncomment to debug message filtering
                 // console.log('🔧 Filtering message:', {
@@ -774,46 +696,15 @@ const ThreadMessagingViewEventBased: React.FC = () => {
                 //   targetAgent: message.target_agent_id,
                 //   senderId: message.sender_id,
                 //   currentChannel,
-                //   currentDirectMessage
                 // });
 
-                if (currentAgentConversation) {
-                  // Agent conversation — show all messages (already filtered by store)
-                  return true
-                } else if (currentChannel) {
+                if (currentChannel) {
                   // For channel messages, match the channel
                   return (
                     (message.type === "channel_message" &&
                       message.channel === currentChannel) ||
                     (message.type === "reply_message" &&
                       message.channel === currentChannel)
-                  )
-                } else if (currentDirectMessage) {
-                  // Safely get fields, support multiple data formats (standardized and raw)
-                  const messageType = message.type
-                  const targetUserId = message.targetUserId
-                  const senderId = message.senderId
-
-                  // For direct messages, match the target agent or sender
-                  // Include messages where current user is sender or receiver
-                  const currentUserId =
-                    connectionStatus.agentId || agentName || ""
-                  console.log("🔧 Filtering direct message:", {
-                    messageId: message.id,
-                    messageType,
-                    targetUserId,
-                    senderId,
-                    currentDirectMessage,
-                    currentUserId,
-                    message,
-                  })
-
-                  return (
-                    messageType === "direct_message" &&
-                    (targetUserId === currentDirectMessage ||
-                      senderId === currentDirectMessage ||
-                      (senderId === currentUserId &&
-                        targetUserId === currentDirectMessage))
                   )
                 }
                 return false
@@ -825,10 +716,6 @@ const ThreadMessagingViewEventBased: React.FC = () => {
                     {currentChannel
                       ? t("empty.noMessagesChannel", {
                           channel: currentChannel,
-                        })
-                      : currentDirectMessage
-                      ? t("empty.noMessagesDirect", {
-                          user: currentDirectMessage,
                         })
                       : t("empty.selectChannelToChat")}
                   </div>
@@ -891,7 +778,6 @@ const ThreadMessagingViewEventBased: React.FC = () => {
                   }}
                   onReply={startReply}
                   onQuote={startQuote}
-                  isDMChat={!!currentDirectMessage}
                   disableReactions={isProjectChannelActive}
                   disableQuotes={isProjectChannelActive}
                   networkHost={connector?.getHost()}
@@ -903,17 +789,9 @@ const ThreadMessagingViewEventBased: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Read-only banner for agent conversations */}
-          {currentAgentConversation && (
-            <div className="px-4 py-2 text-xs text-center text-gray-400 bg-gray-50 dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-700">
-              Read-only — agent-to-agent conversation ({currentAgentConversation.replace(",", " ↔ ")})
-            </div>
-          )}
-
-          {/* Message Input — hidden for agent conversation (read-only) */}
-          {(currentChannel || currentDirectMessage) && !currentAgentConversation && (
+          {currentChannel && (
             <MessageInput
-              agents={currentDirectMessage ? [] : filteredAgents}
+              agents={filteredAgents}
               onSendMessage={(
                 text: string,
                 replyTo?: string,
@@ -971,13 +849,10 @@ const ThreadMessagingViewEventBased: React.FC = () => {
                   ? "Sending..."
                   : currentChannel
                   ? `Message #${currentChannel}`
-                  : currentDirectMessage
-                  ? `Message ${currentDirectMessage}`
                   : "Select a channel to start typing..."
               }
               currentTheme={currentTheme}
               currentChannel={currentChannel || undefined}
-              currentDirectMessage={currentDirectMessage || undefined}
               currentAgentId={connectionStatus.agentId || agentName || ""}
               currentAgentSecret={connector?.getSecret() || null}
               networkBaseUrl={connector?.getBaseUrl()}

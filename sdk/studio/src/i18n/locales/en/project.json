@@ -40,7 +40,7 @@
     "chat": {
         "select": {
             "title": "Select a Project",
-            "subtitle": "Choose a project from the left sidebar to view its private chat room"
+            "subtitle": "Choose a project from the left sidebar to view its project room"
         },
         "pending": {
             "title": "Ready to Start Project",

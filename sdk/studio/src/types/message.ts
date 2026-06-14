@@ -1,6 +1,6 @@
 /**
  * Unified message type definitions and data adapters
- * Solves the inconsistent format issue between direct message and channel message returned from backend
+ * Solves the inconsistent format issue between channel message formats returned from backend
  */
 
 // Unified message type - for internal frontend use
@@ -12,13 +12,10 @@ export interface UnifiedMessage {
   content: string;
 
   // Message type
-  type: 'direct_message' | 'channel_message' | 'reply_message';
+  type: 'channel_message' | 'reply_message';
 
   // Channel information (channel messages only)
   channel?: string;
-
-  // DM target (direct messages only)
-  targetUserId?: string;
 
   // Reply information
   replyToId?: string;
@@ -67,7 +64,7 @@ export interface RawThreadMessage {
       storage_type?: 'cache';
     }>;
   } | string | any; // Support multiple content formats
-  message_type: 'direct_message' | 'channel_message' | 'reply_message';
+  message_type: 'channel_message' | 'reply_message';
   channel?: string;
   target_agent_id?: string;
   reply_to_id?: string;
@@ -105,8 +102,6 @@ export class MessageAdapter {
           }))
         : undefined;
 
-    const isDirectMessage = raw?.payload?.message_type === 'direct_message';
-
     // Handle different content formats
     let content = '';
     if (raw.content) {
@@ -128,15 +123,14 @@ export class MessageAdapter {
     }
 
     return {
-      id: (isDirectMessage ? raw.event_id : raw.message_id) || '',
-      senderId: (isDirectMessage ? raw.source_id : raw.sender_id) || '',
+      id: raw.message_id || raw.event_id || '',
+      senderId: raw.sender_id || raw.source_id || '',
       timestamp: raw.timestamp, // 10 digits vs 13 digits,
-      content: isDirectMessage ? raw.payload.content.text : content,
-      type: isDirectMessage ? raw.payload.message_type : raw.message_type,
-      channel: isDirectMessage ? '' : raw.channel,
-      targetUserId: isDirectMessage ? raw.payload.target_agent_id : raw.target_agent_id,
-      replyToId: isDirectMessage ? '' : raw.reply_to_id,
-      threadLevel: isDirectMessage ? 1 : raw.thread_level,
+      content,
+      type: raw.message_type,
+      channel: raw.channel,
+      replyToId: raw.reply_to_id,
+      threadLevel: raw.thread_level,
       quotedMessageId: raw.quoted_message_id,
       quotedText: raw.quoted_text,
       reactions: raw.reactions,
@@ -172,7 +166,6 @@ export class MessageAdapter {
       content,
       message_type: unified.type,
       channel: unified.channel,
-      target_agent_id: unified.targetUserId,
       reply_to_id: unified.replyToId,
       thread_level: unified.threadLevel,
       quoted_message_id: unified.quotedMessageId,
@@ -284,22 +277,6 @@ export class MessageUtils {
     return messages.filter(message =>
       (message.type === 'channel_message' || message.type === 'reply_message') &&
       message.channel === channel
-    );
-  }
-
-  /**
-   * Filter direct messages
-   */
-  static filterDirectMessages(
-    messages: UnifiedMessage[],
-    targetUserId: string,
-    currentUserId: string
-  ): UnifiedMessage[] {
-    return messages.filter(message =>
-      message.type === 'direct_message' &&
-      (message.targetUserId === targetUserId ||
-       message.senderId === targetUserId ||
-       (message.senderId === currentUserId && message.targetUserId === targetUserId))
     );
   }
 

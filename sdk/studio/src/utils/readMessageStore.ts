@@ -114,17 +114,8 @@ export class ReadMessageStore {
     console.log(`📖 Marked ${messageIds.length} messages in #${channel} as read`);
   }
 
-  /**
-   * Mark all direct messages with an agent as read
-   */
-  markDirectMessageAsRead(agentId: string, messageIds: string[]): void {
-    messageIds.forEach(id => this.readMessageIds.add(id));
-    this.saveToStorage();
-    console.log(`📖 Marked ${messageIds.length} direct messages with ${agentId} as read`);
-  }
 }
 
 export default ReadMessageStore;
-
 
 

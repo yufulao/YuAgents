@@ -110,7 +110,6 @@ export const useDocumentStore = create<DocumentStoreState>()(
             ? { ...state.threadState, ...updates }
             : {
                 currentChannel: null,
-                currentDirectMessage: null,
                 ...updates,
               },
         }));

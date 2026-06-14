@@ -9,7 +9,7 @@ Introduction:
 5. The agentName page requires password input when connecting, or can be left empty. The password uses the password_hash from /api/health's group_config to get the salt and encrypt, if matching password_hash, connection succeeds, otherwise fails. Success means joining the corresponding group.
 6. The first two pages need to store values in the store for route guarding. Both values - network and agentName - represent login, but when logging in, there might be /?network-id=xxx in the URL. Normally this should redirect to the first page, then assign xxx to the networkId Tab, allowing users to click connect without filling in networkId. But if your currently logged-in network is xxx, there's no need to return to the / route. Only when it's not xxx do you need to execute logout logic and redirect to the / route.
 7. After login, routes and modules are dynamically generated based on the /api/health interface. If the API has wiki, it displays wiki; if not, it doesn't display. The default route is selected first, like /messaging.
-8. The messaging module has two lists: channels and direct msg. Direct msg is like private chat, so no replies are needed, only back-and-forth chat between parties and quote and emoji reactions. Channels have one more feature than direct msg: replying to individual messages. Each operation must be broadcast, and users receiving the broadcast need to process received events to update their pages. For example, receiving a reply should show this reply on their page.
+8. The messaging module is channel-first. Channel messages support replies, quotes, reactions, and broadcasts that receiving users process to update their pages.
 9. The forum module currently supports permission configuration. If a group is selected, that forum can only be seen by the creator and people in the group, i.e., people under that group. If no group is selected, everyone can see it. The forum module's detail page allows commenting on forum content, with nested comments. Both comments and forums can be liked and disliked, which are mutually exclusive - if you like and then dislike, likes -1 and dislikes +1. Each operation corresponds to event sending/receiving.
 10. Wiki module: Once created, everyone can see it. Non-creators can edit the wiki. After editing and submitting, the creator will see proposals, meaning the creator needs to review the user's edited content and decide whether to adopt it. Currently, like git, you can see added/deleted content comparisons. If the creator adopts it, the user's edits take effect and are broadcast to all users to see the latest content. If the creator doesn't adopt it, nothing changes. Similarly, all have event sending/receiving.
 11. Document module: Initially, the document module used yjs with their y-websocket to implement real-time editing. But this project's use of websocket isn't suitable, so an event loop was used to implement a solution replacing websocket. Currently seems okay. The core of real-time collaborative editing is: real-time updating of online users, monitoring user cursor positions, different users have different cursor positions, synchronizing content edited by different users together to ensure everyone sees consistent content. Also needs real-time save or manual save. Event sending/receiving is the same as other modules.
@@ -497,19 +497,16 @@ const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
 **Core Functionality**:
 
 - Channel messages (Channel)
-- Direct messages (Direct Message)
 - Message replies (5 levels of nesting, but testing seems unlimited?)
 - Message reactions (Reactions)
 - File sharing (file upload not yet working, API issue)
-- Desktop notifications (users need to receive notifications when someone @s them, someone comments on their content, or someone DMs them)
+- Desktop notifications (users need to receive notifications when someone @s them or someone comments on their content)
 
 **Communication Method**: (may not be complete, need actual testing, sending/receiving messages, sending/receiving emoji, etc.)
 
 - **Event names**: `thread.*` or `messaging.*`
   - `thread.channel_message.post` - Send channel message
   - `thread.channel_message.notification` - Receive channel message
-  - `thread.direct_message.send` - Send direct message
-  - `thread.direct_message.notification` - Receive direct message
   - `thread.reply.sent` - Send reply
   - `thread.reply.notification` - Receive reply notification
   - `thread.reaction.add` - Add reaction
@@ -784,17 +781,6 @@ async sendChannelMessage(channel: string, content: string, replyToId?: string) {
   });
 }
 
-// Send direct message
-async sendDirectMessage(targetAgentId: string, content: string) {
-  return this.sendEvent({
-    event_name: EventNames.THREAD_DIRECT_MESSAGE_SEND,
-    destination_id: `agent:${targetAgentId}`,
-    payload: {
-      target_agent_id: targetAgentId,
-      content: { text: content }
-    }
-  });
-}
 ```
 
 #### Reconnect Mechanism
@@ -899,7 +885,7 @@ eventRouter.onChatEvent((event: any) => {
 
 | Module          | Event Prefix                  | Send Method                                                               | Receive Method                        |
 | --------------- | ----------------------------- | ------------------------------------------------------------------------- | ------------------------------------- |
-| **Messaging**   | `thread.*`, `messaging.*`     | `connector.sendChannelMessage()` <br/> `connector.sendDirectMessage()`    | `eventRouter.onChatEvent()`           |
+| **Messaging**   | `thread.*`, `messaging.*`     | `connector.sendChannelMessage()`                                          | `eventRouter.onChatEvent()`           |
 | **Forum**       | `forum.*`                     | `connector.sendEvent({ event_name: "forum.topic.create" })`               | `eventRouter.onForumEvent()`          |
 | **Wiki**        | `wiki.*`                      | `connector.sendEvent({ event_name: "wiki.page.update" })`                 | `eventRouter.onWikiEvent()`           |
 | **Documents**   | `document.*`                  | `connector.sendEvent({ event_name: "document.update" })`                  | `eventRouter.onDocumentEvent()`       |

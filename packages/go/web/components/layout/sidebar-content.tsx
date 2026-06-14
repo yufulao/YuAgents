@@ -15,7 +15,7 @@ type SidebarTab = 'chats' | 'inbox';
 
 // The whole sidebar = workspace header + search + tab switcher + the
 // active tab's list + a thin footer with theme + user. Tabs are
-// "Chats" (default — multi-user / DM threads) and "Inbox" (routines —
+// "Chats" (default — multi-user threads) and "Inbox" (routines —
 // system-managed per-agent activity feed).
 export function SidebarContent() {
   const { user, isOpenAgentsDomain, signIn, signOut } = useOpenAgentsAuth();

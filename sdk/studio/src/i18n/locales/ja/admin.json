@@ -433,13 +433,12 @@
     "title": "イベントデバッガー",
     "subtitle": "イベント送信のデバッグとテスト用。送信されたすべてのイベントは自動的にイベントログページに記録されます。",
     "examples": {
-      "directMessage": "例: 直接メッセージ",
       "channelMessage": "例: チャネルメッセージ",
       "projectList": "例: プロジェクトリスト",
       "channelsList": "例: チャネルリスト"
     },
     "eventName": "イベント名",
-    "eventNamePlaceholder": "例: thread.direct_message.send",
+    "eventNamePlaceholder": "例: thread.channel_message.post",
     "destinationId": "宛先ID",
     "destinationIdPlaceholder": "例: agent:target_agent_id または channel:general (オプション)",
     "destinationIdHint": "空のままにすると、ネットワーク全体に送信されます",

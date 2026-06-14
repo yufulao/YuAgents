@@ -5,7 +5,6 @@ import { ThreadChannel, AgentInfo } from "./events";
  */
 export interface ThreadState {
   currentChannel?: string | null;
-  currentDirectMessage?: string | null;
   // Backward compatibility fields - managed by component layer, not stored in store
   channels?: ThreadChannel[];
   agents?: AgentInfo[];

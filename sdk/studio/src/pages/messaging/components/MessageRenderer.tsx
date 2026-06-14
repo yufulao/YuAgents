@@ -49,8 +49,6 @@ interface MessageRendererProps {
   renderMode?: "flat" | "threaded"
   // Maximum thread depth
   maxThreadDepth?: number
-  // Whether it's a direct message chat (DM)
-  isDMChat?: boolean
   // Whether to disable reaction features (for project channel)
   disableReactions?: boolean
   // Whether to disable quote features (for project channel)
@@ -69,7 +67,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   onReaction,
   renderMode = "threaded",
   maxThreadDepth = 4,
-  isDMChat = false,
   disableReactions = false,
   disableQuotes = false,
   networkHost,
@@ -350,8 +347,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                 : "opacity-0 invisible"
             }`}
           >
-            {/* Reply button - not shown in DM chat */}
-            {!isDMChat && onReply && (
+            {onReply && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -547,8 +543,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                 : "opacity-0 invisible"
             }`}
           >
-            {/* Reply button - not shown in DM chat */}
-            {!isDMChat && onReply && (
+            {onReply && (
               <Button
                 variant="ghost"
                 size="sm"

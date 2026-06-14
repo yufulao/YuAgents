@@ -5,7 +5,6 @@
     },
     "empty": {
         "noMessagesChannel": "#{{channel}} 还没有消息。开始对话吧!",
-        "noMessagesDirect": "与 {{user}} 还没有消息。",
         "selectChannelToChat": "选择一个频道开始聊天。",
         "selectChannelToType": "选择一个频道开始输入...",
         "noMessagesYet": "还没有消息"
@@ -23,7 +22,6 @@
     "input": {
         "placeholder": "输入消息...",
         "placeholderChannel": "发送到 #{{channel}}",
-        "placeholderDirect": "发送给 @{{user}}",
         "replyingTo": "回复 {{user}}",
         "quotingFrom": "引用 {{user}}",
         "cancel": "取消",
@@ -49,7 +47,6 @@
         "title": "启用消息通知",
         "description": "启用通知以及时接收以下提醒:",
         "features": {
-            "directMessages": "来自他人的私信",
             "mentions": "频道中的提及",
             "replies": "对您消息的回复"
         },
@@ -75,11 +72,8 @@
     },
     "sidebar": {
         "channels": "频道",
-        "directMessages": "私信",
         "loadingChannels": "正在加载频道...",
-        "noChannels": "暂无可用频道",
-        "loadingAgents": "正在加载成员...",
-        "noAgents": "暂无在线成员"
+        "noChannels": "暂无可用频道"
     },
     "status": {
         "loading": "加载中...",

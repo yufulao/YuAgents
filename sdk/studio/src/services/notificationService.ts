@@ -363,35 +363,16 @@ class UniversalNotificationService {
   /**
    * Chat message specific notification for channel messages
    */
-  async showChatNotification(senderName: string, channel: string, message: string, message_type: string) {
+  async showChatNotification(senderName: string, channel: string, message: string, _message_type: string) {
     // Truncate long messages
     const truncatedMessage = message.length > 100
       ? message.substring(0, 97) + '...'
       : message;
-
-    const isDirectMessage = !(message_type === "channel_message" || message_type === "reply_message");
 
     await this.showNotification({
       title: `new message from ${senderName}`,
-      body: `in #${!isDirectMessage ? channel : senderName}: ${truncatedMessage}`,
-      channel: !isDirectMessage ? channel : "",
-      sender: senderName,
-      timestamp: Date.now()
-    });
-  }
-
-  /**
-   * Direct message specific notification
-   */
-  async showDirectMessageNotification(senderName: string, message: string) {
-    // Truncate long messages
-    const truncatedMessage = message.length > 100
-      ? message.substring(0, 97) + '...'
-      : message;
-
-    await this.showNotification({
-      title: `direct message from ${senderName}`,
-      body: truncatedMessage,
+      body: `in #${channel}: ${truncatedMessage}`,
+      channel,
       sender: senderName,
       timestamp: Date.now()
     });
@@ -424,12 +405,8 @@ class UniversalNotificationService {
       ? message.substring(0, 97) + '...'
       : message;
 
-    const title = channel
-      ? `${senderName} replied to your message in #${channel}`
-      : `${senderName} replied to your direct message`;
-
     await this.showNotification({
-      title,
+      title: `${senderName} replied to your message in #${channel}`,
       body: truncatedMessage,
       channel,
       sender: senderName,

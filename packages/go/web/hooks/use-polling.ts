@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi } from '@/lib/api';
 import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
@@ -10,14 +10,6 @@ interface UsePollingOptions {
   enabled?: boolean;
   /** Pre-loaded messages to display immediately (avoids loading state). */
   initialMessages?: WorkspaceMessage[];
-}
-
-/** Parse a DM session ID like "dm:agentA,agentB" into agent addresses. */
-function parseDMSession(sessionId: string | null): [string, string] | null {
-  if (!sessionId?.startsWith('dm:')) return null;
-  const parts = sessionId.slice(3).split(',', 2);
-  if (parts.length === 2) return [parts[0], parts[1]];
-  return null;
 }
 
 export function useMessagePolling({ sessionId, enabled = true, initialMessages }: UsePollingOptions) {
@@ -71,30 +63,19 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
     };
   }, []);
 
-  // Load recent history (newest messages first, then reverse for display)
-  const dmPair = useMemo(() => parseDMSession(sessionId), [sessionId]);
-
   const loadHistory = useCallback(async () => {
     if (!sessionId) return;
 
     setLoading(true);
     try {
-      const result = dmPair
-        ? await workspaceApi.pollConversation(dmPair[0], dmPair[1], { sort: 'desc', limit: 50 })
-        : await workspaceApi.loadMessageHistory(sessionId, { limit: 50 });
+      const result = await workspaceApi.loadMessageHistory(sessionId, { limit: 50 });
 
       // Discard if session changed
       if (sessionId !== currentSessionRef.current) return;
 
       if (result.events.length > 0) {
         // Events come newest-first from sort=desc, reverse for chronological display
-        const historicMessages = result.events.map((e) => {
-          const msg = eventToMessage(e);
-          // For DM sessions, override sessionId so all messages share the dm: sessionId
-          // (eventToMessage derives sessionId from event.target which differs per message)
-          if (dmPair && sessionId) msg.sessionId = sessionId;
-          return msg;
-        }).reverse();
+        const historicMessages = result.events.map(eventToMessage).reverse();
         setMessages(historicMessages);
         // newest_id is the most recent event (first in desc order)
         newestIdRef.current = result.newest_id || historicMessages[historicMessages.length - 1].messageId;
@@ -112,7 +93,7 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
     } finally {
       setLoading(false);
     }
-  }, [sessionId, dmPair]);
+  }, [sessionId]);
 
   // Forward poll: fetch new messages since the newest known
   const poll = useCallback(async () => {
@@ -122,24 +103,10 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
       // Keep fetching while there are more events (handles bursts of status messages)
       let hasMore = true;
       while (hasMore) {
-        const result = dmPair
-          ? await (async () => {
-              const r = await workspaceApi.pollConversation(dmPair[0], dmPair[1], {
-                after: newestIdRef.current ?? undefined,
-              });
-              return {
-                messages: r.events.map((e) => {
-                  const msg = eventToMessage(e);
-                  if (sessionId) msg.sessionId = sessionId;
-                  return msg;
-                }),
-                hasMore: r.has_more,
-              };
-            })()
-          : await workspaceApi.pollMessages(
-              sessionId,
-              newestIdRef.current ?? undefined,
-            );
+        const result = await workspaceApi.pollMessages(
+          sessionId,
+          newestIdRef.current ?? undefined,
+        );
 
         // Discard response if session changed while request was in flight
         if (sessionId !== currentSessionRef.current) return;
@@ -161,7 +128,7 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
     } catch {
       // Polling error — will retry on next interval
     }
-  }, [sessionId, dmPair]);
+  }, [sessionId]);
 
   // Load older messages (infinite scroll upward)
   const loadOlder = useCallback(async () => {
@@ -169,16 +136,10 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
 
     setLoadingOlder(true);
     try {
-      const result = dmPair
-        ? await workspaceApi.pollConversation(dmPair[0], dmPair[1], {
-            before: oldestIdRef.current ?? undefined,
-            sort: 'desc',
-            limit: 30,
-          })
-        : await workspaceApi.loadMessageHistory(sessionId, {
-            before: oldestIdRef.current ?? undefined,
-            limit: 30,
-          });
+      const result = await workspaceApi.loadMessageHistory(sessionId, {
+        before: oldestIdRef.current ?? undefined,
+        limit: 30,
+      });
 
       if (sessionId !== currentSessionRef.current) return;
 
@@ -200,7 +161,7 @@ export function useMessagePolling({ sessionId, enabled = true, initialMessages }
     } finally {
       setLoadingOlder(false);
     }
-  }, [sessionId, hasOlder, loadingOlder, dmPair]);
+  }, [sessionId, hasOlder, loadingOlder]);
 
   // Initial load + polling loop
   useEffect(() => {

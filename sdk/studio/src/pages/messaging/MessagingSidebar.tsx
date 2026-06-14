@@ -1,9 +1,8 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ThreadChannel, AgentInfo } from "@/types/events";
+import { ThreadChannel } from "@/types/events";
 import { useOpenAgents } from "@/context/OpenAgentsProvider";
 import { useChatStore, setChatStoreContext } from "@/stores/chatStore";
-import { useAuthStore } from "@/stores/authStore";
 
 // Section Header Component
 const SectionHeader: React.FC<{ title: string }> = React.memo(({ title }) => (
@@ -52,80 +51,24 @@ const ChannelItem: React.FC<{
 ));
 ChannelItem.displayName = "ChannelItem";
 
-// Agent List Item Component
-const AgentItem: React.FC<{
-  agent: AgentInfo;
-  isActive: boolean;
-  unreadCount: number;
-  onClick: () => void;
-}> = React.memo(({ agent, isActive, unreadCount, onClick }) => (
-  <li>
-    <button
-      onClick={onClick}
-      className={`w-full text-left text-sm truncate px-2 py-2 font-medium rounded transition-colors
-        ${isActive
-          ? "bg-[#F4F4F5] text-gray-900 dark:bg-[#F4F4F5] dark:text-gray-900 pl-2"
-          : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-900 pl-2.5"
-        }
-      `}
-      title={agent.metadata?.display_name || agent.agent_id}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center min-w-0">
-          <div
-            className={`w-2 h-2 rounded-full mr-2 ${agent.metadata?.status === "online"
-              ? "bg-green-500"
-              : "bg-gray-400"
-              }`}
-          />
-          <span className="truncate">
-            {agent.metadata?.display_name || agent.agent_id}
-          </span>
-        </div>
-        {unreadCount > 0 && (
-          <span className="ml-2 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
-      </div>
-    </button>
-  </li>
-));
-AgentItem.displayName = "AgentItem";
-
 // Chat Sidebar Content Component - Use chatStore to get data
 const MessagingSidebar: React.FC = () => {
   const { t } = useTranslation('messaging');
   const { connector, connectionStatus, isConnected } = useOpenAgents();
-  const { agentName } = useAuthStore();
 
   // Set chatStore context reference
   React.useEffect(() => {
     setChatStoreContext({ connector, connectionStatus, isConnected });
   }, [connector, connectionStatus, isConnected]);
 
-  // Use agentName as fallback if connectionStatus.agentId is unavailable
-  const currentUserId = ('agentId' in connectionStatus ? connectionStatus.agentId : undefined) || agentName || undefined;
-
   // Use chatStore to get data and selection state
   const {
     currentChannel,
-    currentDirectMessage,
-    currentAgentConversation,
     selectChannel,
-    selectDirectMessage,
-    selectAgentConversation,
     channels,
     channelsLoading,
     channelsLoaded,
-    agents,
-    agentsLoading,
-    agentsLoaded,
-    agentConversations,
-    agentConversationsLoaded,
     loadChannels,
-    loadAgents,
-    loadAgentConversations,
     restorePersistedSelection,
     initializeWithDefaultSelection,
   } = useChatStore();
@@ -137,27 +80,20 @@ const MessagingSidebar: React.FC = () => {
         console.log('MessagingSidebar: Loading channels...');
         loadChannels();
       }
-      if (!agentsLoaded && !agentsLoading) {
-        console.log('MessagingSidebar: Loading agents...');
-        loadAgents();
-      }
-      if (!agentConversationsLoaded) {
-        loadAgentConversations();
-      }
     }
-  }, [isConnected, channelsLoaded, channelsLoading, agentsLoaded, agentsLoading, agentConversationsLoaded, loadChannels, loadAgents, loadAgentConversations]);
+  }, [isConnected, channelsLoaded, channelsLoading, loadChannels]);
 
   // Handle selection restoration and default selection - execute after data loading completes
   React.useEffect(() => {
     const handleSelectionInitialization = async () => {
       // Check if there is already a selection (may be restored from persistence)
-      if (currentChannel || currentDirectMessage) {
+      if (currentChannel) {
         console.log('MessagingSidebar: Already has selection, skipping initialization');
         return;
       }
 
-      // Only execute initialization when both are loaded
-      if (!channelsLoaded || !agentsLoaded) {
+      // Only execute initialization when channels are loaded.
+      if (!channelsLoaded) {
         console.log('MessagingSidebar: Waiting for data to load before selection initialization');
         return;
       }
@@ -171,7 +107,7 @@ const MessagingSidebar: React.FC = () => {
         // If still no selection after restoration, use default selection
         // Need to check again, because restorePersistedSelection may set selection
         const state = useChatStore.getState();
-        if (!state.currentChannel && !state.currentDirectMessage) {
+        if (!state.currentChannel) {
           console.log('MessagingSidebar: No persisted selection restored, using default selection');
           await initializeWithDefaultSelection();
         }
@@ -183,37 +119,17 @@ const MessagingSidebar: React.FC = () => {
     };
 
     handleSelectionInitialization();
-  }, [channelsLoaded, agentsLoaded, currentChannel, currentDirectMessage, restorePersistedSelection, initializeWithDefaultSelection]);
-
-  // Periodically refresh agent conversations
-  React.useEffect(() => {
-    if (!isConnected) return;
-    const interval = setInterval(() => {
-      loadAgentConversations();
-    }, 15_000);
-    return () => clearInterval(interval);
-  }, [isConnected, loadAgentConversations]);
-
-  // Filter out current user
-  const filteredAgents = React.useMemo(() => {
-    return agents.filter(agent => agent.agent_id !== currentUserId);
-  }, [agents, currentUserId]);
+  }, [channelsLoaded, currentChannel, restorePersistedSelection, initializeWithDefaultSelection]);
 
   // Debug information
   console.log("MessagingSidebar Debug:", {
     connectionStatus: 'state' in connectionStatus ? connectionStatus.state : connectionStatus,
     connectionAgentId: 'agentId' in connectionStatus ? connectionStatus.agentId : undefined,
-    networkAgentName: agentName,
-    currentUserId,
     isConnected,
     channelsCount: channels.length,
-    agentsCount: filteredAgents.length,
     isChannelLoading: channelsLoading,
-    isDirectLoading: agentsLoading,
     channelsLoaded,
-    agentsLoaded,
     currentChannel,
-    currentDirectMessage,
   });
 
   // TODO: Implement unreadCounts logic
@@ -222,11 +138,6 @@ const MessagingSidebar: React.FC = () => {
   // Channel selection handling - now using chatStore
   const onChannelSelect = (channel: string) => {
     selectChannel(channel);
-  };
-
-  // DM selection handling - now using chatStore
-  const onDirectMessageSelect = (agentId: string) => {
-    selectDirectMessage(agentId);
   };
 
   return (
@@ -258,77 +169,6 @@ const MessagingSidebar: React.FC = () => {
           </ul>
         )}
       </div>
-
-      {/* Direct Messages Section */}
-      <SectionHeader title={t('sidebar.directMessages')} />
-      <div className="px-3">
-        {agentsLoading && filteredAgents.length === 0 ? (
-          <div className="text-gray-500 text-sm px-2 py-2 text-center">
-            {t('sidebar.loadingAgents')}
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {filteredAgents.map((agent) => (
-              <AgentItem
-                key={agent.agent_id}
-                agent={agent}
-                isActive={currentDirectMessage === agent.agent_id}
-                unreadCount={unreadCounts[agent.agent_id] || 0}
-                onClick={() => onDirectMessageSelect(agent.agent_id)}
-              />
-            ))}
-            {filteredAgents.length === 0 && !agentsLoading && (
-              <div className="text-gray-500 text-sm px-2 py-2 text-center">
-                {t('sidebar.noAgents')}
-              </div>
-            )}
-          </ul>
-        )}
-      </div>
-
-      {/* Agent-to-Agent Conversations Section */}
-      {agentConversations.length > 0 && (
-        <>
-          <SectionHeader title="Agent DMs" />
-          <div className="px-3">
-            <ul className="flex flex-col gap-1">
-              {agentConversations.map((convo) => {
-                const key = `${convo.agents[0]},${convo.agents[1]}`;
-                const isActive = currentAgentConversation === key;
-                const preview = convo.lastMessage.content
-                  ? `${convo.lastMessage.sender}: ${convo.lastMessage.content}`.slice(0, 60)
-                  : '';
-                return (
-                  <li key={key}>
-                    <button
-                      onClick={() => selectAgentConversation(key)}
-                      className={`w-full text-left text-sm px-2 py-2 font-medium rounded transition-colors
-                        ${isActive
-                          ? "bg-[#F4F4F5] text-gray-900 dark:bg-[#F4F4F5] dark:text-gray-900 pl-2"
-                          : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-900 pl-2.5"
-                        }
-                      `}
-                      title={`${convo.agents[0]} ↔ ${convo.agents[1]} (${convo.messageCount} messages)`}
-                    >
-                      <div className="flex items-center min-w-0">
-                        <span className="mr-2 text-gray-400 text-xs">↔</span>
-                        <span className="truncate text-xs">
-                          {convo.agents[0]} ↔ {convo.agents[1]}
-                        </span>
-                      </div>
-                      {preview && (
-                        <div className="text-xs text-gray-400 truncate mt-0.5 pl-5">
-                          {preview}
-                        </div>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </>
-      )}
      </div>
     </div>
   );

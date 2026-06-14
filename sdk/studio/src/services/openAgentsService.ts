@@ -108,24 +108,6 @@ export class OpenAgentsService {
     };
   }
 
-  async sendDirectMessage(
-    targetAgentId: string,
-    content: string
-  ): Promise<MessageSendResult> {
-    console.log(`📤 Sending direct message to ${targetAgentId}: "${content}"`);
-
-    const response = await this.eventService.sendDirectMessage(
-      targetAgentId,
-      content
-    );
-
-    return {
-      success: response.success,
-      message: response.message,
-      messageId: response.data?.event_id,
-    };
-  }
-
   async addReaction(
     messageId: string,
     reactionType: string,
@@ -206,21 +188,6 @@ export class OpenAgentsService {
       `📝 Getting messages for #${channel} (limit: ${limit}, offset: ${offset})`
     );
     return await this.eventService.getChannelMessages(channel, limit, offset);
-  }
-
-  async getDirectMessages(
-    targetAgentId: string,
-    limit: number = 200,
-    offset: number = 0
-  ): Promise<ThreadMessage[]> {
-    console.log(
-      `📝 Getting direct messages with ${targetAgentId} (limit: ${limit}, offset: ${offset})`
-    );
-    return await this.eventService.getDirectMessages(
-      targetAgentId,
-      limit,
-      offset
-    );
   }
 
   async getConnectedAgents(): Promise<AgentInfo[]> {
@@ -327,12 +294,6 @@ export class OpenAgentsService {
         `📨 New channel message in #${message.channel} from ${message.sender_id}`
       );
       this.emit("newChannelMessage", message);
-      this.emit("newMessage", message); // Generic event
-    });
-
-    this.eventService.on("directMessage", (message: ThreadMessage) => {
-      console.log(`📨 New direct message from ${message.sender_id}`);
-      this.emit("newDirectMessage", message);
       this.emit("newMessage", message); // Generic event
     });
 

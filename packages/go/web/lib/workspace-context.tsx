@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { workspaceApi } from './api';
 import { useOpenAgentsAuth } from './openagents-auth-context';
 import { networkAgentToWorkspaceAgent, networkChannelToSession } from './types';
-import type { BrowserPersistentContext, BrowserTab, DMConversation, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceCollaborator, WorkspaceFile, WorkspaceSession } from './types';
+import type { BrowserPersistentContext, BrowserTab, RoutineItem, TodoItem, Workspace, WorkspaceAgent, WorkspaceCollaborator, WorkspaceFile, WorkspaceSession } from './types';
 
 interface LastMessageInfo {
   content: string;
@@ -76,8 +76,6 @@ interface WorkspaceContextValue {
   unpersistBrowserTab: (tabId: string) => Promise<void>;
   deleteBrowserContext: (contextId: string) => Promise<void>;
   openBrowserTabWithContext: (contextId: string, url?: string) => Promise<BrowserTab>;
-  dmConversations: DMConversation[];
-  refreshDMConversations: () => Promise<void>;
   todos: TodoItem[];
   refreshTodos: () => Promise<void>;
   routines: RoutineItem[];
@@ -147,7 +145,6 @@ export function WorkspaceProvider({
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [selectedBrowserTabId, setSelectedBrowserTabId] = useState<string | null>(null);
   const [browserContexts, setBrowserContexts] = useState<BrowserPersistentContext[]>([]);
-  const [dmConversations, setDMConversations] = useState<DMConversation[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
   const [manuallyRenamedSessions, setManuallyRenamedSessions] = useState<Set<string>>(new Set());
@@ -503,11 +500,10 @@ export function WorkspaceProvider({
         }
       }
 
-      // Also refresh files, browser tabs, persistent contexts, and DM conversations so sidebar counts stay current
+      // Also refresh files, browser tabs, and persistent contexts so sidebar counts stay current
       workspaceApi.listFiles().then((r) => setFiles(r.files)).catch(() => {});
       workspaceApi.listBrowserTabs().then((r) => setBrowserTabs(r.tabs)).catch(() => {});
       workspaceApi.listBrowserContexts().then((r) => setBrowserContexts(r.contexts)).catch(() => {});
-      workspaceApi.listConversations().then((c) => setDMConversations(c)).catch(() => {});
       workspaceApi.listTodos().then((r) => setTodos(r.todos)).catch(() => {});
       workspaceApi.listRoutines().then((r) => setRoutines(r.routines)).catch(() => {});
     } catch {
@@ -629,15 +625,6 @@ export function WorkspaceProvider({
     return tab;
   }, [refreshBrowserTabs]);
 
-  const refreshDMConversations = useCallback(async () => {
-    try {
-      const convos = await workspaceApi.listConversations();
-      setDMConversations(convos);
-    } catch {
-      // Non-critical
-    }
-  }, []);
-
   // Initial load: workspace metadata + discover for channels
   useEffect(() => {
     let cancelled = false;
@@ -703,11 +690,6 @@ export function WorkspaceProvider({
             } catch { /* storage full */ }
           }
         } catch { /* non-critical */ }
-
-        // Also fetch DM conversations
-        workspaceApi.listConversations().then((c) => {
-          if (!cancelled) setDMConversations(c);
-        }).catch(() => {});
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load workspace');
@@ -962,8 +944,6 @@ export function WorkspaceProvider({
         unpersistBrowserTab,
         deleteBrowserContext,
         openBrowserTabWithContext,
-        dmConversations,
-        refreshDMConversations,
         todos,
         refreshTodos,
         routines,

@@ -27,10 +27,9 @@ interface ChatState {
   // connection: any | null;  // Removed, use context
 
   currentChannel: string | null;
-  currentDirectMessage: string | null;
 
   // Persisted selection state - for restoring selection after page refresh
-  persistedSelectionType: "channel" | "agent" | null;
+  persistedSelectionType: "channel" | null;
   persistedSelectionId: string | null;
 
   // Channels state
@@ -41,7 +40,6 @@ interface ChatState {
 
   // Messages state - stored grouped by channel/targetAgentId
   channelMessages: Map<string, OptimisticMessage[]>;
-  directMessages: Map<string, OptimisticMessage[]>;
   messagesLoading: boolean;
   messagesError: string | null;
 
@@ -54,33 +52,19 @@ interface ChatState {
   agentsError: string | null;
   agentsLoaded: boolean;
 
-  // Agent-to-agent DM conversations (observability)
-  agentConversations: Array<{
-    agents: [string, string];
-    lastMessage: { content: string; sender: string; timestamp: number };
-    messageCount: number;
-  }>;
-  agentConversationsLoaded: boolean;
-  currentAgentConversation: string | null; // "agentA,agentB" format
-
   // Connection helpers
   getConnection: () => any | null;
   isConnected: () => boolean;
 
   // Actions - Selection
   selectChannel: (channel: string) => void;
-  selectDirectMessage: (targetAgentId: string) => void;
-  selectAgentConversation: (conversationKey: string) => void;
   clearSelection: () => void;
   clearAllChatData: () => void;
-
-  // Actions - Agent conversations
-  loadAgentConversations: () => Promise<void>;
 
   // Persistence actions
   restorePersistedSelection: () => Promise<void>;
   initializeWithDefaultSelection: () => Promise<void>;
-  saveSelectionToStorage: (type: "channel" | "agent", id: string) => void;
+  saveSelectionToStorage: (type: "channel", id: string) => void;
   clearPersistedSelection: () => void;
 
   // Actions - Channels
@@ -93,11 +77,6 @@ interface ChatState {
     limit?: number,
     offset?: number
   ) => Promise<void>;
-  loadDirectMessages: (
-    targetAgentId: string,
-    limit?: number,
-    offset?: number
-  ) => Promise<void>;
   sendChannelMessage: (
     channel: string,
     content: string,
@@ -107,10 +86,6 @@ interface ChatState {
       filename: string;
       size: number;
     }
-  ) => Promise<boolean>;
-  sendDirectMessage: (
-    targetAgentId: string,
-    content: string
   ) => Promise<boolean>;
   clearMessagesError: () => void;
 
@@ -133,7 +108,6 @@ interface ChatState {
 
   // Real-time updates
   addMessageToChannel: (channel: string, message: UnifiedMessage) => void;
-  addMessageToDirect: (targetAgentId: string, message: UnifiedMessage) => void;
   updateMessage: (
     messageId: string,
     updates: Partial<OptimisticMessage>
@@ -144,10 +118,6 @@ interface ChatState {
     channel: string,
     content: string,
     replyToId?: string
-  ) => string;
-  addOptimisticDirectMessage: (
-    targetAgentId: string,
-    content: string
   ) => string;
   replaceOptimisticMessage: (
     tempId: string,
@@ -165,10 +135,6 @@ interface ChatState {
 
   // Helper functions
   getChannelMessages: (channel: string) => OptimisticMessage[];
-  getDirectMessagesForAgent: (
-    targetAgentId: string,
-    currentAgentId: string
-  ) => OptimisticMessage[];
   generateTempMessageId: () => string;
 }
 
@@ -180,14 +146,14 @@ const CHAT_SELECTION_STORAGE_KEY = "openagents_chat_selection";
 
 // Persisted selection data structure
 interface PersistedSelection {
-  type: "channel" | "agent";
+  type: "channel";
   id: string;
   timestamp: number;
 }
 
 // localStorage utility functions
 const ChatSelectionStorage = {
-  save: (type: "channel" | "agent", id: string) => {
+  save: (type: "channel", id: string) => {
     try {
       const data: PersistedSelection = {
         type,
@@ -245,7 +211,6 @@ const ChatSelectionStorage = {
 export const useChatStore = create<ChatState>((set, get) => ({
   // Selection state
   currentChannel: null,
-  currentDirectMessage: null,
 
   // Persistence state
   persistedSelectionType: null,
@@ -259,7 +224,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // Messages state
   channelMessages: new Map(),
-  directMessages: new Map(),
   messagesLoading: false,
   messagesError: null,
 
@@ -271,11 +235,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   agentsLoading: false,
   agentsError: null,
   agentsLoaded: false,
-
-  // Agent-to-agent conversations
-  agentConversations: [],
-  agentConversationsLoaded: false,
-  currentAgentConversation: null,
 
   // Event handler reference
   eventHandler: null,
@@ -294,8 +253,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     console.log(`ChatStore: Selecting channel #${channel}`);
     set({
       currentChannel: channel,
-      currentDirectMessage: null,
-      currentAgentConversation: null,
       persistedSelectionType: "channel",
       persistedSelectionId: channel,
     });
@@ -304,72 +261,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().saveSelectionToStorage("channel", channel);
   },
 
-  selectDirectMessage: (targetAgentId: string) => {
-    console.log(`ChatStore: Selecting direct message with ${targetAgentId}`);
-    set({
-      currentDirectMessage: targetAgentId,
-      currentChannel: null,
-      currentAgentConversation: null,
-      persistedSelectionType: "agent",
-      persistedSelectionId: targetAgentId,
-    });
-
-    // Save to localStorage
-    get().saveSelectionToStorage("agent", targetAgentId);
-  },
-
-  selectAgentConversation: (conversationKey: string) => {
-    console.log(`ChatStore: Selecting agent conversation ${conversationKey}`);
-    // Parse "agentA,agentB" format and load DMs between them
-    const [agentA, agentB] = conversationKey.split(",", 2);
-    set({
-      currentAgentConversation: conversationKey,
-      currentChannel: null,
-      currentDirectMessage: null,
-    });
-    // Load the conversation messages using existing DM retrieval
-    // We set source_id to agentA and target to agentB — the handler matches bidirectionally
-    const connection = get().getConnection();
-    if (connection && agentA && agentB) {
-      set({ messagesLoading: true, messagesError: null });
-      connection
-        .sendEvent({
-          event_name: EventNames.THREAD_DIRECT_MESSAGES_RETRIEVE,
-          source_id: agentA,
-          destination_id: "mod:openagents.mods.workspace.messaging",
-          payload: {
-            target_agent_id: agentB,
-            limit: 200,
-            offset: 0,
-            include_threads: true,
-            message_type: "message_retrieval",
-          },
-        })
-        .then((response: any) => {
-          if (response.success && response.data?.messages) {
-            const messages = response.data.messages.map((msg: any) =>
-              MessageAdapter.fromRaw(msg)
-            );
-            // Store in directMessages under the conversation key
-            const currentMessages = new Map(get().directMessages);
-            currentMessages.set(conversationKey, messages);
-            set({ directMessages: currentMessages, messagesLoading: false });
-          } else {
-            set({ messagesLoading: false });
-          }
-        })
-        .catch(() => {
-          set({ messagesLoading: false });
-        });
-    }
-  },
-
   clearSelection: () => {
     console.log("ChatStore: Clearing selection");
     set({
       currentChannel: null,
-      currentDirectMessage: null,
-      currentAgentConversation: null,
       persistedSelectionType: null,
       persistedSelectionId: null,
     });
@@ -383,8 +278,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       // Reset selection
       currentChannel: null,
-      currentDirectMessage: null,
-      currentAgentConversation: null,
       persistedSelectionType: null,
       persistedSelectionId: null,
 
@@ -396,7 +289,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Reset messages
       channelMessages: new Map(),
-      directMessages: new Map(),
       messagesLoading: false,
       messagesError: null,
 
@@ -409,9 +301,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       agentsError: null,
       agentsLoaded: false,
 
-      // Reset agent conversations
-      agentConversations: [],
-      agentConversationsLoaded: false,
     });
 
     // Clear localStorage
@@ -598,114 +487,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  loadDirectMessages: async (
-    targetAgentId: string,
-    limit = 200,
-    offset = 0
-  ) => {
-    const connection = get().getConnection();
-    if (!connection) {
-      console.warn("ChatStore: No connection available for loadDirectMessages");
-      set({ messagesError: "No connection available" });
-      return;
-    }
-
-    // Check if connector is actually connected (not just React state)
-    if (!connection.isConnected()) {
-      console.warn("ChatStore: Connector not yet connected for loadDirectMessages, will retry in 500ms");
-      setTimeout(() => {
-        get().loadDirectMessages(targetAgentId, limit, offset);
-      }, 500);
-      return;
-    }
-
-    console.log(`ChatStore: Loading direct messages with ${targetAgentId}...`);
-    set({ messagesLoading: true, messagesError: null });
-
-    try {
-      const response = await connection.sendEvent({
-        event_name: EventNames.THREAD_DIRECT_MESSAGES_RETRIEVE,
-        source_id: connection.getAgentId(),
-        destination_id: "mod:openagents.mods.workspace.messaging",
-        payload: {
-          target_agent_id: targetAgentId,
-          limit: limit,
-          offset: offset,
-        },
-      });
-
-      if (response.success && response.data && response.data.messages) {
-        console.log(
-          `ChatStore: Loaded ${response.data.messages.length} direct messages with ${targetAgentId}`,
-          response.data.messages
-        );
-
-        // Convert raw messages to unified format
-        const rawMessages: RawThreadMessage[] = response.data.messages;
-        const unifiedMessages =
-          MessageAdapter.fromRawThreadMessages(rawMessages);
-
-        // Filter out messages with empty content (these may be historical data issues)
-        const validMessages = unifiedMessages.filter((msg) => {
-          console.log(msg);
-          if (!msg.content || msg.content.trim() === "") {
-            console.warn(
-              `ChatStore: Filtering out empty DM ${msg.id} from ${msg.senderId}`
-            );
-            return false;
-          }
-          return true;
-        });
-
-        const optimisticMessages: OptimisticMessage[] = validMessages.map(
-          (msg) => ({
-            ...msg,
-            isOptimistic: false,
-            status: "sent" as MessageStatus,
-          })
-        );
-
-        console.log(
-          `ChatStore: Loaded ${
-            validMessages.length
-          } valid direct messages (filtered ${
-            unifiedMessages.length - validMessages.length
-          } empty messages)`
-        );
-
-        // Store to directMessages Map
-        set((state) => {
-          const newDirectMessages = new Map(state.directMessages);
-          newDirectMessages.set(targetAgentId, optimisticMessages);
-          return {
-            directMessages: newDirectMessages,
-            messagesLoading: false,
-          };
-        });
-      } else {
-        console.warn(
-          `ChatStore: Failed to load direct messages with ${targetAgentId}. Response:`,
-          response
-        );
-        set({
-          messagesLoading: false,
-          messagesError:
-            response.message ||
-            `Failed to load direct messages with ${targetAgentId}`,
-        });
-      }
-    } catch (error) {
-      console.error(
-        `ChatStore: Failed to load direct messages with ${targetAgentId}:`,
-        error
-      );
-      set({
-        messagesError: `Failed to load direct messages with ${targetAgentId}`,
-        messagesLoading: false,
-      });
-    }
-  },
-
   sendChannelMessage: async (
     channel: string,
     content: string,
@@ -839,109 +620,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendDirectMessage: async (targetAgentId: string, content: string) => {
-    const connection = get().getConnection();
-    if (!connection || !content.trim()) return false;
-
-    console.log(
-      `ChatStore: Sending direct message to ${targetAgentId}: "${content}"`
-    );
-
-    // 1. Immediately add optimistic update message
-    const tempId = get().addOptimisticDirectMessage(
-      targetAgentId,
-      content.trim()
-    );
-
-    try {
-      const response = await connection.sendEvent({
-        event_name: EventNames.THREAD_DIRECT_MESSAGE_SEND,
-        source_id: connection.getAgentId(),
-        destination_id: `agent:${targetAgentId}`,
-        payload: {
-          target_agent_id: targetAgentId,
-          content: { text: content.trim() },
-          message_type: "direct_message",
-        },
-      });
-
-      if (response.success) {
-        console.log(
-          `ChatStore: Direct message sent successfully to ${targetAgentId}`
-        );
-
-        // 2. After success, check backend response data structure
-        console.log(
-          `ChatStore: Backend response for direct message:`,
-          response
-        );
-
-        // Try to get message_id from different paths
-        let realMessageId: string | null = null;
-        if (response.data && response.data.message_id) {
-          realMessageId = response.data.message_id;
-        } else if (response.event_id) {
-          // If no message_id, use event_id as real ID
-          realMessageId = response.event_id;
-        } else if (response.data && response.data.event_id) {
-          realMessageId = response.data.event_id;
-        }
-
-        if (realMessageId) {
-          // Update optimistic message with real ID returned from backend
-          console.log(
-            `ChatStore: Updating optimistic direct message ${tempId} with real ID ${realMessageId}`
-          );
-          get().updateMessage(tempId, {
-            id: realMessageId,
-            status: "sent" as MessageStatus,
-            isOptimistic: false,
-          });
-
-          // Record ID mapping
-          set((state) => {
-            const newTempIdToRealIdMap = new Map(state.tempIdToRealIdMap);
-            newTempIdToRealIdMap.set(tempId, realMessageId!);
-            return {
-              ...state,
-              tempIdToRealIdMap: newTempIdToRealIdMap,
-            };
-          });
-        } else {
-          // If no real ID returned, only update status
-          console.log(
-            `ChatStore: No real message ID found in response, keeping temp ID ${tempId}`
-          );
-          get().updateMessage(tempId, { status: "sent" as MessageStatus });
-        }
-
-        return true;
-      } else {
-        console.error(
-          `ChatStore: Failed to send direct message to ${targetAgentId}:`,
-          response.message
-        );
-
-        // 3. Send failed, mark as failed state
-        get().markMessageAsFailed(tempId);
-        set({
-          messagesError: response.message || "Failed to send direct message",
-        });
-        return false;
-      }
-    } catch (error) {
-      console.error(
-        `ChatStore: Failed to send direct message to ${targetAgentId}:`,
-        error
-      );
-
-      // 4. Network error, mark as failed state
-      get().markMessageAsFailed(tempId);
-      set({ messagesError: "Failed to send direct message" });
-      return false;
-    }
-  },
-
   clearMessagesError: () => {
     set({ messagesError: null });
   },
@@ -989,28 +667,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  loadAgentConversations: async () => {
-    const connection = get().getConnection();
-    if (!connection) return;
-
-    try {
-      const response = await connection.getConversationsList();
-      if (response.success && response.data?.conversations) {
-        set({
-          agentConversations: response.data.conversations.map((c: any) => ({
-            agents: c.agents,
-            lastMessage: c.last_message,
-            messageCount: c.message_count,
-          })),
-          agentConversationsLoaded: true,
-        });
-      }
-    } catch (error) {
-      console.error("ChatStore: Failed to load agent conversations:", error);
-      set({ agentConversationsLoaded: true });
-    }
-  },
-
   clearAgentsError: () => {
     set({ agentsError: null });
   },
@@ -1019,7 +675,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   findRealMessageId: (messageId: string) => {
     const state = get();
 
-    // If already a real ID, return directly
+    // If already a real ID, return it immediately
     if (!messageId.startsWith("temp_")) {
       return messageId;
     }
@@ -1050,25 +706,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           `ChatStore: Found real message ID ${foundRealId} in channel ${channel}`
         );
         break;
-      }
-    }
-
-    // Search in direct messages
-    if (!foundRealId) {
-      for (const [targetId, messages] of Array.from(
-        state.directMessages.entries()
-      )) {
-        const message = messages.find(
-          (msg: OptimisticMessage) =>
-            msg.id === messageId || msg.tempId === messageId
-        );
-        if (message && !message.isOptimistic) {
-          foundRealId = message.id;
-          console.log(
-            `ChatStore: Found real message ID ${foundRealId} in DM with ${targetId}`
-          );
-          break;
-        }
       }
     }
 
@@ -1131,48 +768,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    // Update direct message reactions
-    if (!messageUpdated) {
-      const newDirectMessages = new Map(state.directMessages);
-      for (const [targetId, messages] of Array.from(
-        newDirectMessages.entries()
-      )) {
-        const messageIndex = messages.findIndex(
-          (msg) => msg.id === realMessageId || msg.id === messageId
-        );
-        if (messageIndex >= 0) {
-          const message = messages[messageIndex];
-          const currentReactions = { ...(message.reactions || {}) };
-
-          // Add or increment reaction count
-          if (currentReactions[reactionType]) {
-            currentReactions[reactionType] += 1;
-          } else {
-            currentReactions[reactionType] = 1;
-          }
-
-          const updatedMessages = [...messages];
-          updatedMessages[messageIndex] = {
-            ...message,
-            reactions: currentReactions,
-            tempReactionId: tempReactionId, // Record temporary reaction ID for later replacement
-          };
-          newDirectMessages.set(targetId, updatedMessages);
-          messageUpdated = true;
-          console.log(
-            `ChatStore: Added optimistic reaction ${reactionType} to direct message ${realMessageId}`
-          );
-          break;
-        }
-      }
-
-      if (messageUpdated) {
-        set((state) => ({
-          ...state,
-          directMessages: newDirectMessages,
-        }));
-      }
-    } else {
+    if (messageUpdated) {
       set((state) => ({
         ...state,
         channelMessages: newChannelMessages,
@@ -1259,44 +855,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // Rollback direct message reactions
-        const rollbackDirectMessages = new Map(currentState.directMessages);
-        for (const [targetId, messages] of Array.from(
-          rollbackDirectMessages.entries()
-        )) {
-          const messageIndex = messages.findIndex(
-            (msg) =>
-              (msg.id === realMessageId || msg.id === messageId) &&
-              msg.tempReactionId === tempReactionId
-          );
-          if (messageIndex >= 0) {
-            const message = messages[messageIndex];
-            const rollbackReactions = { ...message.reactions };
-
-            if (
-              rollbackReactions[reactionType] &&
-              rollbackReactions[reactionType] > 1
-            ) {
-              rollbackReactions[reactionType] -= 1;
-            } else {
-              delete rollbackReactions[reactionType];
-            }
-
-            const updatedMessages = [...messages];
-            updatedMessages[messageIndex] = {
-              ...message,
-              reactions: rollbackReactions,
-              tempReactionId: undefined,
-            };
-            rollbackDirectMessages.set(targetId, updatedMessages);
-            break;
-          }
-        }
-
         set((state) => ({
           ...state,
           channelMessages: rollbackChannelMessages,
-          directMessages: rollbackDirectMessages,
         }));
 
         return false;
@@ -1347,44 +908,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // Rollback direct message reactions
-      const rollbackDirectMessages = new Map(currentState.directMessages);
-      for (const [targetId, messages] of Array.from(
-        rollbackDirectMessages.entries()
-      )) {
-        const messageIndex = messages.findIndex(
-          (msg) =>
-            (msg.id === realMessageId || msg.id === messageId) &&
-            msg.tempReactionId === tempReactionId
-        );
-        if (messageIndex >= 0) {
-          const message = messages[messageIndex];
-          const rollbackReactions = { ...message.reactions };
-
-          if (
-            rollbackReactions[reactionType] &&
-            rollbackReactions[reactionType] > 1
-          ) {
-            rollbackReactions[reactionType] -= 1;
-          } else {
-            delete rollbackReactions[reactionType];
-          }
-
-          const updatedMessages = [...messages];
-          updatedMessages[messageIndex] = {
-            ...message,
-            reactions: rollbackReactions,
-            tempReactionId: undefined,
-          };
-          rollbackDirectMessages.set(targetId, updatedMessages);
-          break;
-        }
-      }
-
       set((state) => ({
         ...state,
         channelMessages: rollbackChannelMessages,
-        directMessages: rollbackDirectMessages,
       }));
 
       return false;
@@ -1452,53 +978,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    // Update direct message reactions
-    if (!messageUpdated) {
-      const newDirectMessages = new Map(state.directMessages);
-      for (const [targetId, messages] of Array.from(
-        newDirectMessages.entries()
-      )) {
-        const messageIndex = messages.findIndex(
-          (msg) => msg.id === realMessageId || msg.id === messageId
-        );
-        if (messageIndex >= 0) {
-          const message = messages[messageIndex];
-          const currentReactions = { ...(message.reactions || {}) };
-          originalReactionCount = currentReactions[reactionType] || 0;
-
-          // Decrease or remove reaction count
-          if (
-            currentReactions[reactionType] &&
-            currentReactions[reactionType] > 1
-          ) {
-            currentReactions[reactionType] -= 1;
-          } else {
-            delete currentReactions[reactionType];
-          }
-
-          const updatedMessages = [...messages];
-          updatedMessages[messageIndex] = {
-            ...message,
-            reactions: currentReactions,
-            tempReactionId: tempReactionId,
-            originalReactionCount: originalReactionCount, // Record original count for rollback
-          };
-          newDirectMessages.set(targetId, updatedMessages);
-          messageUpdated = true;
-          console.log(
-            `ChatStore: Removed optimistic reaction ${reactionType} from direct message ${realMessageId}`
-          );
-          break;
-        }
-      }
-
-      if (messageUpdated) {
-        set((state) => ({
-          ...state,
-          directMessages: newDirectMessages,
-        }));
-      }
-    } else {
+    if (messageUpdated) {
       set((state) => ({
         ...state,
         channelMessages: newChannelMessages,
@@ -1586,44 +1066,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // Rollback direct message reactions
-        const rollbackDirectMessages = new Map(currentState.directMessages);
-        for (const [targetId, messages] of Array.from(
-          rollbackDirectMessages.entries()
-        )) {
-          const messageIndex = messages.findIndex(
-            (msg) =>
-              (msg.id === realMessageId || msg.id === messageId) &&
-              msg.tempReactionId === tempReactionId
-          );
-          if (messageIndex >= 0) {
-            const message = messages[messageIndex];
-            const rollbackReactions = { ...message.reactions };
-
-            // Restore original reaction count
-            if (
-              message.originalReactionCount &&
-              message.originalReactionCount > 0
-            ) {
-              rollbackReactions[reactionType] = message.originalReactionCount;
-            }
-
-            const updatedMessages = [...messages];
-            updatedMessages[messageIndex] = {
-              ...message,
-              reactions: rollbackReactions,
-              tempReactionId: undefined,
-              originalReactionCount: undefined,
-            };
-            rollbackDirectMessages.set(targetId, updatedMessages);
-            break;
-          }
-        }
-
         set((state) => ({
           ...state,
           channelMessages: rollbackChannelMessages,
-          directMessages: rollbackDirectMessages,
         }));
 
         return false;
@@ -1674,44 +1119,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // Rollback direct message reactions
-      const rollbackDirectMessages = new Map(currentState.directMessages);
-      for (const [targetId, messages] of Array.from(
-        rollbackDirectMessages.entries()
-      )) {
-        const messageIndex = messages.findIndex(
-          (msg) =>
-            (msg.id === realMessageId || msg.id === messageId) &&
-            msg.tempReactionId === tempReactionId
-        );
-        if (messageIndex >= 0) {
-          const message = messages[messageIndex];
-          const rollbackReactions = { ...message.reactions };
-
-          // Restore original reaction count
-          if (
-            message.originalReactionCount &&
-            message.originalReactionCount > 0
-          ) {
-            rollbackReactions[reactionType] = message.originalReactionCount;
-          }
-
-          const updatedMessages = [...messages];
-          updatedMessages[messageIndex] = {
-            ...message,
-            reactions: rollbackReactions,
-            tempReactionId: undefined,
-            originalReactionCount: undefined,
-          };
-          rollbackDirectMessages.set(targetId, updatedMessages);
-          break;
-        }
-      }
-
       set((state) => ({
         ...state,
         channelMessages: rollbackChannelMessages,
-        directMessages: rollbackDirectMessages,
       }));
 
       return false;
@@ -1750,33 +1160,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return tempId;
   },
 
-  // Optimistic update - add direct message
-  addOptimisticDirectMessage: (targetAgentId: string, content: string) => {
-    const connection = get().getConnection();
-    const tempId = get().generateTempMessageId();
-
-    const optimisticMessage: OptimisticMessage = {
-      id: tempId,
-      senderId: connection?.getAgentId() || "unknown",
-      timestamp: new Date().toISOString(),
-      content: content,
-      type: "direct_message",
-      targetUserId: targetAgentId,
-      isOptimistic: true,
-      status: "sending" as MessageStatus,
-      tempId: tempId,
-    };
-
-    get().addMessageToDirect(targetAgentId, optimisticMessage);
-    return tempId;
-  },
-
   // Replace optimistic message with real message
   replaceOptimisticMessage: (tempId: string, realMessage: UnifiedMessage) => {
     set((state) => {
       // Find and replace in channel messages
       const newChannelMessages = new Map(state.channelMessages);
-      let messageReplaced = false;
 
       for (const [channel, messages] of Array.from(
         newChannelMessages.entries()
@@ -1813,8 +1201,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             originalId: tempId,
           };
           newChannelMessages.set(channel, updatedMessages);
-          messageReplaced = true;
-
           // Record ID mapping
           const newTempIdToRealIdMap = new Map(state.tempIdToRealIdMap);
           newTempIdToRealIdMap.set(tempId, realMessage.id);
@@ -1830,64 +1216,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             channelMessages: newChannelMessages,
             tempIdToRealIdMap: newTempIdToRealIdMap,
           };
-        }
-      }
-
-      // Find and replace in direct messages
-      if (!messageReplaced) {
-        const newDirectMessages = new Map(state.directMessages);
-        for (const [targetAgentId, messages] of Array.from(
-          newDirectMessages.entries()
-        )) {
-          const messageIndex = messages.findIndex(
-            (msg) =>
-              (msg.tempId === tempId || msg.id === tempId) && msg.isOptimistic
-          );
-          if (messageIndex >= 0) {
-            const oldMessage = messages[messageIndex];
-            console.log(
-              `ChatStore: Replacing optimistic direct message with ${targetAgentId}:`
-            );
-            console.log(
-              `  - Old: ${JSON.stringify({
-                id: oldMessage.id,
-                tempId: oldMessage.tempId,
-                content: oldMessage.content,
-                isOptimistic: oldMessage.isOptimistic,
-              })}`
-            );
-            console.log(
-              `  - New: ${JSON.stringify({
-                id: realMessage.id,
-                content: realMessage.content,
-              })}`
-            );
-
-            const updatedMessages = [...messages];
-            updatedMessages[messageIndex] = {
-              ...realMessage,
-              isOptimistic: false,
-              status: "sent" as MessageStatus,
-              originalId: tempId,
-            };
-            newDirectMessages.set(targetAgentId, updatedMessages);
-
-            // Record ID mapping
-            const newTempIdToRealIdMap = new Map(state.tempIdToRealIdMap);
-            newTempIdToRealIdMap.set(tempId, realMessage.id);
-
-            console.log(
-              `ChatStore: Successfully replaced optimistic message ${tempId} with real message ${realMessage.id} in DM with ${targetAgentId}`
-            );
-            console.log(
-              `ChatStore: DM with ${targetAgentId} now has ${updatedMessages.length} messages`
-            );
-            return {
-              ...state,
-              directMessages: newDirectMessages,
-              tempIdToRealIdMap: newTempIdToRealIdMap,
-            };
-          }
         }
       }
 
@@ -1910,7 +1238,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Find message
     let messageToRetry: OptimisticMessage | undefined;
     let channel: string | undefined;
-    let targetAgentId: string | undefined;
 
     // Find in channel messages
     for (const [ch, messages] of Array.from(state.channelMessages.entries())) {
@@ -1919,22 +1246,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messageToRetry = msg;
         channel = ch;
         break;
-      }
-    }
-
-    // Find in direct messages
-    if (!messageToRetry) {
-      for (const [agentId, messages] of Array.from(
-        state.directMessages.entries()
-      )) {
-        const msg = messages.find(
-          (m) => m.tempId === tempId || m.id === tempId
-        );
-        if (msg) {
-          messageToRetry = msg;
-          targetAgentId = agentId;
-          break;
-        }
       }
     }
 
@@ -1953,11 +1264,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           channel,
           messageToRetry.content,
           messageToRetry.replyToId
-        );
-      } else if (targetAgentId) {
-        return await get().sendDirectMessage(
-          targetAgentId,
-          messageToRetry.content
         );
       }
       return false;
@@ -1980,7 +1286,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Enhanced message deduplication mechanism
       const messageToAdd = message as OptimisticMessage;
       const exists = currentMessages.some((msg) => {
-        // 1. Direct ID match
+        // 1. ID match
         if (msg.id === messageToAdd.id) {
           console.log(
             `ChatStore: Message with ID ${messageToAdd.id} already exists in channel #${channel} (ID match)`
@@ -2061,80 +1367,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  addMessageToDirect: (
-    targetAgentId: string,
-    message: UnifiedMessage | OptimisticMessage
-  ) => {
-    set((state) => {
-      const newDirectMessages = new Map(state.directMessages);
-      const currentMessages = newDirectMessages.get(targetAgentId) || [];
-
-      // Enhanced direct message deduplication mechanism
-      const messageToAdd = message as OptimisticMessage;
-      const exists = currentMessages.some((msg) => {
-        // 1. Direct ID match
-        if (msg.id === messageToAdd.id) {
-          console.log(
-            `ChatStore: Direct message with ID ${messageToAdd.id} already exists with ${targetAgentId} (ID match)`
-          );
-          return true;
-        }
-
-        // 2. Temporary ID match
-        if (messageToAdd.tempId && msg.tempId === messageToAdd.tempId) {
-          console.log(
-            `ChatStore: Direct message with tempId ${messageToAdd.tempId} already exists with ${targetAgentId} (tempId match)`
-          );
-          return true;
-        }
-
-        // 3. Content and time match (prevent duplicate messages with same content)
-        if (
-          msg.content === messageToAdd.content &&
-          msg.senderId === messageToAdd.senderId &&
-          msg.type === messageToAdd.type
-        ) {
-          const timeDiff = Math.abs(
-            new Date(msg.timestamp).getTime() -
-              new Date(messageToAdd.timestamp).getTime()
-          );
-          if (timeDiff < 2000) {
-            // Messages within 2 seconds with same content are considered duplicates
-            console.log(
-              `ChatStore: Duplicate direct message detected with ${targetAgentId} (content+time match, ${timeDiff}ms apart)`
-            );
-            return true;
-          }
-        }
-
-        return false;
-      });
-
-      if (exists) {
-        return state;
-      }
-
-      // Add new message to the end
-      const optimisticMessage: OptimisticMessage = {
-        ...message,
-        isOptimistic: (message as OptimisticMessage).isOptimistic || false,
-        status: (message as OptimisticMessage).status || "sent",
-      };
-
-      const updatedMessages = [...currentMessages, optimisticMessage];
-      newDirectMessages.set(targetAgentId, updatedMessages);
-
-      console.log(
-        `ChatStore: Added direct message with ${targetAgentId}:`,
-        message.content
-      );
-      return {
-        ...state,
-        directMessages: newDirectMessages,
-      };
-    });
-  },
-
   updateMessage: (messageId: string, updates: Partial<OptimisticMessage>) => {
     set((state) => {
       let messageUpdated = false;
@@ -2163,32 +1395,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // Update direct messages
-      const newDirectMessages = new Map(state.directMessages);
-      if (!messageUpdated) {
-        for (const [targetAgentId, messages] of Array.from(
-          newDirectMessages.entries()
-        )) {
-          const messageIndex = messages.findIndex(
-            (msg: OptimisticMessage) =>
-              msg.id === messageId || msg.tempId === messageId
-          );
-          if (messageIndex >= 0) {
-            const updatedMessages = [...messages];
-            updatedMessages[messageIndex] = {
-              ...updatedMessages[messageIndex],
-              ...updates,
-            };
-            newDirectMessages.set(targetAgentId, updatedMessages);
-            messageUpdated = true;
-            console.log(
-              `ChatStore: Updated message ${messageId} in direct messages with ${targetAgentId}`
-            );
-            break;
-          }
-        }
-      }
-
       if (!messageUpdated) {
         console.warn(`ChatStore: Message ${messageId} not found for update`);
       }
@@ -2196,7 +1402,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return {
         ...state,
         channelMessages: newChannelMessages,
-        directMessages: newDirectMessages,
       };
     });
   },
@@ -2205,25 +1410,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   getChannelMessages: (channel: string) => {
     const { channelMessages } = get();
     return channelMessages.get(channel) || [];
-  },
-
-  getDirectMessagesForAgent: (
-    targetAgentId: string,
-    currentAgentId: string
-  ) => {
-    const { directMessages } = get();
-    const messages = directMessages.get(targetAgentId) || [];
-
-    // Filter messages belonging to current conversation
-    return messages.filter(
-      (message) =>
-        message.type === "direct_message" &&
-        ((message.senderId === currentAgentId &&
-          message.targetUserId === targetAgentId) ||
-          (message.senderId === targetAgentId &&
-            message.targetUserId === currentAgentId) ||
-          message.senderId === targetAgentId) // Compatible with old format
-    );
   },
 
   // Event handling
@@ -2315,7 +1501,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           //   }
           // }
 
-          // If not own message or no corresponding optimistic update message found, add directly
+          // If not own message or no corresponding optimistic update message found, add it immediately
           get().addMessageToChannel(messageData.channel, unifiedMessage);
         }
       }
@@ -2547,116 +1733,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // Handle direct message notifications
-      else if (
-        event.event_name === "thread.direct_message.notification" &&
-        event.payload
-      ) {
-        console.log("ChatStore: Received direct message notification:", event);
-
-        const messageData = event.payload;
-
-        // Extract content from payload.content.text or payload.content
-        let content = "";
-        if (messageData.content) {
-          if (typeof messageData.content === "string") {
-            content = messageData.content;
-          } else if (messageData.content.text !== undefined) {
-            content = messageData.content.text || "";
-          }
-        }
-
-        // Show system notification - direct message
-        if (content) {
-          const senderName =
-            event.source_id || messageData.sender_id || "Unknown user";
-
-          notificationService.showChatNotification(
-            senderName,
-            "",
-            content,
-            messageData.message_type
-          );
-        }
-
-        // Construct unified message format if content exists
-        if (content || messageData.content) {
-          // Format timestamp: convert Unix timestamp to ISO string if needed
-          let timestampStr = "";
-          if (event.timestamp) {
-            if (typeof event.timestamp === "number") {
-              // Unix timestamp (seconds) - convert to ISO string
-              const timestampMs = event.timestamp < 10000000000 
-                ? event.timestamp * 1000 
-                : event.timestamp;
-              timestampStr = new Date(timestampMs).toISOString();
-            } else {
-              timestampStr = String(event.timestamp);
-            }
-          } else {
-            timestampStr = new Date().toISOString();
-          }
-
-          const unifiedMessage: UnifiedMessage = {
-            id:
-              event.event_id ||
-              `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-            senderId: event.source_id || messageData.sender_id || "unknown",
-            timestamp: timestampStr,
-            content: content,
-            type: messageData.message_type || "direct_message",
-            targetUserId: messageData.target_agent_id,
-            reactions: messageData.reactions,
-          };
-
-          // Determine the target agent for the conversation
-          const connection = get().getConnection();
-          const currentAgentId = connection.getAgentId();
-          const targetAgentId =
-            messageData.sender_id === currentAgentId
-              ? messageData.target_agent_id
-              : messageData.sender_id;
-
-          if (targetAgentId) {
-            // // Check if it's own direct message
-            // if (unifiedMessage.senderId === currentAgentId) {
-            //   // This is own direct message, find and replace corresponding optimistic update message
-            //   console.log("ChatStore: This is own direct message, looking for optimistic message to replace");
-
-            //   const state = get();
-            //   const directMessages = state.directMessages.get(targetAgentId) || [];
-
-            //   // More precise direct message matching logic
-            //   const optimisticMsg = directMessages.find(msg => {
-            //     if (!msg.isOptimistic || msg.status !== 'sending') return false;
-
-            //     const contentMatch = msg.content === unifiedMessage.content;
-            //     const senderMatch = msg.senderId === unifiedMessage.senderId;
-            //     const typeMatch = msg.type === unifiedMessage.type;
-
-            //     // Shorten time window to 5 seconds
-            //     const timeDiff = Math.abs(new Date(msg.timestamp).getTime() - new Date(unifiedMessage.timestamp).getTime());
-            //     const timeMatch = timeDiff < 5000;
-
-            //     console.log(`ChatStore: Checking optimistic direct message ${msg.tempId || msg.id}: content=${contentMatch}, sender=${senderMatch}, type=${typeMatch}, time=${timeMatch}`);
-
-            //     return contentMatch && senderMatch && typeMatch && timeMatch;
-            //   });
-
-            //   if (optimisticMsg && optimisticMsg.tempId) {
-            //     console.log(`ChatStore: Found matching optimistic direct message ${optimisticMsg.tempId}, replacing with real message ${unifiedMessage.id}`);
-            //     get().replaceOptimisticMessage(optimisticMsg.tempId, unifiedMessage);
-            //     return;
-            //   } else {
-            //     console.log(`ChatStore: No matching optimistic direct message found for real message ${unifiedMessage.id}`);
-            //   }
-            // }
-
-            get().addMessageToDirect(targetAgentId, unifiedMessage);
-          }
-        }
-      }
-
       // Handle reaction notifications
       else if (
         event.event_name === "thread.reaction.notification" &&
@@ -2683,7 +1759,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const findMessageInAllStores = (targetMessageId: string) => {
             const results = {
               found: false,
-              location: null as "channel" | "direct" | null,
+              location: null as "channel" | null,
               channel: null as string | null,
               targetId: null as string | null,
               messageIndex: -1,
@@ -2736,34 +1812,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             }
 
-            // Search in all direct messages
-            for (const [targetId, messages] of Array.from(
-              state.directMessages.entries()
-            )) {
-              console.log(
-                `ChatStore: Searching in DM with ${targetId} (${messages.length} messages)`
-              );
-              for (let i = 0; i < messages.length; i++) {
-                const msg = messages[i];
-                // Check multiple ID matching possibilities
-                if (
-                  searchIds.includes(msg.id) ||
-                  (msg.tempId && searchIds.includes(msg.tempId)) ||
-                  searchIds.includes(msg.originalId || "")
-                ) {
-                  results.found = true;
-                  results.location = "direct";
-                  results.targetId = targetId;
-                  results.messageIndex = i;
-                  results.message = msg;
-                  console.log(
-                    `ChatStore: Found message in DM with ${targetId} at index ${i} with ID ${msg.id} (tempId: ${msg.tempId})`
-                  );
-                  return results;
-                }
-              }
-            }
-
             // If not found, output debug information
             console.log(
               `ChatStore: Message not found. Current message store status:`
@@ -2772,11 +1820,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               `  - Channels: ${Array.from(state.channelMessages.keys()).join(
                 ", "
               )}`
-            );
-            console.log(
-              `  - Direct messages: ${Array.from(
-                state.directMessages.keys()
-              ).join(", ")}`
             );
             console.log(
               `  - ID mapping entries: ${state.tempIdToRealIdMap.size}`
@@ -2839,23 +1882,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
               console.log(
                 `ChatStore: Updated reaction for channel message ${reactionData.target_message_id} in #${searchResult.channel}:`,
-                currentReactions
-              );
-            } else if (searchResult.location === "direct") {
-              const newDirectMessages = new Map(state.directMessages);
-              const directMessages = [
-                ...newDirectMessages.get(searchResult.targetId!)!,
-              ];
-              directMessages[searchResult.messageIndex] = updatedMessage;
-              newDirectMessages.set(searchResult.targetId!, directMessages);
-
-              set((state) => ({
-                ...state,
-                directMessages: newDirectMessages,
-              }));
-
-              console.log(
-                `ChatStore: Updated reaction for direct message ${reactionData.target_message_id} with ${searchResult.targetId}:`,
                 currentReactions
               );
             }
@@ -2935,43 +1961,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // Handle direct messages retrieve response
-      else if (
-        event.event_name === "thread.direct_messages.retrieve_response" &&
-        event.payload
-      ) {
-        console.log(
-          "ChatStore: Received direct messages retrieve response:",
-          event
-        );
-
-        const { target_agent_id, messages } = event.payload;
-        if (target_agent_id && messages) {
-          // Convert raw messages to unified format
-          const rawMessages: RawThreadMessage[] = messages;
-          const unifiedMessages =
-            MessageAdapter.fromRawThreadMessages(rawMessages);
-          const optimisticMessages: OptimisticMessage[] = unifiedMessages.map(
-            (msg) => ({
-              ...msg,
-              isOptimistic: false,
-              status: "sent" as MessageStatus,
-            })
-          );
-
-          // Store in directMessages Map
-          set((state) => {
-            const newDirectMessages = new Map(state.directMessages);
-            newDirectMessages.set(target_agent_id, optimisticMessages);
-            return {
-              directMessages: newDirectMessages,
-              messagesLoading: false,
-              messagesError: null,
-            };
-          });
-        }
-      }
-
       // Handle file upload response
       else if (
         event.event_name === "thread.file.upload_response" &&
@@ -3001,7 +1990,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // Persistence methods
-  saveSelectionToStorage: (type: "channel" | "agent", id: string) => {
+  saveSelectionToStorage: (type: "channel", id: string) => {
     ChatSelectionStorage.save(type, id);
   },
 
@@ -3028,7 +2017,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         console.log(`ChatStore: Restoring channel selection: #${stored.id}`);
         set({
           currentChannel: stored.id,
-          currentDirectMessage: null,
           persistedSelectionType: "channel",
           persistedSelectionId: stored.id,
         });
@@ -3037,27 +2025,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         console.log(
           `ChatStore: Persisted channel #${stored.id} no longer exists, clearing selection`
-        );
-        get().clearPersistedSelection();
-      }
-    } else if (stored.type === "agent") {
-      // Check if agent exists
-      const agentExists = state.agents.some(
-        (agent) => agent.agent_id === stored.id
-      );
-      if (agentExists) {
-        console.log(`ChatStore: Restoring agent selection: ${stored.id}`);
-        set({
-          currentDirectMessage: stored.id,
-          currentChannel: null,
-          persistedSelectionType: "agent",
-          persistedSelectionId: stored.id,
-        });
-        // Load direct messages
-        await get().loadDirectMessages(stored.id);
-      } else {
-        console.log(
-          `ChatStore: Persisted agent ${stored.id} no longer exists, clearing selection`
         );
         get().clearPersistedSelection();
       }
@@ -3076,7 +2043,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     // If already has selection, skip default selection
-    if (state.currentChannel || state.currentDirectMessage) {
+    if (state.currentChannel) {
       console.log(
         "ChatStore: Already has selection, skipping default initialization"
       );
@@ -3091,18 +2058,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.log(`ChatStore: Selecting first channel: #${firstChannel}`);
       get().selectChannel(firstChannel);
       await get().loadChannelMessages(firstChannel);
-    }
-    // If no channels, select first agent
-    else if (state.agents.length > 0) {
-      const firstAgent = state.agents[0].agent_id;
-      console.log(
-        `ChatStore: No channels available, selecting first agent: ${firstAgent}`
-      );
-      get().selectDirectMessage(firstAgent);
-      await get().loadDirectMessages(firstAgent);
     } else {
       console.log(
-        "ChatStore: No channels or agents available for default selection"
+        "ChatStore: No channels available for default selection"
       );
     }
   },

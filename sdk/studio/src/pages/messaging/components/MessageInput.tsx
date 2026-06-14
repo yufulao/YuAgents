@@ -35,7 +35,6 @@ interface MessageInputProps {
   } | null
   onCancelReply?: () => void
   currentChannel?: string
-  currentDirectMessage?: string
   currentAgentId?: string
   currentAgentSecret?: string | null
   networkBaseUrl?: string
@@ -544,7 +543,6 @@ const MessageInput: React.FC<MessageInputProps> = ({
   quotingMessage,
   onCancelReply,
   currentChannel,
-  currentDirectMessage,
   currentAgentId,
   currentAgentSecret,
   networkBaseUrl,
@@ -567,9 +565,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Clear input content when switching between channels or direct messages
+  // Clear input content when switching channels
   useEffect(() => {
-    console.log("🧹 MessageInput: Channel/DM changed, clearing input content")
+    console.log("🧹 MessageInput: Channel changed, clearing input content")
     setMessage("")
     setPendingAttachment(null)
     setShowMentions(false)
@@ -581,7 +579,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
     }
-  }, [currentChannel, currentDirectMessage])
+  }, [currentChannel])
 
   // Common emojis organized by category
   const emojiCategories = {

@@ -277,12 +277,6 @@ export interface MessagePollResponse {
   hasMore: boolean;
 }
 
-export interface DMConversation {
-  agents: [string, string];
-  lastMessage: { content: string; sender: string; timestamp: number };
-  messageCount: number;
-}
-
 // ---------------------------------------------------------------------------
 // Converters — map ONM types to component-friendly types
 // ---------------------------------------------------------------------------

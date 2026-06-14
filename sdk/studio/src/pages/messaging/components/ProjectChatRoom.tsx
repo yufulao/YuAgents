@@ -80,7 +80,7 @@ const ProjectChatRoom: React.FC<ProjectChatRoomProps> = ({
     projectInfo?.status === "stopped" ||
     projectInfo?.status === "failed"
 
-  // Project private chat room maintains its own message list, independent of messaging service
+  // Project room maintains its own message list, independent of messaging service
   const [messages, setMessages] = useState<UnifiedMessage[]>([])
   const [sendingMessage, setSendingMessage] = useState<boolean>(false)
   const [messagesError, setMessagesError] = useState<string | null>(null)
@@ -247,7 +247,7 @@ const ProjectChatRoom: React.FC<ProjectChatRoomProps> = ({
     propChannelName,
   ])
 
-  // Listen for project message notifications - project private chat room receives messages through project mod events
+  // Listen for project message notifications - project room receives messages through project mod events
   useEffect(() => {
     if (!isConnected || !connector) return
 
@@ -361,7 +361,7 @@ const ProjectChatRoom: React.FC<ProjectChatRoomProps> = ({
     }
   }, [messages])
 
-  // Project private chat room doesn't load history messages, only shows real-time received messages
+  // Project room doesn't load history messages, only shows real-time received messages
   // If history messages are needed, they can be fetched via project.get API
 
   // Listen for project completion notifications
@@ -811,7 +811,6 @@ const ProjectChatRoom: React.FC<ProjectChatRoomProps> = ({
               <MessageRenderer
                 messages={sortedMessages}
                 currentUserId={connectionStatus.agentId || agentName || ""}
-                isDMChat={false}
                 disableReactions={true}
                 disableQuotes={true}
                 renderMode="flat"

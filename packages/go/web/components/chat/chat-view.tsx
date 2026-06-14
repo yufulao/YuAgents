@@ -237,7 +237,6 @@ export function ChatView() {
     }
   }, [currentSessionId]);
 
-  const isDM = currentSessionId?.startsWith('dm:') ?? false;
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   // Merge real messages with optimistic messages for display
   const displayMessages = useMemo(() => [...messages, ...optimisticMessages], [messages, optimisticMessages]);
@@ -397,13 +396,7 @@ export function ChatView() {
           )}
           <div className="flex flex-col min-w-0 leading-tight">
             <h2 className="text-sm font-semibold truncate">
-              {isDM
-                ? currentSessionId!
-                    .slice(3)
-                    .split(',')
-                    .map((a) => a.replace(/^openagents:/, ''))
-                    .join(' ↔ ')
-                : currentSession?.title || 'Chat'}
+              {currentSession?.title || 'Chat'}
             </h2>
             {(() => {
               const participants = currentSession?.participants || [];
@@ -471,50 +464,47 @@ export function ChatView() {
           />
         )}
 
-        {/* Input — hidden for read-only DM views */}
-        {!isDM && (
-          <div className="px-3 lg:px-4 py-2 lg:py-3">
-            <div className="max-w-3xl mx-auto w-full">
-              {currentSessionId && <ThreadStatusBar channelName={currentSessionId} messages={displayMessages} />}
-              <ChatInput
-                onSend={handleSend}
-                agents={agents}
-                humans={humans}
-                draft={currentDraft}
-                onDraftChange={handleDraftChange}
-                focusKey={focusKey}
-                isWorking={!!currentSessionId && activeSessionIds.has(currentSessionId)}
-                isStopping={!!currentSessionId && stoppingSessionIds.has(currentSessionId)}
-                onStop={() => currentSessionId && stopAllAgents(currentSessionId)}
-                onSlashCommand={async (cmd) => {
-                  if (!currentSessionId) return;
-                  const session = sessions.find((s) => s.sessionId === currentSessionId);
-                  const master = session?.master;
-                  if (!master) {
-                    toast.error('No master agent in this chat');
-                    return;
-                  }
-                  try {
-                    await workspaceApi.sendAgentControl(master, cmd, { channel: currentSessionId });
-                    toast.success(`Sent /${cmd}`);
-                    // Mirror Swift's auto-follow: after /restart, fire a
-                    // /status so the user can confirm the new session
-                    // landed (parity with commit 01c125e4).
-                    if (cmd === 'restart') {
-                      try {
-                        await workspaceApi.sendAgentControl(master, 'status', { channel: currentSessionId });
-                      } catch {
-                        // Best-effort follow-up; primary action already toast'd.
-                      }
+        <div className="px-3 lg:px-4 py-2 lg:py-3">
+          <div className="max-w-3xl mx-auto w-full">
+            {currentSessionId && <ThreadStatusBar channelName={currentSessionId} messages={displayMessages} />}
+            <ChatInput
+              onSend={handleSend}
+              agents={agents}
+              humans={humans}
+              draft={currentDraft}
+              onDraftChange={handleDraftChange}
+              focusKey={focusKey}
+              isWorking={!!currentSessionId && activeSessionIds.has(currentSessionId)}
+              isStopping={!!currentSessionId && stoppingSessionIds.has(currentSessionId)}
+              onStop={() => currentSessionId && stopAllAgents(currentSessionId)}
+              onSlashCommand={async (cmd) => {
+                if (!currentSessionId) return;
+                const session = sessions.find((s) => s.sessionId === currentSessionId);
+                const master = session?.master;
+                if (!master) {
+                  toast.error('No master agent in this chat');
+                  return;
+                }
+                try {
+                  await workspaceApi.sendAgentControl(master, cmd, { channel: currentSessionId });
+                  toast.success(`Sent /${cmd}`);
+                  // Mirror Swift's auto-follow: after /restart, fire a
+                  // /status so the user can confirm the new session
+                  // landed (parity with commit 01c125e4).
+                  if (cmd === 'restart') {
+                    try {
+                      await workspaceApi.sendAgentControl(master, 'status', { channel: currentSessionId });
+                    } catch {
+                      // Best-effort follow-up; primary action already toast'd.
                     }
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : `Failed to send /${cmd}`);
                   }
-                }}
-              />
-            </div>
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : `Failed to send /${cmd}`);
+                }
+              }}
+            />
           </div>
-        )}
+        </div>
       </div>
 
       {/* Members sheet — opened by AvatarStack click. Mirrors Swift

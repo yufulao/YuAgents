@@ -547,13 +547,12 @@
     "title": "Event Debugger",
     "subtitle": "For debugging and testing event sending. All sent events will be automatically recorded to Event Logs page.",
     "examples": {
-      "directMessage": "Example: Direct Message",
       "channelMessage": "Example: Channel Message",
       "projectList": "Example: Project List",
       "channelsList": "Example: Channels List"
     },
     "eventName": "Event Name",
-    "eventNamePlaceholder": "e.g., thread.direct_message.send",
+    "eventNamePlaceholder": "e.g., thread.channel_message.post",
     "destinationId": "Destination ID",
     "destinationIdPlaceholder": "e.g., agent:target_agent_id or channel:general (optional)",
     "destinationIdHint": "Leave empty to send to entire network",

@@ -307,7 +307,7 @@ const RouteGuard: React.FC<RouteGuardProps> = ({ children }) => {
 
     // Check if route is available in enabled modules
     // Special case: project routes (/project and /project/:projectId) are always available
-    // as they provide project management and private chat room functionality
+    // as they provide project management and project room functionality
     const isProjectRoute = currentPath.startsWith("/project")
     // Special case: admin routes (/admin/*) are always available for admin users
     // AdminRouteGuard will handle permission checking

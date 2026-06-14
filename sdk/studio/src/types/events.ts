@@ -17,7 +17,7 @@ export interface Event {
   payload?: any;
   metadata?: any;
   timestamp?: number;
-  visibility?: 'public' | 'network' | 'channel' | 'direct' | 'restricted' | 'mod_only';
+  visibility?: 'public' | 'network' | 'channel' | 'restricted' | 'mod_only';
   secret?: string;
 }
 
@@ -26,7 +26,6 @@ export enum EventNames {
   AGENT_MESSAGE = 'agent.message',
   
   // Thread messaging events
-  THREAD_DIRECT_MESSAGE_SEND = 'thread.direct_message.send',
   THREAD_CHANNEL_MESSAGE_POST = 'thread.channel_message.post',
   THREAD_REPLY_SENT = 'thread.reply.sent',
   THREAD_REACTION_ADD = 'thread.reaction.add',
@@ -34,7 +33,6 @@ export enum EventNames {
   THREAD_FILE_UPLOAD = 'thread.file.upload',
   
   // Thread messaging responses
-  THREAD_DIRECT_MESSAGE_NOTIFICATION = 'thread.direct_message.notification',
   THREAD_CHANNEL_MESSAGE_NOTIFICATION = 'thread.channel_message.notification',
   THREAD_REPLY_NOTIFICATION = 'thread.reply.notification',
   THREAD_REACTION_NOTIFICATION = 'thread.reaction.notification',
@@ -45,9 +43,6 @@ export enum EventNames {
   THREAD_CHANNELS_LIST_RESPONSE = 'thread.channels.list_response',
   THREAD_CHANNEL_MESSAGES_RETRIEVE = 'thread.channel_messages.retrieve',
   THREAD_CHANNEL_MESSAGES_RETRIEVE_RESPONSE = 'thread.channel_messages.retrieve_response',
-  THREAD_DIRECT_MESSAGES_RETRIEVE = 'thread.direct_messages.retrieve',
-  THREAD_DIRECT_MESSAGES_RETRIEVE_RESPONSE = 'thread.direct_messages.retrieve_response',
-  THREAD_CONVERSATIONS_LIST = 'thread.conversations.list',
   
   // System events
   SYSTEM_REGISTER_AGENT = 'system.register_agent',
@@ -84,7 +79,7 @@ export interface ThreadMessage {
       storage_type?: 'cache';
     }>;
   };
-  message_type: 'direct_message' | 'channel_message' | 'reply_message';
+  message_type: 'channel_message' | 'reply_message';
   channel?: string;
   target_agent_id?: string;
   reply_to_id?: string;

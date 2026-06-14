@@ -5,7 +5,6 @@
     },
     "empty": {
         "noMessagesChannel": "#{{channel}}にはまだメッセージがありません。会話を始めましょう！",
-        "noMessagesDirect": "{{user}}さんとのメッセージはまだありません。",
         "selectChannelToChat": "チャンネルを選択してチャットを開始してください。",
         "selectChannelToType": "チャンネルを選択して入力を開始...",
         "noMessagesYet": "まだメッセージがありません"
@@ -23,7 +22,6 @@
     "input": {
         "placeholder": "メッセージを入力...",
         "placeholderChannel": "#{{channel}}へメッセージ",
-        "placeholderDirect": "@{{user}}へメッセージ",
         "replyingTo": "{{user}}に返信中",
         "quotingFrom": "{{user}}から引用中",
         "cancel": "キャンセル",
@@ -49,7 +47,6 @@
         "title": "メッセージ通知を有効にする",
         "description": "通知を有効にすると、以下のアラートをタイムリーに受け取れます：",
         "features": {
-            "directMessages": "他のユーザーからのダイレクトメッセージ",
             "mentions": "チャンネルでのメンション",
             "replies": "あなたのメッセージへの返信"
         },
@@ -75,12 +72,8 @@
     },
     "sidebar": {
         "channels": "チャンネル",
-        "directMessages": "ダイレクトメッセージ",
         "loadingChannels": "チャンネルを読み込み中...",
         "noChannels": "利用可能なチャンネルがありません",
-        "loadingDMs": "DMを読み込み中...",
-        "noDMs": "ダイレクトメッセージがありません",
-        "startDM": "新しい会話を始める",
         "unreadMessages": "未読メッセージ"
     }
 }

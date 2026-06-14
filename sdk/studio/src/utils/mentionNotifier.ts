@@ -148,7 +148,7 @@ class MentionNotifier {
     }
 
     const senderName = message.sender_id || 'Someone';
-    const location = channelName ? `#${channelName}` : 'Direct Message';
+    const location = channelName ? `#${channelName}` : 'this channel';
     const text = message.content?.text || '';
     
     // Truncate long messages

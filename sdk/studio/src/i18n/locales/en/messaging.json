@@ -5,7 +5,6 @@
     },
     "empty": {
         "noMessagesChannel": "No messages in #{{channel}} yet. Start the conversation!",
-        "noMessagesDirect": "No messages with {{user}} yet.",
         "selectChannelToChat": "Select a channel to start chatting.",
         "selectChannelToType": "Select a channel to start typing...",
         "noMessagesYet": "No messages yet"
@@ -23,7 +22,6 @@
     "input": {
         "placeholder": "Type a message...",
         "placeholderChannel": "Message #{{channel}}",
-        "placeholderDirect": "Message @{{user}}",
         "replyingTo": "Replying to {{user}}",
         "quotingFrom": "Quoting from {{user}}",
         "cancel": "Cancel",
@@ -49,7 +47,6 @@
         "title": "Enable Message Notifications",
         "description": "Enable notifications to receive timely alerts for:",
         "features": {
-            "directMessages": "Direct messages from others",
             "mentions": "Mentions in channels",
             "replies": "Replies to your messages"
         },
@@ -75,11 +72,8 @@
     },
     "sidebar": {
         "channels": "CHANNELS",
-        "directMessages": "DIRECT MESSAGES",
         "loadingChannels": "Loading channels...",
-        "noChannels": "No channels available",
-        "loadingAgents": "Loading agents...",
-        "noAgents": "No agents online"
+        "noChannels": "No channels available"
     },
     "status": {
         "loading": "Loading...",

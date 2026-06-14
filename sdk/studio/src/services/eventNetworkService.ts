@@ -82,28 +82,8 @@ export class EventNetworkService {
   }
 
   /**
-   * Thread messaging operations with immediate EventResponse feedback
+   * Channel messaging operations with immediate EventResponse feedback
    */
-  async sendDirectMessage(
-    targetAgentId: string,
-    content: string
-  ): Promise<EventResponse> {
-    const response = await this.connector.sendDirectMessage(
-      targetAgentId,
-      content
-    );
-
-    if (response.success) {
-      console.log(`✅ Direct message sent to ${targetAgentId} ${content}`);
-    } else {
-      console.error(
-        `❌ Failed to send direct message to ${targetAgentId} ${content}: ${response.message}`
-      );
-    }
-
-    return response;
-  }
-
   async sendChannelMessage(
     channel: string,
     content: string,
@@ -239,121 +219,6 @@ export class EventNetworkService {
   }
 
   /**
-   * Get direct messages - returns immediate EventResponse with data
-   */
-  async getDirectMessages(
-    targetAgentId: string,
-    limit: number = 200,
-    offset: number = 0
-  ): Promise<ThreadMessage[]> {
-    try {
-      const response = await this.connector.getDirectMessages(
-        targetAgentId,
-        limit,
-        offset
-      );
-
-      if (response.success && response.data?.messages) {
-        console.log(
-          `✅ Retrieved ${response.data.messages.length} direct messages with ${targetAgentId}`
-        );
-
-        // Standardize direct messages data format (different from channel messages)
-        const standardizedMessages = response.data.messages.map((msg: any) => {
-          // Check if it's already in standard ThreadMessage format
-          if (msg.sender_id && msg.content && msg.message_type) {
-            return msg as ThreadMessage;
-          }
-
-          // Convert raw event format to standard ThreadMessage format
-          console.log(`🔄 Converting raw direct message event to ThreadMessage:`, msg);
-
-          // Safely extract reactions, checking multiple possible locations and nested structures
-          const rawReactions = msg.payload?.reactions ||
-            msg.reactions ||
-            msg.payload?.metadata?.reactions ||
-            msg.metadata?.reactions ||
-            {};
-
-          // Convert reactions format: array -> number count
-          const reactions: { [key: string]: number } = {};
-          if (rawReactions && typeof rawReactions === 'object') {
-            Object.entries(rawReactions).forEach(([type, value]) => {
-              if (Array.isArray(value)) {
-                // If array format (e.g. {laugh: ['SharpUnit2379', 'Krane']}), convert to count
-                reactions[type] = value.length;
-              } else if (typeof value === 'number') {
-                // If already number format, use directly
-                reactions[type] = value;
-              } else if (typeof value === 'string') {
-                // If string, try to parse as number
-                const numValue = parseInt(value, 10);
-                reactions[type] = isNaN(numValue) ? 1 : numValue;
-              }
-            });
-          }
-
-          // Debug reactions data conversion
-          if (Object.keys(rawReactions).length > 0) {
-            console.log(`🎭 Converting reactions for message ${msg.event_id}:`);
-            console.log(`  Raw reactions:`, rawReactions);
-            console.log(`  Converted reactions:`, reactions);
-          }
-
-          // Debug complete message structure (only when there are reactions)
-          if (Object.keys(rawReactions).length > 0) {
-            console.log(`🔍 Full message structure for ${msg.event_id}:`, {
-              hasPayload: !!msg.payload,
-              hasReactions: !!msg.reactions,
-              payloadReactions: msg.payload?.reactions,
-              directReactions: msg.reactions,
-            });
-          }
-
-          // Extract files from content.files
-          const files = msg.payload?.content?.files || msg.content?.files || [];
-
-          return {
-            message_id: msg.event_id || msg.message_id || `dm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            sender_id: msg.source_id || msg.sender_id || 'unknown',
-            timestamp: msg.timestamp
-              ? (typeof msg.timestamp === 'number' ?
-                (msg.timestamp < 10000000000 ? msg.timestamp * 1000 : msg.timestamp).toString()
-                : msg.timestamp)
-              : Date.now().toString(),
-            content: {
-              text: msg.payload?.content?.text || msg.content?.text || '',
-              files: files.length > 0 ? files : undefined,
-            },
-            message_type: 'direct_message' as const,
-            target_agent_id: msg.payload?.target_agent_id || msg.target_agent_id || targetAgentId,
-            reply_to_id: msg.payload?.reply_to_id || msg.reply_to_id,
-            thread_level: msg.payload?.thread_level || msg.thread_level || 1,
-            quoted_message_id: msg.payload?.quoted_message_id || msg.quoted_message_id,
-            quoted_text: msg.payload?.quoted_text || msg.quoted_text,
-            reactions: reactions,
-            // Keep original data for debugging
-            payload: msg.payload,
-            source_id: msg.source_id
-          } as ThreadMessage;
-        });
-
-        console.log(`🔄 Standardized ${standardizedMessages.length} direct messages`);
-        return standardizedMessages;
-      } else {
-        console.warn(`No direct messages found with ${targetAgentId}`);
-        return [];
-      }
-    } catch (error) {
-      console.error(
-        `Error getting direct messages with ${targetAgentId}:`,
-        error
-      );
-      return [];
-    }
-  }
-
-  /**
    * Get connected agents from health check
    */
   async getConnectedAgents(): Promise<AgentInfo[]> {
@@ -373,7 +238,7 @@ export class EventNetworkService {
   async sendMessage(
     content: string,
     channel?: string,
-    targetAgentId?: string,
+    _targetAgentId?: string,
     replyToId?: string
   ): Promise<boolean> {
     try {
@@ -381,10 +246,8 @@ export class EventNetworkService {
 
       if (channel) {
         response = await this.sendChannelMessage(channel, content, replyToId);
-      } else if (targetAgentId) {
-        response = await this.sendDirectMessage(targetAgentId, content);
       } else {
-        throw new Error("Either channel or targetAgentId must be provided");
+        throw new Error("Channel must be provided");
       }
 
       return response.success;
@@ -435,19 +298,6 @@ export class EventNetworkService {
     const messages = await this.getChannelMessages(channelName, limit, offset);
     this.emit("channel_messages", {
       channel: channelName,
-      messages,
-      total_count: messages.length,
-    });
-  }
-
-  async retrieveDirectMessages(
-    targetAgentId: string,
-    limit: number = 200,
-    offset: number = 0
-  ): Promise<void> {
-    const messages = await this.getDirectMessages(targetAgentId, limit, offset);
-    this.emit("direct_messages", {
-      target_agent_id: targetAgentId,
       messages,
       total_count: messages.length,
     });
@@ -513,17 +363,6 @@ export class EventNetworkService {
     });
 
     // Thread messaging events
-    this.connector.on(
-      EventNames.THREAD_DIRECT_MESSAGE_NOTIFICATION,
-      (event: Event) => {
-        const message = this.parseThreadMessage(event);
-        if (message) {
-          this.emit("directMessage", message);
-          this.emit("message", message); // Legacy compatibility
-        }
-      }
-    );
-
     this.connector.on(
       EventNames.THREAD_CHANNEL_MESSAGE_NOTIFICATION,
       (event: Event) => {

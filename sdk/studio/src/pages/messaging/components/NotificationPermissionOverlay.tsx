@@ -185,10 +185,6 @@ const NotificationPermissionOverlay: React.FC<
           <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1 ml-4">
             <li className="flex items-start">
               <span className="text-blue-500 mr-2 mt-0.5">•</span>
-              {t('notification.features.directMessages')}
-            </li>
-            <li className="flex items-start">
-              <span className="text-blue-500 mr-2 mt-0.5">•</span>
               {t('notification.features.mentions')}
             </li>
             <li className="flex items-start">
