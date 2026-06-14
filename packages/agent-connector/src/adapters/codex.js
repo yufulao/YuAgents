@@ -355,7 +355,15 @@ class CodexAdapter extends BaseAdapter {
   }
 
   _buildCodexExecCommand(msgChannel, attempt = 0) {
-    const cmd = [this._codexBin, 'exec'];
+    const cmd = [this._codexBin];
+
+    // `-C/--cd` is a top-level Codex option. Passing it after
+    // `exec resume ...` is rejected by current Codex CLI builds.
+    if (this.workingDir) {
+      cmd.push('-C', this.workingDir);
+    }
+
+    cmd.push('exec');
 
     // Resume existing thread for this channel
     const threadId = this._channelThreads[msgChannel];
@@ -374,11 +382,6 @@ class CodexAdapter extends BaseAdapter {
     }
     if (this._serviceTier && this._serviceTier !== 'default') {
       cmd.push('-c', `service_tier="${this._serviceTier}"`);
-    }
-
-    // Working directory
-    if (this.workingDir) {
-      cmd.push('-C', this.workingDir);
     }
 
     return { cmd, threadId };

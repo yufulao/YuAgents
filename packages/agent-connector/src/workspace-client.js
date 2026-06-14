@@ -114,12 +114,13 @@ class WorkspaceClient {
    *   If the server's current session for this agent differs, _post()
    *   throws SessionRevokedError and the caller should stop its adapter.
    */
-  async heartbeat(workspaceId, agentName, token, sessionId) {
+  async heartbeat(workspaceId, agentName, token, sessionId, activityState) {
     const body = {
       agent_name: agentName,
       network: workspaceId,
     };
     if (sessionId) body.session_id = sessionId;
+    if (activityState) body.activity_state = activityState;
     const data = await this._post('/v1/heartbeat', body, this._wsHeaders(token));
     return data.data || data;
   }

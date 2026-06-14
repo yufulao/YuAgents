@@ -253,7 +253,7 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
     event metadata so the caller can surface session_revoked to the
     stale client, which will then stop.
     """
-    from app.models import WorkspaceMember
+    from app.models import AgentConfig, WorkspaceMember
 
     db = ctx.extra["db"]
     workspace = ctx.extra["workspace"]
@@ -284,6 +284,26 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
     now = datetime.now(timezone.utc)
     member.status = "online"
     member.last_heartbeat = now
+
+    # The connector heartbeat is the source of truth for "no active worker".
+    # Without this, an old thinking/running status message can keep the Web UI
+    # showing active work for hours even after the adapter has drained its queue.
+    activity_state = str((event.payload or {}).get("activity_state") or "").lower()
+    if activity_state in {"idle", "online"}:
+        cfg = db.execute(
+            select(AgentConfig).where(
+                AgentConfig.workspace_id == workspace.id,
+                AgentConfig.handle == agent_name,
+            )
+        ).scalar_one_or_none()
+        if cfg:
+            cfg_metadata = dict(cfg.config_metadata or {})
+            cfg_metadata["lifecycle_state"] = "online"
+            cfg_metadata["activity_summary"] = ""
+            cfg_metadata["current_channel"] = None
+            cfg_metadata["activity_updated_at"] = now.isoformat()
+            cfg.config_metadata = cfg_metadata
+            cfg.updated_at = now
     db.flush()
     return event
 
@@ -894,6 +914,7 @@ def _set_agent_activity(
         cfg_metadata["lifecycle_state"] = state
         cfg_metadata["activity_summary"] = _activity_summary_from_message(message_type, content, metadata)
         cfg_metadata["current_channel"] = channel_name if is_intermediate else None
+        cfg_metadata["activity_updated_at"] = now.isoformat()
         cfg.config_metadata = cfg_metadata
         cfg.updated_at = now
     db.flush()

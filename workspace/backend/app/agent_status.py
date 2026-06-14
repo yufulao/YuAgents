@@ -24,6 +24,7 @@ ACTIVE_STATES = {
 ERROR_STATES = {"error", "failed"}
 STOPPED_STATES = {"stopped", "disabled"}
 OFFLINE_STATES = {"offline", "left", "removed"}
+ACTIVE_STATE_STALE_AFTER = timedelta(minutes=10)
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -39,6 +40,17 @@ def _metadata(cfg: AgentConfig | None) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return _aware(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return _aware(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        except ValueError:
+            return None
+    return None
+
+
 def project_agent_status(
     member: WorkspaceMember,
     now: datetime,
@@ -49,6 +61,10 @@ def project_agent_status(
     raw_status = str(member.status or "offline")
     lifecycle_state = str(metadata.get("lifecycle_state") or raw_status)
     current_channel = metadata.get("current_channel")
+    activity_updated_at = (
+        _parse_datetime(metadata.get("activity_updated_at"))
+        or _aware(getattr(cfg, "updated_at", None))
+    )
 
     is_cloud = (member.agent_type or "").startswith("cloud:")
     heartbeat = _aware(member.last_heartbeat)
@@ -72,6 +88,13 @@ def project_agent_status(
         activity_state = "stopped"
     elif presence_status == "offline":
         activity_state = "offline"
+    elif (
+        lifecycle_state in ACTIVE_STATES
+        and activity_updated_at is not None
+        and (now - activity_updated_at) > ACTIVE_STATE_STALE_AFTER
+    ):
+        activity_state = "idle"
+        current_channel = None
     elif lifecycle_state in ACTIVE_STATES:
         activity_state = lifecycle_state
     elif lifecycle_state in ERROR_STATES:

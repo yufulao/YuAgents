@@ -10,7 +10,9 @@ param(
   [switch]$SkipOpenBrowser,
   [switch]$StopExistingTunnel,
   [switch]$EnsureGatewayPorts,
-  [switch]$TunnelOnly
+  [switch]$TunnelOnly,
+  [int]$ReconnectDelaySeconds = 5,
+  [int]$MaxReconnectAttempts = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,25 +121,20 @@ if (-not $gateway) {
   $gateway = "172.17.0.1"
 }
 
-Write-Host "Opening SSH reverse tunnel: server $gateway`:$TunnelPort -> local 127.0.0.1:8000"
-Write-Host "If an SSH password prompt appears, enter the server password in this window and keep this window open."
-$sshArgs = @(
-  "-p", [string]$SshPort,
-  "-N",
-  "-o", "ExitOnForwardFailure=yes",
-  "-o", "ServerAliveInterval=30",
-  "-o", "ServerAliveCountMax=3",
-  "-R", "$gateway`:$TunnelPort`:127.0.0.1:8000",
-  $Remote
-)
-$tunnel = Start-Process -FilePath "ssh" -ArgumentList $sshArgs -NoNewWindow -PassThru
+function Start-TunnelProcess {
+  $sshArgs = @(
+    "-p", [string]$SshPort,
+    "-N",
+    "-o", "ExitOnForwardFailure=yes",
+    "-o", "ServerAliveInterval=30",
+    "-o", "ServerAliveCountMax=3",
+    "-R", "$gateway`:$TunnelPort`:127.0.0.1:8000",
+    $Remote
+  )
+  Start-Process -FilePath "ssh" -ArgumentList $sshArgs -NoNewWindow -PassThru
+}
 
-try {
-  Start-Sleep -Seconds 2
-  if ($tunnel.HasExited) {
-    throw "SSH reverse tunnel exited early with code $($tunnel.ExitCode). If sshd rejected the bind address, set 'GatewayPorts clientspecified' on the server and reload sshd."
-  }
-
+function Start-RemoteRelayIfNeeded {
   if (-not $TunnelOnly) {
     Write-Host "Starting remote Docker relay..."
     $remoteCommand = "cd '$RemoteDir/workspace' && REMOTE_WEB_BIND=127.0.0.1 REMOTE_WEB_PORT=$RemoteWebPort PUBLIC_URL=http://127.0.0.1:$RemoteWebPort LOCAL_CONTROL_API_URL=http://host.docker.internal:$TunnelPort CONTROL_CHECK_URL=http://$gateway`:$TunnelPort bash start.sh"
@@ -145,33 +142,75 @@ try {
   } else {
     Write-Host "Tunnel only mode: assuming remote start.sh is already running."
   }
+}
 
-  Write-Host "Checking public URL $PublicUrl ..."
-  try {
-    Wait-Url "$PublicUrl/relay-health" 60 "public relay"
-  } catch {
-    throw "Remote relay is not reachable at $PublicUrl/relay-health. Make sure server workspace/start.sh is running and the domain points to this server."
-  }
-  try {
-    Wait-Url "$PublicUrl/v1/agent-catalog" 60 "public relay API"
-  } catch {
-    throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. Enter the server password in this window if SSH is waiting, and leave this window open. If SSH exited after login, verify GatewayPorts clientspecified in /etc/ssh/sshd_config and rerun ..prod_connect.bat."
-  }
+$attempt = 0
+$announcedReady = $false
+$openedBrowser = $false
+$tunnel = $null
 
-  Write-Host ""
-  Write-Host "Remote OpenAgents relay is ready:"
-  Write-Host "  $PublicUrl"
-  Write-Host ""
-  Write-Host "Keep this PowerShell window open. Closing it stops the SSH reverse tunnel."
-  Write-Host "Press Ctrl+C when you want to disconnect."
-  if (-not $SkipOpenBrowser) {
-    Start-Process $PublicUrl
-  }
+try {
+  while ($true) {
+    $attempt += 1
+    Write-Host "Opening SSH reverse tunnel: server $gateway`:$TunnelPort -> local 127.0.0.1:8000"
+    Write-Host "If an SSH password prompt appears, enter the server password in this window and keep this window open."
+    if ($attempt -gt 1) {
+      Write-Host "Reconnect attempt $attempt..."
+    }
+    $tunnel = Start-TunnelProcess
 
-  while (-not $tunnel.HasExited) {
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 2
+    if ($tunnel.HasExited) {
+      $message = "SSH reverse tunnel exited early with code $($tunnel.ExitCode). If sshd rejected the bind address, set 'GatewayPorts clientspecified' on the server and reload sshd."
+      if ($MaxReconnectAttempts -gt 0 -and $attempt -ge $MaxReconnectAttempts) {
+        throw $message
+      }
+      Write-Warning $message
+      Write-Host "Retrying in $ReconnectDelaySeconds seconds. Press Ctrl+C to stop."
+      Start-Sleep -Seconds $ReconnectDelaySeconds
+      continue
+    }
+
+    if (-not $announcedReady) {
+      Start-RemoteRelayIfNeeded
+
+      Write-Host "Checking public URL $PublicUrl ..."
+      try {
+        Wait-Url "$PublicUrl/relay-health" 60 "public relay"
+      } catch {
+        throw "Remote relay is not reachable at $PublicUrl/relay-health. Make sure server workspace/start.sh is running and the domain points to this server."
+      }
+      try {
+        Wait-Url "$PublicUrl/v1/agent-catalog" 60 "public relay API"
+      } catch {
+        throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. Enter the server password in this window if SSH is waiting, and leave this window open. If SSH exited after login, verify GatewayPorts clientspecified in /etc/ssh/sshd_config and rerun ..prod_connect.bat."
+      }
+
+      Write-Host ""
+      Write-Host "Remote OpenAgents relay is ready:"
+      Write-Host "  $PublicUrl"
+      Write-Host ""
+      Write-Host "Keep this PowerShell window open. Closing it stops the SSH reverse tunnel."
+      Write-Host "If the SSH connection resets, this script will reconnect automatically."
+      Write-Host "Press Ctrl+C when you want to disconnect."
+      $announcedReady = $true
+      if (-not $SkipOpenBrowser -and -not $openedBrowser) {
+        Start-Process $PublicUrl
+        $openedBrowser = $true
+      }
+    }
+
+    while (-not $tunnel.HasExited) {
+      Start-Sleep -Seconds 5
+    }
+
+    $message = "SSH reverse tunnel exited with code $($tunnel.ExitCode)"
+    if ($MaxReconnectAttempts -gt 0 -and $attempt -ge $MaxReconnectAttempts) {
+      throw $message
+    }
+    Write-Warning "$message. Reconnecting in $ReconnectDelaySeconds seconds..."
+    Start-Sleep -Seconds $ReconnectDelaySeconds
   }
-  throw "SSH reverse tunnel exited with code $($tunnel.ExitCode)"
 } finally {
   if ($tunnel -and -not $tunnel.HasExited) {
     Stop-Process -Id $tunnel.Id -Force -ErrorAction SilentlyContinue

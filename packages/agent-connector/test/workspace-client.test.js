@@ -92,15 +92,16 @@ describe('WorkspaceClient', () => {
       });
   });
 
-  it('heartbeat includes session_id when provided', () => {
+  it('heartbeat includes session_id and activity state when provided', () => {
     const client = new WorkspaceClient('http://127.0.0.1:19999');
     let capturedBody = null;
     client._post = async (_path, body) => { capturedBody = body; return { data: {} }; };
-    return client.heartbeat('ws-1', 'bary-bot', 'tok', 'sess-abc')
+    return client.heartbeat('ws-1', 'bary-bot', 'tok', 'sess-abc', 'idle')
       .then(() => {
         assert.equal(capturedBody.agent_name, 'bary-bot');
         assert.equal(capturedBody.network, 'ws-1');
         assert.equal(capturedBody.session_id, 'sess-abc');
+        assert.equal(capturedBody.activity_state, 'idle');
       });
   });
 

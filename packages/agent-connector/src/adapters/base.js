@@ -173,7 +173,13 @@ class BaseAdapter {
 
   async _heartbeat() {
     try {
-      await this.client.heartbeat(this.workspaceId, this.agentName, this.token, this._sessionId);
+      await this.client.heartbeat(
+        this.workspaceId,
+        this.agentName,
+        this.token,
+        this._sessionId,
+        this._hasActiveWork() ? 'active' : 'idle',
+      );
     } catch (e) {
       if (e instanceof SessionRevokedError) {
         this._onSessionRevoked();

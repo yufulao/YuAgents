@@ -231,6 +231,54 @@ class TestHeartbeat:
         assert resp.status_code == 200
         assert resp.json()["data"]["status"] == "online"
 
+    def test_idle_heartbeat_clears_active_agent_config_state(self, client, workspace, db):
+        """Idle heartbeat prevents stale thinking/running status from sticking."""
+        from datetime import datetime, timezone
+
+        from app.models import AgentConfig, WorkspaceMember
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+        sid = joined.json()["data"]["session_id"]
+
+        cfg = AgentConfig(
+            workspace_id=workspace["id"],
+            handle="agent-beta",
+            display_name="agent-beta",
+            avatar={"type": "pixel", "value": "test"},
+            agent_type="codex",
+            config_metadata={
+                "lifecycle_state": "thinking",
+                "activity_summary": "thinking...",
+                "current_channel": "general",
+            },
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(cfg)
+        member = db.get(WorkspaceMember, (workspace["id"], "agent-beta"))
+        member.status = "thinking"
+        db.commit()
+
+        resp = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-beta",
+            "network": workspace["id"],
+            "session_id": sid,
+            "activity_state": "idle",
+        })
+        assert resp.status_code == 200
+
+        db.refresh(cfg)
+        db.refresh(member)
+        assert member.status == "online"
+        assert cfg.config_metadata["lifecycle_state"] == "online"
+        assert cfg.config_metadata["activity_summary"] == ""
+        assert cfg.config_metadata["current_channel"] is None
+
     def test_heartbeat_unknown_agent(self, client, workspace):
         """Heartbeat for non-member is a no-op but still succeeds (event recorded)."""
         resp = client.post("/v1/heartbeat", json={
@@ -258,10 +306,53 @@ class TestDiscover:
         alpha = next(a for a in agents if a["address"] == "openagents:agent-alpha")
         assert alpha["presence_status"] in {"online", "offline", "stopped"}
         assert alpha["activity_state"] in {"idle", "online", "offline", "stopped"}
-        assert alpha["workload_state"] in {"idle", "online", "offline", "stopped"}
-        assert alpha["display_status"] == alpha["status"]
-        assert isinstance(alpha["is_connected"], bool)
-        assert isinstance(alpha["has_active_work"], bool)
+
+    def test_discover_treats_old_active_metadata_as_idle(self, client, workspace, db):
+        """Old active lifecycle metadata does not keep an online agent busy forever."""
+        from datetime import datetime, timedelta, timezone
+
+        from app.models import AgentConfig, WorkspaceMember
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+
+        stale_at = datetime.now(timezone.utc) - timedelta(hours=7)
+        cfg = AgentConfig(
+            workspace_id=workspace["id"],
+            handle="agent-beta",
+            display_name="agent-beta",
+            avatar={"type": "pixel", "value": "test"},
+            agent_type="codex",
+            config_metadata={
+                "lifecycle_state": "thinking",
+                "activity_summary": "thinking...",
+                "current_channel": "general",
+                "activity_updated_at": stale_at.isoformat(),
+            },
+            updated_at=stale_at,
+        )
+        db.add(cfg)
+        member = db.get(WorkspaceMember, (workspace["id"], "agent-beta"))
+        member.status = "online"
+        member.last_heartbeat = datetime.now(timezone.utc)
+        db.commit()
+
+        resp = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        agents = resp.json()["data"]["agents"]
+        beta = next(a for a in agents if a["address"] == "openagents:agent-beta")
+        assert beta["presence_status"] == "online"
+        assert beta["activity_state"] == "idle"
+        assert beta["status"] == "online"
+        assert beta["workload_state"] == "idle"
+        assert beta["display_status"] == "online"
+        assert beta["has_active_work"] is False
 
     def test_discover_channels(self, client, workspace):
         """Discover shows workspace channels."""
