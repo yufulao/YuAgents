@@ -94,6 +94,7 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
   // True when the user has intentionally scrolled away from the bottom.
   // Prevents auto-scroll from yanking them back while reading history.
   const userScrolledUpRef = useRef(false);
+  const previousContentKeyRef = useRef('');
 
   // Separate loading indicators (optimistic) from real messages
   const loadingMessages = useMemo(() => messages.filter((m) => m.messageType === 'loading'), [messages]);
@@ -137,6 +138,8 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
   // Loading indicator counts as a virtual row when present
   const hasLoading = loadingMessages.length > 0 && !hasTerminalStatus;
   const totalCount = groups.length + (hasLoading ? 1 : 0);
+  const lastMessage = messages[messages.length - 1];
+  const contentKey = `${sessionId ?? ''}:${messages.length}:${totalCount}:${lastMessage?.messageId ?? ''}:${lastMessage?.content?.length ?? 0}`;
 
   // ── Virtualizer ──
   const virtualizer = useVirtualizer({
@@ -234,14 +237,24 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
         scrollToBottom();
         pendingInitialScrollRef.current = null;
       });
+      previousContentKeyRef.current = contentKey;
       return;
     }
 
     if (pendingOlderRestoreRef.current) return;
+    const contentChanged = previousContentKeyRef.current !== contentKey;
+    const shouldFollowNewContent = contentChanged && !userScrolledUpRef.current && totalCount > 0;
+    previousContentKeyRef.current = contentKey;
+
+    if (shouldFollowNewContent) {
+      requestAnimationFrame(() => scrollToBottom());
+      return;
+    }
+
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     setShowScrollBtn(!isNearBottom);
     userScrolledUpRef.current = !isNearBottom;
-  }, [sessionId, messages.length, totalCount, scrollToBottom]);
+  }, [sessionId, messages.length, totalCount, contentKey, scrollToBottom]);
 
   useEffect(() => {
     const el = containerRef.current;
