@@ -335,7 +335,7 @@ def lease_pending_deliveries(
     agent: str = Query(..., description="Agent handle"),
     session_id: str = Query(..., description="Current session id from /v1/join"),
     limit: int = Query(20, ge=1, le=100),
-    lease_seconds: int = Query(1800, ge=30, le=7200),
+    lease_seconds: int = Query(1800, ge=30, le=86400),
     include_ambient: bool = Query(False, description="Also lease ambient non-wakeup deliveries"),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
@@ -369,6 +369,7 @@ def lease_pending_deliveries(
                 AgentDelivery.status == "pending",
                 AgentDelivery.lease_until.is_(None),
                 AgentDelivery.lease_until < now,
+                AgentDelivery.lease_owner_session_id != session_id,
             ),
         )
         .order_by(AgentDelivery.created_at.asc(), EventRecord.timestamp.asc(), AgentDelivery.id.asc())

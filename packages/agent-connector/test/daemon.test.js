@@ -314,6 +314,18 @@ describe('Daemon', () => {
     assert.equal(adapter._isInFlightMessage(msg), false);
   });
 
+  it('BaseAdapter requests a long durable delivery lease', () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+
+    assert.equal(adapter._deliveryLeaseSeconds, 21600);
+  });
+
   it('BaseAdapter requeues failed deliveries only for limited retries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

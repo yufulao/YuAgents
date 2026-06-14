@@ -497,6 +497,62 @@ class TestAgentDeliveries:
         }, headers={"X-Workspace-Token": workspace["token"]})
         assert resp.status_code == 401
 
+    def test_new_session_reclaims_existing_delivery_lease(self, client, workspace, db):
+        first_join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert first_join.status_code == 200
+        first_session = first_join.json()["data"]["session_id"]
+
+        channel_name = workspace["channel"]["name"]
+        sent = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"content": "long running request"},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert sent.status_code == 200
+        event_id = sent.json()["data"]["id"]
+
+        leased = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": first_session,
+            "lease_seconds": 21600,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert leased.status_code == 200
+        first_delivery = leased.json()["data"]["deliveries"][0]
+        assert first_delivery["event"]["id"] == event_id
+        assert first_delivery["attempts"] == 1
+
+        second_join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert second_join.status_code == 200
+        second_session = second_join.json()["data"]["session_id"]
+        assert second_session != first_session
+
+        reclaimed = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": second_session,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert reclaimed.status_code == 200
+        deliveries = reclaimed.json()["data"]["deliveries"]
+        assert len(deliveries) == 1
+        assert deliveries[0]["id"] == first_delivery["id"]
+        assert deliveries[0]["event"]["id"] == event_id
+        assert deliveries[0]["attempts"] == 2
+
+        db.expire_all()
+        delivery = db.query(AgentDelivery).filter_by(id=first_delivery["id"]).one()
+        assert delivery.lease_owner_session_id == second_session
+
     def test_channel_message_creates_ambient_delivery_for_non_target_participants(self, client, workspace, db):
         alpha_join = client.post("/v1/join", json={
             "agent_name": "agent-alpha",

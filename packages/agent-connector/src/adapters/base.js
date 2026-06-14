@@ -25,6 +25,7 @@ const { defaultAgentWorkdir } = require('../paths');
 const { skillsDirForAgentType } = require('../skill-installer');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
+const DELIVERY_LEASE_SECONDS = 6 * 60 * 60;
 
 class BaseAdapter {
   /**
@@ -56,6 +57,7 @@ class BaseAdapter {
     this._mode = 'execute';
     this._lastControlId = null;
     this._controlWake = null;
+    this._deliveryLeaseSeconds = DELIVERY_LEASE_SECONDS;
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
@@ -568,10 +570,10 @@ class BaseAdapter {
           {
             after: this._lastEventId,
             sessionId: this._sessionId,
-            // Keep crash recovery reasonably quick. Long-running tasks stay
-            // safe because in-flight duplicate polls below renew the lease
-            // without queuing the same delivery a second time.
-            leaseSeconds: 300,
+            // Keep normal long-running tasks from being re-leased while they
+            // are still executing. A fresh agent session can still reclaim
+            // the lease immediately server-side after a process restart.
+            leaseSeconds: this._deliveryLeaseSeconds,
             includeAmbient: true,
           }
         );
