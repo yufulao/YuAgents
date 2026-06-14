@@ -422,6 +422,50 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
+  it('BaseAdapter drops stale queued routed agent deliveries', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._agentQueueTtlMs = 1000;
+    const handled = [];
+    adapter._handleMessage = async (msg) => { handled.push(msg.messageId); };
+    const acked = [];
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId) => {
+      acked.push(deliveryId);
+      return { status: 'acked' };
+    };
+    adapter.sendStatus = async () => {
+      throw new Error('stale queued messages should not emit processing status');
+    };
+    const stale = {
+      messageId: 'old-agent-task',
+      _deliveryId: 'delivery-old',
+      _deliveryKind: 'attention',
+      _attentionReason: 'routed',
+      _queueId: 'q-old',
+      _queuedAt: Date.now() - 2000,
+      senderType: 'agent',
+      messageType: 'task',
+      content: 'Workspace task created: old work',
+    };
+    adapter._channelQueues.general = [stale];
+    adapter._markMessageInFlight(stale);
+
+    await adapter._channelWorker('general', { messageId: 'current-human', senderType: 'human', content: 'current' });
+
+    assert.deepEqual(handled, ['current-human']);
+    assert.deepEqual(acked, ['delivery-old']);
+    assert.equal(adapter._processedIds.has('old-agent-task'), true);
+    assert.equal(adapter._isInFlightMessage(stale), false);
+    assert.deepEqual(adapter._channelQueues.general, []);
+  });
+
   it('BaseAdapter absorbs ambient deliveries when channel is busy', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

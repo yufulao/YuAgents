@@ -739,8 +739,8 @@ class WorkspaceClient {
       network: workspaceId,
       channel: channelName,
       title,
-      source: source || 'openagents:unknown',
     };
+    if (source) body.source = source;
     if (description) body.description = description;
     if (assignee) body.assignee = assignee;
     if (priority) body.priority = priority;
@@ -786,8 +786,8 @@ class WorkspaceClient {
   } = {}) {
     const body = {
       network: workspaceId,
-      source: source || 'openagents:unknown',
     };
+    if (source) body.source = source;
     if (status !== undefined) body.status = status;
     if (assignee !== undefined) body.assignee = assignee;
     if (priority !== undefined) body.priority = priority;

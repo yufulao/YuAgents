@@ -26,6 +26,7 @@ const { skillsDirForAgentType } = require('../skill-installer');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 const DELIVERY_LEASE_SECONDS = 6 * 60 * 60;
+const STALE_AGENT_QUEUE_MS = 2 * 60 * 1000;
 
 class BaseAdapter {
   /**
@@ -58,6 +59,7 @@ class BaseAdapter {
     this._lastControlId = null;
     this._controlWake = null;
     this._deliveryLeaseSeconds = DELIVERY_LEASE_SECONDS;
+    this._agentQueueTtlMs = Number.parseInt(this.agentEnv.OPENAGENTS_AGENT_QUEUE_TTL_MS || '', 10) || STALE_AGENT_QUEUE_MS;
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
@@ -710,6 +712,7 @@ class BaseAdapter {
       if (!this._channelQueues[channel]) this._channelQueues[channel] = [];
       const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       msg._queueId = queueId;
+      msg._queuedAt = Date.now();
       this._channelQueues[channel].push(msg);
       try {
         await this.sendStatus(channel, 'message queued — will process after current task', {
@@ -755,6 +758,9 @@ class BaseAdapter {
       const queue = this._channelQueues[channel];
       if (!queue || queue.length === 0) break;
       const nextMsg = queue.shift();
+      if (await this._dropStaleQueuedMessage(channel, nextMsg)) {
+        continue;
+      }
       if (nextMsg._queueId) {
         try { await this.sendStatus(channel, 'processing queued message', { queue_id: nextMsg._queueId, queue_status: 'processed' }); } catch {}
       }
@@ -770,6 +776,26 @@ class BaseAdapter {
       }
     }
     this._channelBusy.delete(channel);
+  }
+
+  async _dropStaleQueuedMessage(channel, msg) {
+    if (!msg || !this._isStaleQueuedAgentMessage(msg)) return false;
+    this._log(`Dropping stale queued agent delivery ${msg._queueId || msg._deliveryId || msg.messageId || ''} in ${channel}`);
+    try {
+      await this._ackMessage(msg);
+    } finally {
+      this._clearMessageInFlight(msg);
+    }
+    return true;
+  }
+
+  _isStaleQueuedAgentMessage(msg) {
+    const queuedAt = Number(msg && msg._queuedAt);
+    if (!Number.isFinite(queuedAt) || Date.now() - queuedAt < this._agentQueueTtlMs) return false;
+    if ((msg.senderType || '') !== 'agent') return false;
+    if ((msg._deliveryKind || '') !== 'attention') return false;
+    if ((msg._attentionReason || '') !== 'routed') return false;
+    return true;
   }
 
   // ------------------------------------------------------------------

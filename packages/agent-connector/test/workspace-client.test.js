@@ -301,6 +301,7 @@ describe('WorkspaceClient', () => {
     assert.equal(calls[0][0], 'post');
     assert.equal(calls[0][1], '/v1/workspace-tasks');
     assert.equal(calls[0][2].channel, 'workroom');
+    assert.equal(calls[0][2].source, 'openagents:lead');
     assert.deepEqual(calls[0][2].depends_on, ['task-0']);
     assert.ok(calls[1][1].startsWith('/v1/workspace-tasks?'));
     assert.ok(calls[1][1].includes('assignee=agent-beta'));
@@ -308,5 +309,29 @@ describe('WorkspaceClient', () => {
     assert.equal(calls[2][2].session_id, 'sess-task');
     assert.equal(calls[3][1], '/v1/workspace-tasks/task-1');
     assert.equal(calls[3][2].status, 'in_review');
+    assert.equal(calls[3][2].source, 'openagents:agent-beta');
+  });
+
+  it('workspace task helpers do not synthesize unknown source', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    const calls = [];
+    client._post = async (path, body) => {
+      calls.push(['post', path, body]);
+      return { data: { task: { id: 'task-1' } } };
+    };
+    client._patch = async (path, body) => {
+      calls.push(['patch', path, body]);
+      return { data: { task: { id: 'task-1' } } };
+    };
+
+    await client.createWorkspaceTask('ws-1', 'workroom', 'tok', {
+      title: 'Missing source',
+    });
+    await client.updateWorkspaceTask('ws-1', 'tok', 'task-1', {
+      status: 'done',
+    });
+
+    assert.equal(Object.prototype.hasOwnProperty.call(calls[0][2], 'source'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(calls[1][2], 'source'), false);
   });
 });
