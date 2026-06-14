@@ -392,11 +392,11 @@ describe('Daemon', () => {
     await adapter.sendStatus('general', '**Running:** `git status --short --branch` (exit 0)');
     await adapter.sendStatus('general', '**Running:** `git status --short --branch` (exit 0)');
     await adapter.sendStatus('general', '**Running:** `different command` (exit 0)');
+    await adapter.sendStatus('general', '**Running:** `another different command` (exit 0)');
 
     assert.deepEqual(sent, [
       '**Running:** `workspace API request` (exit 0)',
       '**Running:** `git status --short --branch` (exit 0)',
-      '**Running:** `different command` (exit 0)',
     ]);
   });
 
@@ -489,6 +489,50 @@ describe('Daemon', () => {
     assert.deepEqual(handled, ['current-human']);
     assert.deepEqual(acked, ['delivery-old']);
     assert.equal(adapter._processedIds.has('old-agent-task'), true);
+    assert.equal(adapter._isInFlightMessage(stale), false);
+    assert.deepEqual(adapter._channelQueues.general, []);
+  });
+
+  it('BaseAdapter drops stale queued mentioned agent deliveries', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._agentQueueTtlMs = 1000;
+    const handled = [];
+    adapter._handleMessage = async (msg) => { handled.push(msg.messageId); };
+    const acked = [];
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId) => {
+      acked.push(deliveryId);
+      return { status: 'acked' };
+    };
+    adapter.sendStatus = async () => {
+      throw new Error('stale queued mentions should not emit processing status');
+    };
+    const stale = {
+      messageId: 'old-agent-mention',
+      _deliveryId: 'delivery-mentioned',
+      _deliveryKind: 'attention',
+      _attentionReason: 'mention',
+      _queueId: 'q-mentioned',
+      _queuedAt: Date.now() - 2000,
+      senderType: 'agent',
+      messageType: 'task',
+      content: '@agent-a Workspace task created: old work',
+    };
+    adapter._channelQueues.general = [stale];
+    adapter._markMessageInFlight(stale);
+
+    await adapter._channelWorker('general', { messageId: 'current-human', senderType: 'human', content: 'current' });
+
+    assert.deepEqual(handled, ['current-human']);
+    assert.deepEqual(acked, ['delivery-mentioned']);
+    assert.equal(adapter._processedIds.has('old-agent-mention'), true);
     assert.equal(adapter._isInFlightMessage(stale), false);
     assert.deepEqual(adapter._channelQueues.general, []);
   });

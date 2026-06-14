@@ -800,7 +800,6 @@ class BaseAdapter {
     if (!Number.isFinite(queuedAt) || Date.now() - queuedAt < this._agentQueueTtlMs) return false;
     if ((msg.senderType || '') !== 'agent') return false;
     if ((msg._deliveryKind || '') !== 'attention') return false;
-    if ((msg._attentionReason || '') !== 'routed') return false;
     return true;
   }
 
@@ -929,11 +928,19 @@ class BaseAdapter {
     if (/workspace api request/i.test(content)) return GENERIC_STATUS_DEDUPE_MS;
     if (/git status --short --branch/i.test(content)) return GENERIC_STATUS_DEDUPE_MS;
     if (/^message queued|^processing queued/i.test(content)) return GENERIC_STATUS_DEDUPE_MS;
+    if (/^\*\*(?:Running|Editing):\*\*/i.test(content)) return this._statusDedupeMs;
     return this._statusDedupeMs;
   }
 
+  _statusDedupeKey(channel, content) {
+    if (/workspace api request/i.test(content)) return `${channel || ''}\n<workspace-api-status>`;
+    if (/^\*\*Running:\*\*/i.test(content)) return `${channel || ''}\n<command-status>`;
+    if (/^\*\*Editing:\*\*/i.test(content)) return `${channel || ''}\n<editing-status>`;
+    return `${channel || ''}\n${content}`;
+  }
+
   _shouldSuppressStatus(channel, content, metadata) {
-    const key = `${channel || ''}\n${content}`;
+    const key = this._statusDedupeKey(channel, content);
     const now = Date.now();
     const windowMs = this._statusDedupeWindowMs(content);
     const previous = this._recentStatusPosts.get(key);
