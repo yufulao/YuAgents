@@ -85,6 +85,26 @@ def test_create_list_claim_and_update_workspace_task(client, workspace):
     assert updated_task["status"] == "in_review"
     assert "invalid token" in updated_task["result"]
 
+    repeat_claim = client.post(f"/v1/workspace-tasks/{task['id']}/claim", json={
+        "network": workspace["id"],
+        "agent_name": "agent-beta",
+        "session_id": beta_session,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert repeat_claim.status_code == 200
+
+    events = client.get("/v1/events", params={
+        "network": workspace["id"],
+        "type": "workspace.message.posted",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert events.status_code == 200
+    claimed_events = [
+        event for event in events.json()["data"]["events"]
+        if event["payload"].get("message_type") == "task"
+        and "Workspace task claimed:" in event["payload"].get("content", "")
+        and task["id"] == event["payload"].get("task", {}).get("id")
+    ]
+    assert len(claimed_events) == 1
+
 
 def test_create_workspace_task_requires_source(client, workspace):
     channel_name = workspace["channel"]["name"]
@@ -106,6 +126,37 @@ def test_create_workspace_task_requires_source(client, workspace):
     }, headers={"X-Workspace-Token": workspace["token"]})
     assert unknown.status_code == 400
     assert "source is required" in unknown.json()["message"]
+
+
+def test_create_workspace_task_requires_active_channel(client, workspace):
+    missing = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "title": "Missing channel should not create default task",
+        "assignee": "agent-beta",
+        "source": "openagents:agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert missing.status_code == 400
+    assert "channel is required" in missing.json()["message"]
+
+    default = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": "default",
+        "title": "Default channel should not be accepted",
+        "assignee": "agent-beta",
+        "source": "openagents:agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert default.status_code == 400
+    assert "active channel" in default.json()["message"]
+
+    nonexistent = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": "missing-channel",
+        "title": "Unknown channel should not be accepted",
+        "assignee": "agent-beta",
+        "source": "openagents:agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert nonexistent.status_code == 400
+    assert "active channel" in nonexistent.json()["message"]
 
 
 def test_assigning_workspace_task_wakes_new_assignee(client, workspace):

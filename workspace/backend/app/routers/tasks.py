@@ -16,7 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import WorkspaceMember, WorkspaceTask
+from app.models import Channel, WorkspaceMember, WorkspaceTask
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _emit_event, _resolve_workspace, _verify_workspace_access
 from openagents.core.onm_events import Event
@@ -136,6 +136,20 @@ def _current_agent_session(db: Session, workspace_id: str, agent_name: str, sess
     return bool(member and member.session_id and member.session_id == session_id)
 
 
+def _resolve_active_channel_name(db: Session, workspace_id: str, channel: Optional[str]) -> Optional[str]:
+    channel_name = (channel or "").strip()
+    if not channel_name or channel_name == "default":
+        return None
+    record = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace_id,
+            Channel.name == channel_name,
+            Channel.status == "active",
+        )
+    ).scalar_one_or_none()
+    return channel_name if record else None
+
+
 async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: str, source: str, token: Optional[str]):
     channel = task.channel_name or "default"
     assignee = _normalize_agent_name(task.assignee)
@@ -179,12 +193,15 @@ async def create_workspace_task(
         return json_response(ResponseCode.BAD_REQUEST, "Invalid task priority")
     if _is_unknown_source(body.source):
         return json_response(ResponseCode.BAD_REQUEST, "source is required")
+    channel_name = _resolve_active_channel_name(db, str(workspace.id), body.channel)
+    if not channel_name:
+        return json_response(ResponseCode.BAD_REQUEST, "channel is required and must reference an active channel")
 
     now = _utcnow()
     created_by = body.source.strip()
     task = WorkspaceTask(
         workspace_id=str(workspace.id),
-        channel_name=body.channel,
+        channel_name=channel_name,
         parent_task_id=body.parent_task_id,
         title=body.title.strip(),
         description=body.description,
@@ -265,6 +282,8 @@ async def claim_workspace_task(
         return json_response(ResponseCode.CONFLICT, "Task is already closed")
     if task.claimed_by and task.claimed_by != agent_name:
         return json_response(ResponseCode.CONFLICT, f"Task already claimed by {task.claimed_by}")
+    if task.claimed_by == agent_name and task.status != "todo":
+        return success_response({"task": _serialize_task(task)})
 
     now = _utcnow()
     task.claimed_by = agent_name
