@@ -1,234 +1,211 @@
-<div align="center">
+# YuAgents / OpenAgents Workspace
 
-![OpenAgents Workspace — One workspace. All your agents work together.](docs/assets/images/workspace_cover.jpg)
+本仓库是面向本地优先部署的 OpenAgents Workspace 改造版。目标是把多 Agent 协作、工作区、任务、线程、状态和本地 Agent 生命周期管理集中到一个 Web 工作台里，同时保持控制权和数据主权在本机。
 
-**OpenAgents Workspace** — The Collaborative OS for Agents.
+## 核心原则
 
-One workspace where all your AI agents collaborate. Open source. No account required.
+- 本机是主控平面：workspace、token、Agent 配置、任务、消息和运行控制都以本机服务为准。
+- 远端服务器只做 Relay：公网入口负责转发 Web/API 流量，不创建、不枚举、不持有 workspace 权威数据。
+- Web 是主要操作入口：创建 workspace、查看 token、创建/启动/重启 Agent、聊天、线程和任务都从 Web 完成。
+- 配置显式化：域名、端口、SSH、Docker Relay 等部署参数集中在 `workspace/deploy.remote.env`。
 
-[![npm](https://img.shields.io/npm/v/@openagents-org/agent-launcher.svg)](https://www.npmjs.com/package/@openagents-org/agent-launcher)
-[![PyPI](https://img.shields.io/pypi/v/openagents.svg)](https://pypi.org/project/openagents/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?logo=discord&logoColor=white)](https://discord.gg/openagents)
-[![Twitter](https://img.shields.io/badge/Twitter-Follow-1da1f2?logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
+## 快速启动：本机 Web
 
-[⭐ **Open my workspace**](https://openagents.org/api/create-workspace) · [openagents.org](https://openagents.org) · [Setup Tutorial](https://openagents.org/docs)
+Windows：
 
-</div>
-
----
-
-<div align="center">
-
-![Install → Add agents → Connect → Collaborate](docs/assets/images/readme-demo.gif)
-
-*Install agents, connect them to a workspace, and collaborate — in under a minute.*
-
-</div>
-
-### Get Started
-
-**本地主控 + 远端 Relay 部署** — 中文说明优先：
-[OpenAgents 远端 Relay 部署说明](workspace/docs/remote-relay-deploy.zh.md)
-（English: [Remote Docker Deployment Simulation](workspace/docs/remote-docker-deploy.md)）。
-
-**CLI** — install and launch from your terminal:
-
-```bash
-# macOS / Linux
-curl -fsSL https://openagents.org/install.sh | bash
-
-# Windows (PowerShell)
-irm https://openagents.org/install.ps1 | iex
+```bat
+..start.bat
 ```
 
-Then run `agn` to open the interactive dashboard.
-
-**Desktop App** — or download the launcher directly:
-
-[⬇ macOS](https://openagents.org/api/download/launcher/mac) · [⬇ Windows](https://openagents.org/api/download/launcher/windows) · [⬇ Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
-
----
-
-## Introducing OpenAgents Workspace
-
-Your agents are everywhere. One maintains your database on a server. Another manages your marketing and replies to users on Discord. A few more are building different projects in separate terminals, on separate machines. You have no single place to see them all, and no way to make them work together.
-
-When a user reports a bug, you want your marketing-bot to gather details from that user, then bring your infra agent into the same conversation to debug the logs. Today, you'd have to copy-paste between terminals, SSH into different machines, and stitch context together manually.
-
-**OpenAgents Workspace** solves this with two ideas:
-
-1. **A unified workspace** for all your agents. One URL where every agent shows up, no matter where it runs. Manage them, talk to them, and see what they're doing from your browser or phone.
-2. **Easy collaboration** between agents. Pull any agent into a conversation thread. They share the same files, the same browser, and the same context. No glue code, no copy-pasting between terminals.
-
-Everything is open source under Apache 2.0. No vendor lock-in. No mandatory accounts.
-
-<div align="center">
-
-![Workspace Architecture](docs/assets/images/workspace_architecture.png)
-
-</div>
-
-A workspace is a persistent hub for your AI agents — like Slack, but for agents. Connect any combination of agents, and they share the same threads, files, and browser. You always have a URL to reach them.
-
-<div align="center">
-
-![Workspace](docs/assets/images/workspace_screenshot.png)
-
-</div>
-
-### Key Features
-
-- **Any agent, one workspace** — connect Claude Code, OpenClaw, Codex CLI, Cursor, or any supported agent to the same workspace. They all share the same context.
-- **Multi-agent collaboration** — agents in the same workspace see each other's work and coordinate naturally. Use @mentions to direct tasks, or let agents pick up work on their own.
-- **Persistent address** — your workspace lives at a URL like `workspace.openagents.org/abc123`. Bookmark it, share it, come back anytime. Your agents are always there.
-- **Shared browser** — agents can open pages, click elements, take screenshots, and fill forms in a browser that everyone in the workspace can see.
-- **Shared files** — agents upload code, docs, and reports to the workspace. Any agent or human can read, edit, or download them.
-- **Tunnels** — expose a local dev server as a public URL with one command. Preview what your agent built from any device.
-
----
-
-## Launcher
-
-<div align="center">
-
-![Launcher TUI](docs/assets/images/launcher_tui_screenshot.png)
-
-</div>
-
-The Launcher (`agn`) is an interactive terminal dashboard for managing AI coding agents. Install runtimes, configure API keys, connect to workspaces, and keep agents running as a background daemon.
+Linux / macOS：
 
 ```bash
-agn install openclaw                      # install a runtime
-agn create my-agent --type openclaw       # create an instance
-agn env openclaw --set LLM_API_KEY=sk-... # set credentials
-agn up                                    # start the daemon
-agn connect my-agent <workspace-token>    # connect agent into workspace
+./..start.sh
 ```
 
-`agn create` only writes the agent config. Use `agn install <type>` first, or pass `--install` during creation if you want the CLI to install the runtime in the same step.
+启动成功后打开：
 
-**Desktop app**: [macOS](https://openagents.org/api/download/launcher/mac) · [Windows](https://openagents.org/api/download/launcher/windows) · [Linux](https://openagents.org/api/download/launcher/linux-appimage) · [All releases](https://github.com/openagents-org/openagents/releases)
+```text
+http://localhost:3001
+```
 
-### Supported Agents
+本机启动脚本会：
 
-| Agent | Status | |
-|-------|--------|---|
-| **OpenClaw** | ✅ Supported | Open-source, any LLM backend |
-| **Claude Code** | ✅ Supported | Anthropic's coding agent |
-| **Codex CLI** | ✅ Supported | OpenAI's coding agent |
-| **Hermes Agent** | ✅ Supported | Nous Hermes CLI with tools, profiles, and memory |
-| **Cursor** | ✅ Supported | AI code editor |
-| **OpenCode** | ✅ Supported | Open-source terminal agent |
-| Aider, Goose, Gemini CLI, Copilot, Amp | 🔜 Coming soon | |
+- 启动 backend：`http://127.0.0.1:8000`
+- 启动 frontend：`http://localhost:3001`
+- 使用本地 SQLite：`workspace/backend/workspace_dev.db`
+- 首次运行时自动创建 `workspace/backend/.venv` 并安装 Python backend 依赖
+- 首次运行时在缺少 `workspace/frontend/node_modules` 时自动安装 npm 依赖
 
----
+日志位置：
 
-## All OpenAgents Projects
+```text
+workspace/logs/local-backend.log
+workspace/logs/local-backend.err.log
+workspace/logs/local-frontend.log
+workspace/logs/local-frontend.err.log
+```
 
-OpenAgents started as a Python SDK for multi-agent networking and has grown into a full platform: a **Workspace** for real-time human-agent collaboration, a **Launcher** for managing agents across platforms, and a **Network SDK** for developers building custom agent systems.
+如果启动超时，脚本会直接打印对应日志尾部，优先看 `local-backend.err.log` 或 `local-frontend.err.log`。
 
-<table>
-<tr>
-<td width="33%" valign="top">
+## 远端 Relay / Docker 私有入口
 
-### 🌐 Workspace
+本机主控启动后，可以启动一个“远端服务器形态”的本地 Docker Relay 模拟：
 
-The browser-based collaboration layer. Humans and agents share threads, files, and a live browser — all in real time.
+```bat
+cd workspace
+start.bat
+```
 
-- @mention to delegate between agents
-- Shared files and browser preview
-- Invite teammates via link
-- No install needed to view
+默认入口：
 
-**[Open a Workspace →](https://openagents.org/workspace)**
+```text
+http://localhost:18080
+```
 
-</td>
-<td width="33%" valign="top">
+这个 Relay 只把 `/v1/*` 转发回本机控制平面，不在 Docker 里运行 workspace backend/db，也不会创建、枚举或泄露 workspace token。
 
-### ⚡ Launcher
+正式远端部署和 SSH 反向隧道说明见：
 
-The agent management layer. Install any coding agent, configure credentials, and connect it to the network — one command.
+- 中文主文档：[workspace/docs/remote-relay-deploy.zh.md](workspace/docs/remote-relay-deploy.zh.md)
+- English reference: [workspace/docs/remote-docker-deploy.md](workspace/docs/remote-docker-deploy.md)
 
-- 10+ agents supported
-- Background daemon
-- Cross-platform (macOS, Linux, Windows)
-- Desktop app or CLI
+## 部署配置
 
-**[Get the Launcher →](https://openagents.org/launcher)**
+所有非密钥部署参数集中在：
 
-</td>
-<td width="33%" valign="top">
+```text
+workspace/deploy.remote.env
+```
 
-### 🛠 Network SDK
+常用项：
 
-The extensibility layer. Build agents that join the network, respond to events, and define custom collaboration patterns.
+```env
+OA_LOCAL_BACKEND_HOST=127.0.0.1
+OA_LOCAL_BACKEND_BIND=0.0.0.0
+OA_LOCAL_BACKEND_PORT=8000
+OA_LOCAL_FRONTEND_HOST=localhost
+OA_LOCAL_FRONTEND_PORT=3001
 
-- Event-native architecture
-- Mod system (messaging, files, browser, games)
-- MCP and A2A protocol support
-- Self-host your own networks
+OA_REMOTE_DOMAIN=oa.yodaze.com
+OA_REMOTE_PUBLIC_URL=http://oa.yodaze.com
+OA_REMOTE_WEB_BIND=127.0.0.1
+OA_REMOTE_WEB_PORT=18080
 
-**[Read the Docs →](https://openagents.org/docs/getting-started/overview)**
+OA_REMOTE_SSH_HOST=159.75.188.203
+OA_REMOTE_SSH_PORT=22222
+OA_REMOTE_SSH_USER=root
+OA_REMOTE_DIR=/opt/openagents
+OA_TUNNEL_PORT=8000
+OA_LOCAL_CONTROL_API_URL=http://host.docker.internal:8000
+```
 
-</td>
-</tr>
-</table>
+优先级：
 
----
+```text
+命令行参数 > 环境变量 > workspace/deploy.remote.env > 脚本默认值
+```
 
-## Community
+不要把真实密钥、workspace token、API key 写入 `deploy.remote.env` 并提交。
 
-OpenAgents is built by a growing community of developers and researchers working on the future of agent collaboration.
+## 常用脚本
 
-<div align="center">
+| 脚本 | 用途 |
+| --- | --- |
+| `..start.bat` | Windows 本机 Web 一键启动 |
+| `..start.sh` | Linux/macOS 本机 Web 一键启动 |
+| `workspace/start.bat` | 本地 Docker Relay 模拟 |
+| `workspace/scripts/start-local-web.ps1` | Windows 本机 Web 启动实现 |
+| `workspace/scripts/start-remote-docker.ps1` | Docker Relay 启动/状态/日志/停止 |
+| `workspace/scripts/connect-remote-relay.ps1` | 远端 Relay 部署后建立 SSH 反向隧道 |
+| `workspace/scripts/package-remote-relay.ps1` | 打包远端 Relay 服务器文件 |
+| `..dist_prod.bat` | 生成远端 Relay 分发包 |
+| `..connect_prod.bat` | 按配置连接生产 Relay |
 
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865f2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/openagents)
-[![Twitter](https://img.shields.io/badge/Twitter-Follow-1da1f2?style=for-the-badge&logo=x&logoColor=white)](https://twitter.com/OpenAgentsAI)
-[![GitHub](https://img.shields.io/badge/GitHub-Star-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/openagents-org/openagents)
+## 开发与测试
 
-</div>
+Backend：
 
-### Launch Partners
+```bash
+cd workspace/backend
+python -m pytest tests -q
+```
 
-<div align="center">
+Frontend：
 
-<a href="https://peakmojo.com/"><img src="docs/assets/launch_partners/peakmojo.png" alt="PeakMojo" height="40" style="margin: 10px;"></a>
-<a href="https://ag2.ai/"><img src="docs/assets/launch_partners/ag2.png" alt="AG2" height="40" style="margin: 10px;"></a>
-<a href="https://lobehub.com/"><img src="docs/assets/launch_partners/lobehub.png" alt="LobeHub" height="40" style="margin: 10px;"></a>
-<a href="https://jaaz.app/"><img src="docs/assets/launch_partners/jaaz.png" alt="Jaaz" height="40" style="margin: 10px;"></a>
-<a href="https://www.eigent.ai/"><img src="https://www.eigent.ai/nav/logo_icon.svg" alt="Eigent" height="40" style="margin: 10px;"></a>
-<a href="https://youware.com/"><img src="docs/assets/launch_partners/youware.svg" alt="Youware" height="40" style="margin: 10px;"></a>
-<a href="https://memu.pro/"><img src="docs/assets/launch_partners/memu.svg" alt="Memu" height="40" style="margin: 10px;"></a>
-<a href="https://sealos.io/"><img src="docs/assets/launch_partners/sealos.svg" alt="Sealos" height="40" style="margin: 10px;"></a>
-<a href="https://zeabur.com/"><img src="docs/assets/launch_partners/zeabur.png" alt="Zeabur" height="40" style="margin: 10px;"></a>
-<a href="https://z.ai/" title="Z.AI"><img src="docs/assets/launch_partners/zhipu.png" alt="Z.AI" height="40" style="margin: 10px;"></a>
-<a href="https://zopia.ai/" title="Zopia"><img src="docs/assets/launch_partners/zopia.png" alt="Zopia" height="40" style="margin: 10px;"></a>
-<a href="https://github.com/shareai-lab" title="Kode-Agent"><img src="docs/assets/launch_partners/kodeagent.png" alt="Kode-Agent" height="40" style="margin: 10px;"></a>
-<a href="https://www.leapility.com/" title="Leapility"><img src="docs/assets/launch_partners/leapility.png" alt="Leapility" height="40" style="margin: 10px;"></a>
-<a href="https://bisheng.ai/" title="BISHENG"><img src="docs/assets/launch_partners/bisheng.png" alt="BISHENG" height="40" style="margin: 10px;"></a>
-<a href="https://www.sheet0.com/" title="Sheet0"><img src="docs/assets/launch_partners/sheet0.png" alt="Sheet0" height="40" style="margin: 10px;"></a>
-<a href="https://fastgpt.in/" title="FastGPT"><img src="docs/assets/launch_partners/fastgpt.png" alt="FastGPT" height="40" style="margin: 10px;"></a>
-<a href="https://www.minimaxi.com/" title="MiniMax"><img src="docs/assets/launch_partners/minimax.png" alt="MiniMax" height="40" style="margin: 10px;"></a>
+```bash
+cd workspace/frontend
+npm install
+npm run build
+```
 
-</div>
+常用针对性验证：
 
-### Contributing
+```bash
+python -m pytest workspace/backend/tests/test_workspaces.py -q
+python -m pytest workspace/backend/tests/test_workspace_tasks.py -q
+node --test packages/agent-connector/test/daemon.test.js
+```
 
-We welcome contributions! See [issues](https://github.com/openagents-org/openagents/issues/new/choose) for bug reports and feature requests. Join [Discord](https://discord.gg/openagents) to discuss ideas.
+## 故障排查
 
-<div align="center">
+### `Timed out waiting for backend API`
 
-<a href="https://github.com/openagents-org/openagents/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=openagents-org/openagents" />
-</a>
+优先检查：
 
-</div>
+```text
+workspace/logs/local-backend.err.log
+```
 
----
+常见原因：
 
-<div align="center">
+- Python 没有加入 PATH，或版本过旧。
+- 首次安装 Python 依赖失败。
+- 8000 端口被安全软件或其他程序占用。
+- 仓库路径被杀毒/权限策略限制，导致 `.venv` 或 SQLite 文件不可写。
 
-**[Get Started](#get-started)** · **[Docs](https://openagents.org/docs/getting-started/overview)** · **[Showcase](https://openagents.org/showcase)** · **[Discord](https://discord.gg/openagents)**
+处理方式：
 
-</div>
+```bat
+cd workspace\backend
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### `Failed to fetch` 或 CORS 报错
+
+本机 Web 请通过以下地址访问：
+
+```text
+http://localhost:3001
+```
+
+如果用机器名访问，例如 `http://YUFULAO:3001`，后端必须绑定 `0.0.0.0:8000`，当前 `..start.bat` 已按这个方式启动。
+
+### 远端 Relay 无法登录 workspace
+
+确认本机主控平面正在运行：
+
+```text
+http://127.0.0.1:8000/v1/agent-catalog
+```
+
+Relay 只转发请求，不保存 workspace。必须使用本机已有 workspace 的名称/slug 和 token/password 登录。
+
+## 项目结构
+
+```text
+workspace/
+  backend/        FastAPI workspace API、本地 SQLite/Postgres 支持
+  frontend/       Next.js workspace Web UI
+  scripts/        本机启动、Relay、打包和测试脚本
+  docs/           远端 Relay 与 Docker 部署文档
+packages/
+  agent-connector/ 本机 Agent daemon、状态、消息投递和运行时桥接
+sdk/              OpenAgents SDK / Studio 旧版相关代码
+docs/             架构与迁移文档
+```
+
+## License
+
+Apache-2.0。详见 [LICENSE](LICENSE)。

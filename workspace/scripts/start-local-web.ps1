@@ -14,6 +14,8 @@ if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
 $BackendDir = Join-Path $RepoRoot "workspace\backend"
 $FrontendDir = Join-Path $RepoRoot "workspace\frontend"
 $LogDir = Join-Path $RepoRoot "workspace\logs"
+$BackendVenvDir = Join-Path $BackendDir ".venv"
+$BackendPython = Join-Path $BackendVenvDir "Scripts\python.exe"
 $TempDir = [System.IO.Path]::GetTempPath()
 $BackendCmd = Join-Path $TempDir "openagents-backend-$PID.cmd"
 $FrontendCmd = Join-Path $TempDir "openagents-frontend-$PID.cmd"
@@ -83,15 +85,91 @@ function Test-Url([string]$Url, [int]$TimeoutSec = 2) {
   }
 }
 
-function Wait-Url([string]$Url, [int]$Seconds, [string]$Label) {
+function Show-LogTail([string]$Path, [int]$Lines = 80) {
+  if (-not (Test-Path $Path)) {
+    Write-Host "  (missing log: $Path)"
+    return
+  }
+  Write-Host ""
+  Write-Host "----- Last $Lines lines: $Path -----"
+  Get-Content -LiteralPath $Path -Tail $Lines
+  Write-Host "----- End log -----"
+}
+
+function Wait-Url([string]$Url, [int]$Seconds, [string]$Label, $Process = $null, [string[]]$LogPaths = @()) {
   $deadline = (Get-Date).AddSeconds($Seconds)
   while ((Get-Date) -lt $deadline) {
     if (Test-Url $Url 2) {
       return
     }
+    if ($Process -and $Process.HasExited) {
+      foreach ($path in $LogPaths) {
+        Show-LogTail $path
+      }
+      throw "$Label exited before becoming ready with code $($Process.ExitCode)."
+    }
     Start-Sleep -Seconds 1
   }
+  foreach ($path in $LogPaths) {
+    Show-LogTail $path
+  }
   throw "Timed out waiting for $Label at $Url"
+}
+
+function Ensure-BackendPythonEnv {
+  $requirementsPath = Join-Path $BackendDir "requirements.txt"
+  if (-not (Test-Path $requirementsPath)) {
+    throw "Backend requirements file was not found: $requirementsPath"
+  }
+
+  if (-not (Test-Path $BackendPython)) {
+    Write-Host "Creating backend Python virtual environment at $BackendVenvDir..."
+    & python -m venv $BackendVenvDir
+  }
+  if (-not (Test-Path $BackendPython)) {
+    throw "Backend virtual environment Python was not found after creation: $BackendPython"
+  }
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $BackendPython -c "import fastapi, uvicorn, sqlalchemy" *> $null
+    $dependencyCheckExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  if ($dependencyCheckExitCode -ne 0) {
+    Write-Host "Installing backend Python dependencies..."
+    & $BackendPython -m pip install --upgrade pip
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to upgrade pip in backend virtual environment."
+    }
+    & $BackendPython -m pip install -r $requirementsPath
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to install backend dependencies from $requirementsPath."
+    }
+  }
+}
+
+function Ensure-FrontendDependencies {
+  $nodeModules = Join-Path $FrontendDir "node_modules"
+  if (-not (Test-Path $nodeModules)) {
+    Write-Host "Installing frontend npm dependencies..."
+    Push-Location $FrontendDir
+    try {
+      if (Test-Path (Join-Path $FrontendDir "package-lock.json")) {
+        & npm ci
+      } else {
+        & npm install
+      }
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install frontend npm dependencies."
+      }
+    } finally {
+      Pop-Location
+    }
+  }
 }
 
 function Stop-ListeningPort([int]$Port) {
@@ -126,6 +204,11 @@ if (-not (Test-Path (Join-Path $FrontendDir "package.json"))) {
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 try {
+  Remove-Item -LiteralPath $BackendLog, $BackendErr, $FrontendLog, $FrontendErr -Force -ErrorAction SilentlyContinue
+
+  Ensure-BackendPythonEnv
+  Ensure-FrontendDependencies
+
   Write-Host "Stopping existing local Web processes on ports $LocalBackendPort and $LocalFrontendPort..."
   Stop-ListeningPort $LocalBackendPort
   Stop-ListeningPort $LocalFrontendPort
@@ -150,7 +233,7 @@ try {
     "set `"CORS_ORIGINS=*`"",
     "set `"WORKSPACE_CREATION_ENABLED=true`"",
     "set `"WORKSPACE_DIRECTORY_ENABLED=true`"",
-    "python -m uvicorn app.main:app --host $LocalBackendBind --port $LocalBackendPort"
+    "`"$BackendPython`" -m uvicorn app.main:app --host $LocalBackendBind --port $LocalBackendPort"
   ) | Set-Content -Encoding ASCII -Path $BackendCmd
 
   Write-Host "Starting backend on $LocalBackendUrl"
@@ -159,7 +242,7 @@ try {
   $Backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", "call `"$BackendCmd`"" -WindowStyle Hidden -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErr -PassThru
 
   Write-Host "Waiting for backend API..."
-  Wait-Url "$LocalBackendUrl/v1/workspaces" 60 "backend API"
+  Wait-Url "$LocalBackendUrl/v1/workspaces" 90 "backend API" $Backend @($BackendErr, $BackendLog)
 
   @(
     "@echo off",
@@ -176,7 +259,7 @@ try {
   $Frontend = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", "call `"$FrontendCmd`"" -WindowStyle Hidden -RedirectStandardOutput $FrontendLog -RedirectStandardError $FrontendErr -PassThru
 
   Write-Host "Waiting for frontend Web page..."
-  Wait-Url $LocalFrontendUrl 90 "frontend Web page"
+  Wait-Url $LocalFrontendUrl 120 "frontend Web page" $Frontend @($FrontendErr, $FrontendLog)
 
   Write-Host ""
   Write-Host "OpenAgents local Web is ready:"

@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT/workspace/backend"
 FRONTEND_DIR="$ROOT/workspace/frontend"
 RUN_DIR="$ROOT/.openagents-local"
+BACKEND_VENV="$BACKEND_DIR/.venv"
+BACKEND_PYTHON="$BACKEND_VENV/bin/python"
 CONFIG_FILE="${OPENAGENTS_DEPLOY_CONFIG:-$ROOT/workspace/deploy.remote.env}"
 BACKEND_LOG="$RUN_DIR/backend.log"
 FRONTEND_LOG="$RUN_DIR/frontend.log"
@@ -54,6 +56,49 @@ fi
 
 mkdir -p "$RUN_DIR"
 
+show_log_tail() {
+  local file="$1"
+  if [[ ! -f "$file" ]]; then
+    echo "  (missing log: $file)" >&2
+    return 0
+  fi
+  echo >&2
+  echo "----- Last 80 lines: $file -----" >&2
+  tail -n 80 "$file" >&2 || true
+  echo "----- End log -----" >&2
+}
+
+ensure_backend_python_env() {
+  local requirements="$BACKEND_DIR/requirements.txt"
+  if [[ ! -f "$requirements" ]]; then
+    echo "[ERROR] Backend requirements file was not found: $requirements" >&2
+    exit 1
+  fi
+  if [[ ! -x "$BACKEND_PYTHON" ]]; then
+    echo "Creating backend Python virtual environment at $BACKEND_VENV..."
+    python -m venv "$BACKEND_VENV"
+  fi
+  if ! "$BACKEND_PYTHON" -c "import fastapi, uvicorn, sqlalchemy" >/dev/null 2>&1; then
+    echo "Installing backend Python dependencies..."
+    "$BACKEND_PYTHON" -m pip install --upgrade pip
+    "$BACKEND_PYTHON" -m pip install -r "$requirements"
+  fi
+}
+
+ensure_frontend_dependencies() {
+  if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
+    echo "Installing frontend npm dependencies..."
+    (
+      cd "$FRONTEND_DIR"
+      if [[ -f package-lock.json ]]; then
+        npm ci
+      else
+        npm install
+      fi
+    )
+  fi
+}
+
 stop_pid_file() {
   local file="$1"
   if [[ -f "$file" ]]; then
@@ -79,6 +124,7 @@ wait_for_url() {
   local url="$1"
   local attempts="$2"
   local label="$3"
+  local pid="${4:-}"
   for _ in $(seq 1 "$attempts"); do
     if python - "$url" <<'PY' >/dev/null 2>&1
 import sys
@@ -88,11 +134,18 @@ PY
     then
       return 0
     fi
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" >/dev/null 2>&1; then
+      echo "[ERROR] $label exited before becoming ready." >&2
+      return 2
+    fi
     sleep 1
   done
   echo "[ERROR] $label did not become ready: $url" >&2
   return 1
 }
+
+ensure_backend_python_env
+ensure_frontend_dependencies
 
 echo "Stopping existing local Web processes on ports ${LOCAL_BACKEND_PORT} and ${LOCAL_FRONTEND_PORT}..."
 stop_pid_file "$BACKEND_PID"
@@ -108,13 +161,13 @@ echo "Starting backend on $LOCAL_BACKEND_URL"
   export CORS_ORIGINS="*"
   export WORKSPACE_CREATION_ENABLED="true"
   export WORKSPACE_DIRECTORY_ENABLED="true"
-  exec python -m uvicorn app.main:app --host "$LOCAL_BACKEND_BIND" --port "$LOCAL_BACKEND_PORT"
+  exec "$BACKEND_PYTHON" -m uvicorn app.main:app --host "$LOCAL_BACKEND_BIND" --port "$LOCAL_BACKEND_PORT"
 ) >"$BACKEND_LOG" 2>&1 &
 echo "$!" > "$BACKEND_PID"
 
 echo "Waiting for backend API..."
-if ! wait_for_url "$LOCAL_BACKEND_URL/v1/workspaces" 60 "Backend"; then
-  echo "Check log: $BACKEND_LOG" >&2
+if ! wait_for_url "$LOCAL_BACKEND_URL/v1/workspaces" 90 "Backend" "$(cat "$BACKEND_PID")"; then
+  show_log_tail "$BACKEND_LOG"
   exit 1
 fi
 
@@ -129,8 +182,8 @@ echo "Starting frontend on $LOCAL_FRONTEND_URL"
 echo "$!" > "$FRONTEND_PID"
 
 echo "Waiting for frontend Web page..."
-if ! wait_for_url "$LOCAL_FRONTEND_URL" 90 "Frontend"; then
-  echo "Check log: $FRONTEND_LOG" >&2
+if ! wait_for_url "$LOCAL_FRONTEND_URL" 120 "Frontend" "$(cat "$FRONTEND_PID")"; then
+  show_log_tail "$FRONTEND_LOG"
   exit 1
 fi
 
