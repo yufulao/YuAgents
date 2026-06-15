@@ -5,13 +5,30 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT/workspace/backend"
 FRONTEND_DIR="$ROOT/workspace/frontend"
 RUN_DIR="$ROOT/.openagents-local"
+CONFIG_FILE="${OPENAGENTS_DEPLOY_CONFIG:-$ROOT/workspace/deploy.remote.env}"
 BACKEND_LOG="$RUN_DIR/backend.log"
 FRONTEND_LOG="$RUN_DIR/frontend.log"
 BACKEND_PID="$RUN_DIR/backend.pid"
 FRONTEND_PID="$RUN_DIR/frontend.pid"
 
+if [[ -f "$CONFIG_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$CONFIG_FILE"
+  set +a
+fi
+
+LOCAL_BACKEND_HOST="${OA_LOCAL_BACKEND_HOST:-127.0.0.1}"
+LOCAL_BACKEND_BIND="${OA_LOCAL_BACKEND_BIND:-0.0.0.0}"
+LOCAL_BACKEND_PORT="${OA_LOCAL_BACKEND_PORT:-8000}"
+LOCAL_FRONTEND_HOST="${OA_LOCAL_FRONTEND_HOST:-localhost}"
+LOCAL_FRONTEND_PORT="${OA_LOCAL_FRONTEND_PORT:-3001}"
+LOCAL_BACKEND_URL="http://${LOCAL_BACKEND_HOST}:${LOCAL_BACKEND_PORT}"
+LOCAL_FRONTEND_URL="http://${LOCAL_FRONTEND_HOST}:${LOCAL_FRONTEND_PORT}"
+
 echo "OpenAgents local Web startup"
 echo "Root: $ROOT"
+echo "Config: $CONFIG_FILE"
 echo
 
 require_cmd() {
@@ -77,31 +94,31 @@ PY
   return 1
 }
 
-echo "Stopping existing local Web processes on ports 8000 and 3001..."
+echo "Stopping existing local Web processes on ports ${LOCAL_BACKEND_PORT} and ${LOCAL_FRONTEND_PORT}..."
 stop_pid_file "$BACKEND_PID"
 stop_pid_file "$FRONTEND_PID"
-stop_port 8000
-stop_port 3001
+stop_port "$LOCAL_BACKEND_PORT"
+stop_port "$LOCAL_FRONTEND_PORT"
 sleep 1
 
-echo "Starting backend on http://127.0.0.1:8000"
+echo "Starting backend on $LOCAL_BACKEND_URL"
 (
   cd "$BACKEND_DIR"
   export DATABASE_URL="sqlite:///./workspace_dev.db"
   export CORS_ORIGINS="*"
   export WORKSPACE_CREATION_ENABLED="true"
   export WORKSPACE_DIRECTORY_ENABLED="true"
-  exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+  exec python -m uvicorn app.main:app --host "$LOCAL_BACKEND_BIND" --port "$LOCAL_BACKEND_PORT"
 ) >"$BACKEND_LOG" 2>&1 &
 echo "$!" > "$BACKEND_PID"
 
 echo "Waiting for backend API..."
-if ! wait_for_url "http://127.0.0.1:8000/v1/workspaces" 60 "Backend"; then
+if ! wait_for_url "$LOCAL_BACKEND_URL/v1/workspaces" 60 "Backend"; then
   echo "Check log: $BACKEND_LOG" >&2
   exit 1
 fi
 
-echo "Starting frontend on http://localhost:3001"
+echo "Starting frontend on $LOCAL_FRONTEND_URL"
 (
   cd "$FRONTEND_DIR"
   unset NEXT_PUBLIC_API_URL
@@ -112,7 +129,7 @@ echo "Starting frontend on http://localhost:3001"
 echo "$!" > "$FRONTEND_PID"
 
 echo "Waiting for frontend Web page..."
-if ! wait_for_url "http://localhost:3001" 90 "Frontend"; then
+if ! wait_for_url "$LOCAL_FRONTEND_URL" 90 "Frontend"; then
   echo "Check log: $FRONTEND_LOG" >&2
   exit 1
 fi
@@ -121,11 +138,11 @@ echo
 echo "OpenAgents local Web is ready."
 echo "Backend log:  $BACKEND_LOG"
 echo "Frontend log: $FRONTEND_LOG"
-echo "http://localhost:3001"
+echo "$LOCAL_FRONTEND_URL"
 echo
 
 if command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "http://localhost:3001" >/dev/null 2>&1 || true
+  xdg-open "$LOCAL_FRONTEND_URL" >/dev/null 2>&1 || true
 elif command -v open >/dev/null 2>&1; then
-  open "http://localhost:3001" >/dev/null 2>&1 || true
+  open "$LOCAL_FRONTEND_URL" >/dev/null 2>&1 || true
 fi

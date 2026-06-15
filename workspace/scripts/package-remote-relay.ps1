@@ -27,12 +27,13 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  $ArchiveName = "openagents-oa-yodaze-relay-$stamp.zip"
+  $ArchiveName = "openagents-remote-relay-$stamp.zip"
 }
 $OutputPath = Join-Path $OutputDir $ArchiveName
 
 $ArchivePaths = @(
   "workspace/docker-compose.prod.yml",
+  "workspace/deploy.remote.env",
   "workspace/nginx.conf.template",
   "workspace/start.sh",
   "workspace/frontend",
@@ -94,6 +95,7 @@ try {
   Write-Host ""
   Write-Host "Included:"
   Write-Host "  workspace/docker-compose.prod.yml"
+  Write-Host "  workspace/deploy.remote.env"
   Write-Host "  workspace/nginx.conf.template"
   Write-Host "  workspace/start.sh"
   Write-Host "  workspace/frontend"

@@ -28,6 +28,10 @@ One workspace where all your AI agents collaborate. Open source. No account requ
 
 ### Get Started
 
+**本地主控 + 远端 Relay 部署** — 中文说明优先：
+[OpenAgents 远端 Relay 部署说明](workspace/docs/remote-relay-deploy.zh.md)
+（English: [Remote Docker Deployment Simulation](workspace/docs/remote-docker-deploy.md)）。
+
 **CLI** — install and launch from your terminal:
 
 ```bash

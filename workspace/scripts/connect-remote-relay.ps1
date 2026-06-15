@@ -1,11 +1,14 @@
 param(
-  [string]$SshHost = "159.75.188.203",
-  [int]$SshPort = 22222,
-  [string]$User = "root",
-  [string]$RemoteDir = "/opt/openagents",
-  [string]$Domain = "oa.yodaze.com",
-  [int]$RemoteWebPort = 18080,
-  [int]$TunnelPort = 8000,
+  [string]$ConfigPath = "",
+  [string]$SshHost = "",
+  [int]$SshPort = 0,
+  [string]$User = "",
+  [string]$RemoteDir = "",
+  [string]$Domain = "",
+  [string]$PublicUrl = "",
+  [int]$RemoteWebPort = 0,
+  [int]$TunnelPort = 0,
+  [int]$LocalBackendPort = 0,
   [switch]$StartLocal,
   [switch]$SkipOpenBrowser,
   [switch]$StopExistingTunnel,
@@ -18,8 +21,60 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+  $ConfigPath = Join-Path $RepoRoot "workspace\deploy.remote.env"
+}
+
+function Read-EnvConfig([string]$Path) {
+  $config = @{}
+  if (-not (Test-Path $Path)) {
+    return $config
+  }
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) {
+      continue
+    }
+    $match = [regex]::Match($trimmed, '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
+    if (-not $match.Success) {
+      continue
+    }
+    $value = $match.Groups[2].Value.Trim()
+    if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+      $value = $value.Substring(1, $value.Length - 2)
+    }
+    $config[$match.Groups[1].Value] = $value
+  }
+  return $config
+}
+
+$DeployConfig = Read-EnvConfig $ConfigPath
+
+function Get-ConfigValue([string]$Name, [string]$Fallback) {
+  $envValue = [Environment]::GetEnvironmentVariable($Name)
+  if (-not [string]::IsNullOrWhiteSpace($envValue)) {
+    return $envValue
+  }
+  if ($DeployConfig.ContainsKey($Name) -and -not [string]::IsNullOrWhiteSpace($DeployConfig[$Name])) {
+    return [string]$DeployConfig[$Name]
+  }
+  return $Fallback
+}
+
+if (-not $PSBoundParameters.ContainsKey("SshHost") -or [string]::IsNullOrWhiteSpace($SshHost)) { $SshHost = Get-ConfigValue "OA_REMOTE_SSH_HOST" "" }
+if (-not $PSBoundParameters.ContainsKey("SshPort") -or $SshPort -le 0) { $SshPort = [int](Get-ConfigValue "OA_REMOTE_SSH_PORT" "22") }
+if (-not $PSBoundParameters.ContainsKey("User") -or [string]::IsNullOrWhiteSpace($User)) { $User = Get-ConfigValue "OA_REMOTE_SSH_USER" "root" }
+if (-not $PSBoundParameters.ContainsKey("RemoteDir") -or [string]::IsNullOrWhiteSpace($RemoteDir)) { $RemoteDir = Get-ConfigValue "OA_REMOTE_DIR" "/opt/openagents" }
+if (-not $PSBoundParameters.ContainsKey("Domain") -or [string]::IsNullOrWhiteSpace($Domain)) { $Domain = Get-ConfigValue "OA_REMOTE_DOMAIN" "localhost" }
+if (-not $PSBoundParameters.ContainsKey("PublicUrl") -or [string]::IsNullOrWhiteSpace($PublicUrl)) { $PublicUrl = Get-ConfigValue "OA_REMOTE_PUBLIC_URL" "http://$Domain" }
+if (-not $PSBoundParameters.ContainsKey("RemoteWebPort") -or $RemoteWebPort -le 0) { $RemoteWebPort = [int](Get-ConfigValue "OA_REMOTE_WEB_PORT" "18080") }
+if (-not $PSBoundParameters.ContainsKey("TunnelPort") -or $TunnelPort -le 0) { $TunnelPort = [int](Get-ConfigValue "OA_TUNNEL_PORT" "8000") }
+if (-not $PSBoundParameters.ContainsKey("LocalBackendPort") -or $LocalBackendPort -le 0) { $LocalBackendPort = [int](Get-ConfigValue "OA_LOCAL_BACKEND_PORT" "8000") }
+
 $Remote = "$User@$SshHost"
-$PublicUrl = "http://$Domain"
+if ([string]::IsNullOrWhiteSpace($SshHost)) {
+  throw "Remote SSH host is required. Set OA_REMOTE_SSH_HOST in $ConfigPath or pass -SshHost."
+}
 
 function Require-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -85,8 +140,9 @@ if ($StartLocal) {
   Start-Process -FilePath $localStart -WorkingDirectory $RepoRoot
 }
 
-Write-Host "Checking local control plane at http://127.0.0.1:8000 ..."
-Wait-Url "http://127.0.0.1:8000/v1/agent-catalog" 90 "local control plane"
+Write-Host "Using config: $ConfigPath"
+Write-Host "Checking local control plane at http://127.0.0.1:$LocalBackendPort ..."
+Wait-Url "http://127.0.0.1:$LocalBackendPort/v1/agent-catalog" 90 "local control plane"
 
 if ($EnsureGatewayPorts) {
   Write-Host "Checking remote Docker gateway, SSH GatewayPorts, and existing remote listeners..."
@@ -128,7 +184,7 @@ function Start-TunnelProcess {
     "-o", "ExitOnForwardFailure=yes",
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3",
-    "-R", "$gateway`:$TunnelPort`:127.0.0.1:8000",
+    "-R", "$gateway`:$TunnelPort`:127.0.0.1:$LocalBackendPort",
     $Remote
   )
   Start-Process -FilePath "ssh" -ArgumentList $sshArgs -NoNewWindow -PassThru
@@ -137,7 +193,7 @@ function Start-TunnelProcess {
 function Start-RemoteRelayIfNeeded {
   if (-not $TunnelOnly) {
     Write-Host "Starting remote Docker relay..."
-    $remoteCommand = "cd '$RemoteDir/workspace' && REMOTE_WEB_BIND=127.0.0.1 REMOTE_WEB_PORT=$RemoteWebPort PUBLIC_URL=http://127.0.0.1:$RemoteWebPort LOCAL_CONTROL_API_URL=http://host.docker.internal:$TunnelPort CONTROL_CHECK_URL=http://$gateway`:$TunnelPort bash start.sh"
+    $remoteCommand = "cd '$RemoteDir/workspace' && OPENAGENTS_DEPLOY_CONFIG='$RemoteDir/workspace/deploy.remote.env' REMOTE_WEB_BIND=127.0.0.1 REMOTE_WEB_PORT=$RemoteWebPort PUBLIC_URL=http://127.0.0.1:$RemoteWebPort LOCAL_CONTROL_API_URL=http://host.docker.internal:$TunnelPort CONTROL_CHECK_URL=http://$gateway`:$TunnelPort bash start.sh"
     Invoke-Ssh $remoteCommand
   } else {
     Write-Host "Tunnel only mode: assuming remote start.sh is already running."
@@ -152,7 +208,7 @@ $tunnel = $null
 try {
   while ($true) {
     $attempt += 1
-    Write-Host "Opening SSH reverse tunnel: server $gateway`:$TunnelPort -> local 127.0.0.1:8000"
+    Write-Host "Opening SSH reverse tunnel: server $gateway`:$TunnelPort -> local 127.0.0.1:$LocalBackendPort"
     Write-Host "If an SSH password prompt appears, enter the server password in this window and keep this window open."
     if ($attempt -gt 1) {
       Write-Host "Reconnect attempt $attempt..."
@@ -183,7 +239,7 @@ try {
       try {
         Wait-Url "$PublicUrl/v1/agent-catalog" 60 "public relay API"
       } catch {
-        throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. Enter the server password in this window if SSH is waiting, and leave this window open. If SSH exited after login, verify GatewayPorts clientspecified in /etc/ssh/sshd_config and rerun ..prod_connect.bat."
+        throw "Remote relay is running, but it cannot reach the local control plane through the SSH tunnel. Enter the server password in this window if SSH is waiting, and leave this window open. If SSH exited after login, verify GatewayPorts clientspecified in /etc/ssh/sshd_config and rerun ..connect_prod.bat."
       }
 
       Write-Host ""

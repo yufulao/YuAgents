@@ -1,9 +1,10 @@
 param(
-  [int]$Port = 18080,
-  [string]$Bind = "127.0.0.1",
+  [string]$ConfigPath = "",
+  [int]$Port = 0,
+  [string]$Bind = "",
   [string]$PublicUrl = "",
-  [string]$LocalControlApiUrl = "http://host.docker.internal:8000",
-  [string]$ProjectName = "openagents-remote-sim",
+  [string]$LocalControlApiUrl = "",
+  [string]$ProjectName = "",
   [switch]$Build,
   [switch]$Down,
   [switch]$Logs,
@@ -14,6 +15,45 @@ $ErrorActionPreference = "Stop"
 
 $WorkspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ComposeFile = Join-Path $WorkspaceRoot "docker-compose.prod.yml"
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+  $ConfigPath = Join-Path $WorkspaceRoot "deploy.remote.env"
+}
+
+function Read-EnvConfig([string]$Path) {
+  $config = @{}
+  if (-not (Test-Path $Path)) {
+    return $config
+  }
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+    $match = [regex]::Match($trimmed, '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
+    if (-not $match.Success) { continue }
+    $value = $match.Groups[2].Value.Trim()
+    if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+      $value = $value.Substring(1, $value.Length - 2)
+    }
+    $config[$match.Groups[1].Value] = $value
+  }
+  return $config
+}
+
+$DeployConfig = Read-EnvConfig $ConfigPath
+
+function Get-ConfigValue([string]$Name, [string]$Fallback) {
+  $envValue = [Environment]::GetEnvironmentVariable($Name)
+  if (-not [string]::IsNullOrWhiteSpace($envValue)) { return $envValue }
+  if ($DeployConfig.ContainsKey($Name) -and -not [string]::IsNullOrWhiteSpace($DeployConfig[$Name])) {
+    return [string]$DeployConfig[$Name]
+  }
+  return $Fallback
+}
+
+if (-not $PSBoundParameters.ContainsKey("Port") -or $Port -le 0) { $Port = [int](Get-ConfigValue "OA_REMOTE_WEB_PORT" "18080") }
+if (-not $PSBoundParameters.ContainsKey("Bind") -or [string]::IsNullOrWhiteSpace($Bind)) { $Bind = Get-ConfigValue "OA_REMOTE_WEB_BIND" "127.0.0.1" }
+if (-not $PSBoundParameters.ContainsKey("PublicUrl") -or [string]::IsNullOrWhiteSpace($PublicUrl)) { $PublicUrl = Get-ConfigValue "OA_REMOTE_PUBLIC_URL" "http://localhost:$Port" }
+if (-not $PSBoundParameters.ContainsKey("LocalControlApiUrl") -or [string]::IsNullOrWhiteSpace($LocalControlApiUrl)) { $LocalControlApiUrl = Get-ConfigValue "OA_LOCAL_CONTROL_API_URL" "http://host.docker.internal:8000" }
+if (-not $PSBoundParameters.ContainsKey("ProjectName") -or [string]::IsNullOrWhiteSpace($ProjectName)) { $ProjectName = Get-ConfigValue "OA_REMOTE_PROJECT_NAME" "openagents-remote-sim" }
 
 function Quote-Cmd([string]$Value) {
   return '"' + ($Value -replace '"', '\"') + '"'
@@ -27,10 +67,6 @@ function Require-Docker {
 }
 
 function Set-RemoteEnv {
-  if ([string]::IsNullOrWhiteSpace($PublicUrl)) {
-    $script:PublicUrl = "http://localhost:$Port"
-  }
-
   $env:REMOTE_WEB_BIND = $Bind
   $env:REMOTE_WEB_PORT = [string]$Port
   $env:API_URL = ""

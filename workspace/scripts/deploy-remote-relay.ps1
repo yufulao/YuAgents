@@ -1,9 +1,11 @@
 param(
-  [string]$SshHost = "159.75.188.203",
-  [int]$SshPort = 22222,
-  [string]$User = "root",
-  [string]$RemoteDir = "/opt/openagents",
-  [string]$Domain = "oa.yodaze.com",
+  [string]$ConfigPath = "",
+  [string]$SshHost = "",
+  [int]$SshPort = 0,
+  [string]$User = "",
+  [string]$RemoteDir = "",
+  [string]$Domain = "",
+  [int]$RemoteWebPort = 0,
   [switch]$ConfigureNginx,
   [switch]$InstallDocker
 )
@@ -12,9 +14,54 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $WorkspaceRoot = Join-Path $RepoRoot "workspace"
-$Remote = "$User@$SshHost"
 $Archive = Join-Path ([System.IO.Path]::GetTempPath()) ("openagents-remote-relay-" + [System.Guid]::NewGuid().ToString("N") + ".tar.gz")
 $RemoteArchive = "/tmp/openagents-remote-relay.tar.gz"
+
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+  $ConfigPath = Join-Path $WorkspaceRoot "deploy.remote.env"
+}
+
+function Read-EnvConfig([string]$Path) {
+  $config = @{}
+  if (-not (Test-Path $Path)) {
+    return $config
+  }
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+    $match = [regex]::Match($trimmed, '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
+    if (-not $match.Success) { continue }
+    $value = $match.Groups[2].Value.Trim()
+    if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+      $value = $value.Substring(1, $value.Length - 2)
+    }
+    $config[$match.Groups[1].Value] = $value
+  }
+  return $config
+}
+
+$DeployConfig = Read-EnvConfig $ConfigPath
+
+function Get-ConfigValue([string]$Name, [string]$Fallback) {
+  $envValue = [Environment]::GetEnvironmentVariable($Name)
+  if (-not [string]::IsNullOrWhiteSpace($envValue)) { return $envValue }
+  if ($DeployConfig.ContainsKey($Name) -and -not [string]::IsNullOrWhiteSpace($DeployConfig[$Name])) {
+    return [string]$DeployConfig[$Name]
+  }
+  return $Fallback
+}
+
+if (-not $PSBoundParameters.ContainsKey("SshHost") -or [string]::IsNullOrWhiteSpace($SshHost)) { $SshHost = Get-ConfigValue "OA_REMOTE_SSH_HOST" "" }
+if (-not $PSBoundParameters.ContainsKey("SshPort") -or $SshPort -le 0) { $SshPort = [int](Get-ConfigValue "OA_REMOTE_SSH_PORT" "22") }
+if (-not $PSBoundParameters.ContainsKey("User") -or [string]::IsNullOrWhiteSpace($User)) { $User = Get-ConfigValue "OA_REMOTE_SSH_USER" "root" }
+if (-not $PSBoundParameters.ContainsKey("RemoteDir") -or [string]::IsNullOrWhiteSpace($RemoteDir)) { $RemoteDir = Get-ConfigValue "OA_REMOTE_DIR" "/opt/openagents" }
+if (-not $PSBoundParameters.ContainsKey("Domain") -or [string]::IsNullOrWhiteSpace($Domain)) { $Domain = Get-ConfigValue "OA_REMOTE_DOMAIN" "localhost" }
+if (-not $PSBoundParameters.ContainsKey("RemoteWebPort") -or $RemoteWebPort -le 0) { $RemoteWebPort = [int](Get-ConfigValue "OA_REMOTE_WEB_PORT" "18080") }
+
+$Remote = "$User@$SshHost"
+if ([string]::IsNullOrWhiteSpace($SshHost)) {
+  throw "Remote SSH host is required. Set OA_REMOTE_SSH_HOST in $ConfigPath or pass -SshHost."
+}
 
 function Require-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -35,6 +82,7 @@ Require-Command git
 
 $ArchivePaths = @(
   "workspace/docker-compose.prod.yml",
+  "workspace/deploy.remote.env",
   "workspace/nginx.conf.template",
   "workspace/start.sh",
   "workspace/frontend",
@@ -81,14 +129,14 @@ Write-Host "Extracting relay files..."
 Invoke-Ssh "tar -xzf '$RemoteArchive' -C '$RemoteDir' && rm -f '$RemoteArchive' && chmod +x '$RemoteDir/workspace/start.sh'"
 
 if ($ConfigureNginx) {
-  Write-Host "Configuring host nginx reverse proxy for $Domain -> 127.0.0.1:18080 ..."
+  Write-Host "Configuring host nginx reverse proxy for $Domain -> 127.0.0.1:$RemoteWebPort ..."
   $nginx = @"
 server {
     listen 80;
     server_name $Domain;
 
     location / {
-        proxy_pass http://127.0.0.1:18080;
+        proxy_pass http://127.0.0.1:$RemoteWebPort;
         proxy_http_version 1.1;
         proxy_set_header Host `$host;
         proxy_set_header X-Real-IP `$remote_addr;

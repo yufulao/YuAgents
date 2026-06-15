@@ -1,8 +1,27 @@
 # Remote Docker Deployment Simulation
 
+中文说明见：[OpenAgents 远端 Relay 部署说明](remote-relay-deploy.zh.md)。
+
 For the current `oa.yodaze.com` server flow, use
-`workspace/docs/oa-yodaze-relay-runbook.md`. It includes the one-click Windows
-deployment and SSH reverse-tunnel scripts for `159.75.188.203:22222`.
+`workspace/docs/remote-relay-deploy.zh.md`. It documents the shared
+configuration file, one-click Windows entrypoints, packaging, deployment, and
+SSH reverse-tunnel flow.
+
+Deployment settings live in:
+
+```text
+workspace/deploy.remote.env
+```
+
+Scripts use this priority:
+
+```text
+command-line args > environment variables > workspace/deploy.remote.env > built-in fallback
+```
+
+The server package includes `workspace/deploy.remote.env` because it contains
+non-secret deployment defaults only. Do not put workspace tokens, SSH
+passwords, API keys, or `.env` secrets in that file.
 
 This is the local "remote server" flow. It uses the production Docker Compose
 stack as a relay. It does not create, seed, sync, or enumerate workspaces.
@@ -21,6 +40,9 @@ The remote frontend uses same-origin `/v1` by default. Remote nginx forwards
 ```text
 http://host.docker.internal:8000
 ```
+
+The default comes from `OA_LOCAL_CONTROL_API_URL` in
+`workspace/deploy.remote.env`.
 
 For a real Linux server, point `LOCAL_CONTROL_API_URL` at an SSH reverse tunnel
 or another private path back to the local control plane. The relay container

@@ -4,10 +4,18 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$SCRIPT_DIR"
 
-: "${REMOTE_WEB_PORT:=18080}"
-: "${REMOTE_WEB_BIND:=127.0.0.1}"
-: "${PUBLIC_URL:=http://localhost:${REMOTE_WEB_PORT}}"
-: "${LOCAL_CONTROL_API_URL:=http://host.docker.internal:8000}"
+CONFIG_FILE="${OPENAGENTS_DEPLOY_CONFIG:-$SCRIPT_DIR/deploy.remote.env}"
+if [ -f "$CONFIG_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$CONFIG_FILE"
+  set +a
+fi
+
+: "${REMOTE_WEB_PORT:=${OA_REMOTE_WEB_PORT:-18080}}"
+: "${REMOTE_WEB_BIND:=${OA_REMOTE_WEB_BIND:-127.0.0.1}}"
+: "${PUBLIC_URL:=${OA_REMOTE_PUBLIC_URL:-http://localhost:${REMOTE_WEB_PORT}}}"
+: "${LOCAL_CONTROL_API_URL:=${OA_LOCAL_CONTROL_API_URL:-http://host.docker.internal:8000}}"
 : "${CONTROL_CHECK_URL:=${LOCAL_CONTROL_API_URL}}"
 : "${DOCKER_HOST_GATEWAY:=}"
 
@@ -40,6 +48,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 echo "Starting OpenAgents prod-style local stack..."
+echo "Config: ${CONFIG_FILE}"
 echo "URL: ${PUBLIC_URL}"
 echo "Bind: ${REMOTE_WEB_BIND}:${REMOTE_WEB_PORT}"
 echo "Local control API from Docker: ${LOCAL_CONTROL_API_URL}"
