@@ -6,9 +6,12 @@ cd "$SCRIPT_DIR"
 
 CONFIG_FILE="${OPENAGENTS_DEPLOY_CONFIG:-$SCRIPT_DIR/deploy.remote.env}"
 if [ -f "$CONFIG_FILE" ]; then
+  CLEAN_CONFIG="$(mktemp "${TMPDIR:-/tmp}/openagents-deploy-env.XXXXXX")"
+  trap 'rm -f "$CLEAN_CONFIG"' EXIT HUP INT TERM
+  sed 's/\r$//' "$CONFIG_FILE" > "$CLEAN_CONFIG"
   set -a
   # shellcheck disable=SC1090
-  . "$CONFIG_FILE"
+  . "$CLEAN_CONFIG"
   set +a
 fi
 
