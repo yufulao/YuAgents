@@ -164,6 +164,51 @@ class TestGetWorkspace:
         assert beta["activeTask"]["result"] == "Workspace task latest result"
         assert beta["activeTask"]["channelName"] == "general"
 
+    def test_get_workspace_projects_waiting_todo_as_waiting_activity(self, client, workspace, db):
+        """Waiting personal todos keep dependency lanes out of false thinking state."""
+        from app.models import TodoRecord, WorkspaceTask
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+
+        task = WorkspaceTask(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            title="ENG-124 verification lane",
+            description="Verify after implementation lands",
+            status="in_progress",
+            priority="normal",
+            assignee="agent-beta",
+            claimed_by="agent-beta",
+            created_by="agent-alpha",
+        )
+        todo = TodoRecord(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            created_by="openagents:agent-beta",
+            assignee="agent-beta",
+            content="Wait for ENG-124A implementation evidence",
+            status="in_progress",
+            position=0,
+        )
+        db.add_all([task, todo])
+        db.commit()
+
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        beta = next(a for a in resp.json()["data"]["agents"] if a["agentName"] == "agent-beta")
+        assert beta["activityState"] == "waiting_input"
+        assert beta["workloadState"] == "waiting"
+        assert beta["displayStatus"] == "waiting_input"
+        assert beta["activitySummary"] == "等待依赖: ENG-124 verification lane"
+        assert beta["activeTask"]["waitingOnDependency"] is True
+
     def test_get_nonexistent_workspace(self, client):
         """Nonexistent workspace returns 404."""
         resp = client.get("/v1/workspaces/nonexistent")

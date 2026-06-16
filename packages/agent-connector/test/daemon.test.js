@@ -373,6 +373,30 @@ describe('Daemon', () => {
     assert.match(String(sent[0].opts.metadata.queued_message), /<redacted>/);
   });
 
+  it('BaseAdapter reports current process detail in active heartbeat payload', () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._channelBusy.add('general');
+    adapter._recordProcessDetail('general', {
+      kind: 'command',
+      label: '命令',
+      value: 'npm test',
+    });
+
+    const payload = adapter._activityHeartbeatPayload();
+
+    assert.equal(payload.activity_state, 'running_command');
+    assert.equal(payload.activity_summary, '命令: npm test');
+    assert.equal(payload.current_channel, 'general');
+    assert.equal(payload.activity_details[0].value, 'npm test');
+  });
+
   it('BaseAdapter dedupes repeated status updates in a short window', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

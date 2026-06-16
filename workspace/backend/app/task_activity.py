@@ -11,11 +11,17 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import WorkspaceTask
+from app.models import TodoRecord, WorkspaceTask
 
 
 ACTIVE_TASK_STATUSES = {"todo", "in_progress"}
 DONE_DEPENDENCY_STATUSES = {"done", "cancelled"}
+WAITING_TODO_MARKERS = (
+    "wait for",
+    "waiting for",
+    "等待",
+    "依赖",
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,22 @@ def _sort_key(task: WorkspaceTask) -> tuple[int, datetime]:
     return (1 if task.status == "in_progress" else 0, updated)
 
 
+def _waiting_todos_by_agent(db: Session, workspace_id: str) -> set[str]:
+    rows = db.execute(
+        select(TodoRecord).where(
+            TodoRecord.workspace_id == str(workspace_id),
+            TodoRecord.status.in_(("pending", "in_progress")),
+        )
+    ).scalars().all()
+    waiting: set[str] = set()
+    for todo in rows:
+        agent = todo.assignee or (todo.created_by or "").replace("openagents:", "", 1)
+        content = str(todo.content or "").lower()
+        if agent and any(marker in content for marker in WAITING_TODO_MARKERS):
+            waiting.add(agent)
+    return waiting
+
+
 def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, AgentTaskActivity]:
     tasks = db.execute(
         select(WorkspaceTask).where(WorkspaceTask.workspace_id == str(workspace_id))
@@ -55,6 +77,7 @@ def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, A
         if task.status in ACTIVE_TASK_STATUSES and (task.claimed_by or task.assignee)
     ]
     active_tasks.sort(key=_sort_key, reverse=True)
+    waiting_todos = _waiting_todos_by_agent(db, workspace_id)
 
     by_agent: dict[str, AgentTaskActivity] = {}
     for task in active_tasks:
@@ -65,7 +88,10 @@ def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, A
             task_by_id[dep] for dep in _parse_depends_on(task.depends_on)
             if dep in task_by_id
         )
-        waiting = any(dep.status not in DONE_DEPENDENCY_STATUSES for dep in dependencies)
+        waiting = (
+            any(dep.status not in DONE_DEPENDENCY_STATUSES for dep in dependencies)
+            or agent_name in waiting_todos
+        )
         by_agent[agent_name] = AgentTaskActivity(
             task=task,
             waiting_on_dependency=waiting,

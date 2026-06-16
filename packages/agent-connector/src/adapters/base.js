@@ -65,6 +65,7 @@ class BaseAdapter {
     this._statusDedupeMs = Number.parseInt(this.agentEnv.OPENAGENTS_STATUS_DEDUPE_MS || '', 10) || STATUS_DEDUPE_MS;
     this._recentStatusPosts = new Map();
     this._pendingProcessDetails = new Map();
+    this._latestProcessDetails = new Map();
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
@@ -182,12 +183,13 @@ class BaseAdapter {
 
   async _heartbeat() {
     try {
+      const activity = this._activityHeartbeatPayload();
       await this.client.heartbeat(
         this.workspaceId,
         this.agentName,
         this.token,
         this._sessionId,
-        this._hasActiveWork() ? 'active' : 'idle',
+        activity,
       );
     } catch (e) {
       if (e instanceof SessionRevokedError) {
@@ -528,6 +530,38 @@ class BaseAdapter {
 
   _hasActiveWork() {
     return this._channelBusy.size > 0;
+  }
+
+  _activityHeartbeatPayload() {
+    if (!this._hasActiveWork()) {
+      return { activity_state: 'idle' };
+    }
+
+    const channel = [...this._channelBusy][0] || this.channelName;
+    const detail = channel ? this._latestProcessDetails.get(channel) : null;
+    if (!detail) {
+      return {
+        activity_state: 'thinking',
+        activity_summary: '处理中',
+        current_channel: channel,
+      };
+    }
+
+    const kind = String(detail.kind || '').toLowerCase();
+    const state = kind === 'command'
+      ? 'running_command'
+      : kind === 'edit' || kind === 'file_change'
+        ? 'editing_file'
+        : 'thinking';
+    const label = String(detail.label || '过程').trim() || '过程';
+    const value = String(detail.value || '').trim();
+    const summary = value ? `${label}: ${value}` : label;
+    return {
+      activity_state: state,
+      activity_summary: summary.length > 240 ? `${summary.slice(0, 237)}...` : summary,
+      activity_details: [detail],
+      current_channel: channel,
+    };
   }
 
   _controlPollDelayMs() {
@@ -1001,11 +1035,13 @@ class BaseAdapter {
     const list = this._pendingProcessDetails.get(channel) || [];
     list.push(this._sanitizeStatusMetadata(clean));
     this._pendingProcessDetails.set(channel, list.slice(-40));
+    this._latestProcessDetails.set(channel, clean);
   }
 
   _drainProcessDetails(channel) {
     const list = this._pendingProcessDetails.get(channel) || [];
     this._pendingProcessDetails.delete(channel);
+    this._latestProcessDetails.delete(channel);
     return list;
   }
 

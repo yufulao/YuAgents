@@ -290,21 +290,32 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
     # showing active work for hours even after the adapter has drained its queue.
     activity_state = str((event.payload or {}).get("activity_state") or "").lower()
     cfg = None
-    if activity_state in {"active", "idle", "online"}:
+    if activity_state in {"active", "idle", "online"} or activity_state in ACTIVE_STATES:
         cfg = db.execute(
             select(AgentConfig).where(
                 AgentConfig.workspace_id == workspace.id,
                 AgentConfig.handle == agent_name,
             )
         ).scalar_one_or_none()
-    if activity_state == "active":
+    if activity_state == "active" or activity_state in ACTIVE_STATES:
+        payload = event.payload or {}
         cfg_metadata = dict((cfg.config_metadata if cfg else None) or {})
         current_state = str(cfg_metadata.get("lifecycle_state") or member.status or "").lower()
-        next_state = current_state if current_state in ACTIVE_STATES else "thinking"
+        next_state = activity_state if activity_state in ACTIVE_STATES else current_state if current_state in ACTIVE_STATES else "thinking"
         member.status = next_state
         if cfg:
             cfg_metadata["lifecycle_state"] = next_state
-            cfg_metadata["activity_summary"] = cfg_metadata.get("activity_summary") or "处理中"
+            summary = payload.get("activity_summary")
+            details = payload.get("activity_details")
+            channel = payload.get("current_channel")
+            if isinstance(summary, str):
+                cfg_metadata["activity_summary"] = summary[:500]
+            else:
+                cfg_metadata["activity_summary"] = cfg_metadata.get("activity_summary") or "处理中"
+            if isinstance(details, list):
+                cfg_metadata["activity_details"] = details[-10:]
+            if isinstance(channel, str) and channel:
+                cfg_metadata["current_channel"] = channel
             cfg_metadata["activity_updated_at"] = now.isoformat()
             cfg.config_metadata = cfg_metadata
             cfg.updated_at = now
@@ -314,6 +325,7 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
             cfg_metadata = dict(cfg.config_metadata or {})
             cfg_metadata["lifecycle_state"] = "online"
             cfg_metadata["activity_summary"] = ""
+            cfg_metadata["activity_details"] = []
             cfg_metadata["current_channel"] = None
             cfg_metadata["activity_updated_at"] = now.isoformat()
             cfg.config_metadata = cfg_metadata
