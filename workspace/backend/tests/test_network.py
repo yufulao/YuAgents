@@ -279,6 +279,104 @@ class TestHeartbeat:
         assert cfg.config_metadata["activity_summary"] == ""
         assert cfg.config_metadata["current_channel"] is None
 
+    def test_active_heartbeat_projects_active_work(self, client, workspace, db):
+        """Active heartbeat keeps long-running workers out of plain online state."""
+        from app.models import AgentConfig, WorkspaceMember
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+        sid = joined.json()["data"]["session_id"]
+
+        cfg = AgentConfig(
+            workspace_id=workspace["id"],
+            handle="agent-beta",
+            display_name="agent-beta",
+            avatar={"type": "pixel", "value": "test"},
+            agent_type="codex",
+            config_metadata={
+                "lifecycle_state": "online",
+                "activity_summary": "",
+                "current_channel": None,
+            },
+        )
+        db.add(cfg)
+        db.commit()
+
+        resp = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-beta",
+            "network": workspace["id"],
+            "session_id": sid,
+            "activity_state": "active",
+        })
+        assert resp.status_code == 200
+
+        db.refresh(cfg)
+        member = db.get(WorkspaceMember, (workspace["id"], "agent-beta"))
+        assert member.status == "thinking"
+        assert cfg.config_metadata["lifecycle_state"] == "thinking"
+        assert cfg.config_metadata["activity_summary"] == "处理中"
+
+        resp = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        agents = resp.json()["data"]["agents"]
+        beta = next(a for a in agents if a["address"] == "openagents:agent-beta")
+        assert beta["presence_status"] == "online"
+        assert beta["activity_state"] == "thinking"
+        assert beta["workload_state"] == "active"
+        assert beta["display_status"] == "thinking"
+        assert beta["has_active_work"] is True
+
+    def test_active_heartbeat_preserves_specific_active_state(self, client, workspace, db):
+        """Generic active heartbeats should not downgrade running/editing summaries."""
+        from app.models import AgentConfig, WorkspaceMember
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+        sid = joined.json()["data"]["session_id"]
+
+        cfg = AgentConfig(
+            workspace_id=workspace["id"],
+            handle="agent-beta",
+            display_name="agent-beta",
+            avatar={"type": "pixel", "value": "test"},
+            agent_type="codex",
+            config_metadata={
+                "lifecycle_state": "running_command",
+                "activity_summary": "cmake --build --preset windows-fast-gate",
+                "current_channel": "general",
+            },
+        )
+        db.add(cfg)
+        member = db.get(WorkspaceMember, (workspace["id"], "agent-beta"))
+        member.status = "running_command"
+        db.commit()
+
+        resp = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-beta",
+            "network": workspace["id"],
+            "session_id": sid,
+            "activity_state": "active",
+        })
+        assert resp.status_code == 200
+
+        db.refresh(cfg)
+        db.refresh(member)
+        assert member.status == "running_command"
+        assert cfg.config_metadata["lifecycle_state"] == "running_command"
+        assert cfg.config_metadata["activity_summary"] == "cmake --build --preset windows-fast-gate"
+        assert cfg.config_metadata["current_channel"] == "general"
+
     def test_heartbeat_unknown_agent(self, client, workspace):
         """Heartbeat for non-member is a no-op but still succeeds (event recorded)."""
         resp = client.post("/v1/heartbeat", json={

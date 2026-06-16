@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from sqlalchemy import select
 
+from app.agent_status import ACTIVE_STATES
 from app.channel_visibility import human_is_channel_member, is_closed_channel, is_workspace_owner
 from openagents.core.onm_events import Event, WorkspaceEventTypes
 from openagents.core.onm_mods import EventRejected, PipelineContext, TransformMod
@@ -282,21 +283,34 @@ async def _handle_ping(event: Event, ctx: PipelineContext) -> Optional[Event]:
         return None
 
     now = datetime.now(timezone.utc)
-    member.status = "online"
     member.last_heartbeat = now
 
     # The connector heartbeat is the source of truth for "no active worker".
     # Without this, an old thinking/running status message can keep the Web UI
     # showing active work for hours even after the adapter has drained its queue.
     activity_state = str((event.payload or {}).get("activity_state") or "").lower()
-    if activity_state in {"idle", "online"}:
+    cfg = None
+    if activity_state in {"active", "idle", "online"}:
         cfg = db.execute(
             select(AgentConfig).where(
                 AgentConfig.workspace_id == workspace.id,
                 AgentConfig.handle == agent_name,
             )
         ).scalar_one_or_none()
+    if activity_state == "active":
+        cfg_metadata = dict((cfg.config_metadata if cfg else None) or {})
+        current_state = str(cfg_metadata.get("lifecycle_state") or member.status or "").lower()
+        next_state = current_state if current_state in ACTIVE_STATES else "thinking"
+        member.status = next_state
         if cfg:
+            cfg_metadata["lifecycle_state"] = next_state
+            cfg_metadata["activity_summary"] = cfg_metadata.get("activity_summary") or "处理中"
+            cfg_metadata["activity_updated_at"] = now.isoformat()
+            cfg.config_metadata = cfg_metadata
+            cfg.updated_at = now
+    else:
+        member.status = "online"
+        if activity_state in {"idle", "online"} and cfg:
             cfg_metadata = dict(cfg.config_metadata or {})
             cfg_metadata["lifecycle_state"] = "online"
             cfg_metadata["activity_summary"] = ""
