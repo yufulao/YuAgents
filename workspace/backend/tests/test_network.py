@@ -468,11 +468,13 @@ class TestDiscover:
             workspace_id=workspace["id"],
             channel_name="general",
             title="ENG-123 visible progress",
+            description="Detailed task context for humans",
             status="in_progress",
             priority="normal",
             assignee="agent-beta",
             claimed_by="agent-beta",
             created_by="agent-alpha",
+            result="Latest result line",
         )
         db.add(task)
         db.commit()
@@ -489,6 +491,9 @@ class TestDiscover:
         assert beta["has_active_work"] is True
         assert beta["activity_summary"] == "进行中: ENG-123 visible progress"
         assert beta["active_task"]["id"] == task.id
+        assert beta["active_task"]["description"] == "Detailed task context for humans"
+        assert beta["active_task"]["result"] == "Latest result line"
+        assert beta["active_task"]["channel_name"] == "general"
 
     def test_discover_channels(self, client, workspace):
         """Discover shows workspace channels."""
