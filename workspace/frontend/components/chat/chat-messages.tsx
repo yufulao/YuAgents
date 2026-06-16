@@ -91,9 +91,11 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
   // Track session identity to reset scroll state on thread switch
   const prevSessionRef = useRef<string | null>(null);
   const pendingInitialScrollRef = useRef<string | null>(null);
-  // True when the user has intentionally scrolled away from the bottom.
-  // Prevents auto-scroll from yanking them back while reading history.
-  const userScrolledUpRef = useRef(false);
+  // Auto-follow is enabled only while the viewport is actually at the live end,
+  // or after explicit actions such as sending a message / pressing the button.
+  const autoFollowRef = useRef(true);
+  const scrollIntentRef = useRef(0);
+  const programmaticBottomScrollRef = useRef(false);
   const previousContentKeyRef = useRef('');
 
   // Separate loading indicators (optimistic) from real messages
@@ -153,16 +155,32 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
     },
   });
 
+  const stopAutoFollow = useCallback(() => {
+    autoFollowRef.current = false;
+    programmaticBottomScrollRef.current = false;
+    scrollIntentRef.current += 1;
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     if (totalCount > 0) {
+      autoFollowRef.current = true;
+      programmaticBottomScrollRef.current = true;
+      const intent = ++scrollIntentRef.current;
       virtualizer.scrollToIndex(totalCount - 1, { align: 'end' });
       // Also nudge the native scroll in case the virtualizer hasn't measured the last item yet
       requestAnimationFrame(() => {
+        if (intent !== scrollIntentRef.current || !autoFollowRef.current) {
+          if (intent === scrollIntentRef.current) {
+            programmaticBottomScrollRef.current = false;
+          }
+          return;
+        }
         if (containerRef.current) {
           containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
         setShowScrollBtn(false);
-        userScrolledUpRef.current = false;
+        autoFollowRef.current = true;
+        programmaticBottomScrollRef.current = false;
       });
     }
   }, [totalCount, virtualizer]);
@@ -173,7 +191,8 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
     const currentSessionId = sessionId ?? null;
     if (currentSessionId !== prevSessionRef.current) {
       prevSessionRef.current = currentSessionId;
-      userScrolledUpRef.current = false;
+      autoFollowRef.current = true;
+      scrollIntentRef.current += 1;
       setShowScrollBtn(false);
       pendingInitialScrollRef.current = currentSessionId;
     }
@@ -182,7 +201,6 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
   // Force scroll when scrollKey changes (user sent a message).
   useEffect(() => {
     if (scrollKey) {
-      userScrolledUpRef.current = false;
       requestAnimationFrame(() => scrollToBottom());
     }
   }, [scrollKey, scrollToBottom]);
@@ -200,14 +218,15 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
       scrollHeight: el.scrollHeight,
       scrollTop: el.scrollTop,
     };
-    userScrolledUpRef.current = true;
+    stopAutoFollow();
+    setShowScrollBtn(true);
 
     try {
       await loadOlder();
     } finally {
       loadingOlderInternalRef.current = false;
     }
-  }, [loadOlder]);
+  }, [loadOlder, stopAutoFollow]);
 
   useLayoutEffect(() => {
     const snapshot = pendingOlderRestoreRef.current;
@@ -217,7 +236,8 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
     const restore = () => {
       const delta = el.scrollHeight - snapshot.scrollHeight;
       el.scrollTop = snapshot.scrollTop + delta;
-      userScrolledUpRef.current = true;
+      autoFollowRef.current = false;
+      setShowScrollBtn(true);
     };
 
     restore();
@@ -243,7 +263,7 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
 
     if (pendingOlderRestoreRef.current) return;
     const contentChanged = previousContentKeyRef.current !== contentKey;
-    const shouldFollowNewContent = contentChanged && !userScrolledUpRef.current && totalCount > 0;
+    const shouldFollowNewContent = contentChanged && autoFollowRef.current && totalCount > 0;
     previousContentKeyRef.current = contentKey;
 
     if (shouldFollowNewContent) {
@@ -252,8 +272,7 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
     }
 
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    setShowScrollBtn(!isNearBottom);
-    userScrolledUpRef.current = !isNearBottom;
+    setShowScrollBtn(totalCount > 0 && !isNearBottom);
   }, [sessionId, messages.length, totalCount, contentKey, scrollToBottom]);
 
   useEffect(() => {
@@ -262,8 +281,17 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
 
     const onScroll = async () => {
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+      if (programmaticBottomScrollRef.current) {
+        setShowScrollBtn(false);
+        return;
+      }
+
       setShowScrollBtn(!isNearBottom);
-      userScrolledUpRef.current = !isNearBottom;
+      if (isNearBottom) {
+        autoFollowRef.current = true;
+      } else {
+        stopAutoFollow();
+      }
 
       // Infinite scroll: load older messages when near the top
       if (
@@ -279,7 +307,7 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
 
     el.addEventListener('scroll', onScroll);
     return () => el.removeEventListener('scroll', onScroll);
-  }, [hasOlder, loadingOlder, loadOlder, loadOlderAndPreserveScroll]);
+  }, [hasOlder, loadingOlder, loadOlder, loadOlderAndPreserveScroll, stopAutoFollow]);
 
   return (
     <div className="relative flex-1 min-h-0">
@@ -377,7 +405,7 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
             variant="secondary"
             size="sm"
             className="rounded-full shadow-lg"
-            onClick={() => { userScrolledUpRef.current = false; scrollToBottom(); }}
+            onClick={() => scrollToBottom()}
           >
             <ArrowDown className="size-4 mr-1" />
             New messages
