@@ -56,7 +56,7 @@ class CodexAdapter extends BaseAdapter {
     this._reasoningEffort = cleanEnvValue(env.CODEX_REASONING_EFFORT);
     this._serviceTier = cleanEnvValue(env.CODEX_SERVICE_TIER) || cleanEnvValue(env.OPENAI_SERVICE_TIER);
     this._streamAgentThinking = /^(1|true|yes)$/i.test(cleanEnvValue(env.OPENAGENTS_STREAM_AGENT_THINKING));
-    this._emitCommandStatus = /^(1|true|yes)$/i.test(cleanEnvValue(env.OPENAGENTS_EMIT_COMMAND_STATUS));
+    this._emitCommandStatus = !/^(0|false|no)$/i.test(cleanEnvValue(env.OPENAGENTS_EMIT_COMMAND_STATUS));
 
     // Per-channel thread tracking (like Claude's session IDs)
     this._channelThreads = {};

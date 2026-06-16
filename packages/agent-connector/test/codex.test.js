@@ -64,21 +64,27 @@ describe('CodexAdapter', () => {
     assert.equal(status.includes('X-Workspace-Token'), false);
   });
 
-  it('does not stream Codex agent text or command status by default', () => {
+  it('does not stream Codex agent text by default but keeps process status visible', () => {
     const adapter = makeAdapter();
 
     assert.equal(adapter._streamAgentThinking, false);
-    assert.equal(adapter._emitCommandStatus, false);
+    assert.equal(adapter._emitCommandStatus, true);
   });
 
-  it('allows Codex intermediate streaming and command status as opt-in', () => {
+  it('allows Codex agent text streaming as opt-in', () => {
     const adapter = makeAdapter({
       OPENAGENTS_STREAM_AGENT_THINKING: 'true',
-      OPENAGENTS_EMIT_COMMAND_STATUS: '1',
     });
 
     assert.equal(adapter._streamAgentThinking, true);
-    assert.equal(adapter._emitCommandStatus, true);
+  });
+
+  it('allows Codex command status to be disabled explicitly', () => {
+    const adapter = makeAdapter({
+      OPENAGENTS_EMIT_COMMAND_STATUS: 'false',
+    });
+
+    assert.equal(adapter._emitCommandStatus, false);
   });
 
   it('attaches hidden process details to the final response', async () => {
