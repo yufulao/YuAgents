@@ -63,4 +63,21 @@ describe('CodexAdapter', () => {
     assert.equal(status.includes('abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG'), false);
     assert.equal(status.includes('X-Workspace-Token'), false);
   });
+
+  it('does not stream Codex agent text or command status by default', () => {
+    const adapter = makeAdapter();
+
+    assert.equal(adapter._streamAgentThinking, false);
+    assert.equal(adapter._emitCommandStatus, false);
+  });
+
+  it('allows Codex intermediate streaming and command status as opt-in', () => {
+    const adapter = makeAdapter({
+      OPENAGENTS_STREAM_AGENT_THINKING: 'true',
+      OPENAGENTS_EMIT_COMMAND_STATUS: '1',
+    });
+
+    assert.equal(adapter._streamAgentThinking, true);
+    assert.equal(adapter._emitCommandStatus, true);
+  });
 });

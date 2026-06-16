@@ -600,6 +600,32 @@ describe('Daemon', () => {
     assert.equal(adapter._channelQueues.general[0].messageId, 'event-agent');
   });
 
+  it('BaseAdapter does not emit visible queue status for human messages', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    let statusCount = 0;
+    adapter.sendStatus = async () => { statusCount += 1; };
+
+    await adapter._dispatchMessage({
+      messageId: 'event-human',
+      sessionId: 'general',
+      senderType: 'human',
+      content: 'please continue',
+    });
+
+    assert.equal(statusCount, 0);
+    assert.equal(adapter._channelQueues.general.length, 1);
+    assert.equal(adapter._channelQueues.general[0].messageId, 'event-human');
+  });
+
   it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

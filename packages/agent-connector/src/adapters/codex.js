@@ -55,6 +55,8 @@ class CodexAdapter extends BaseAdapter {
     this._directModel = cleanEnvValue(env.CODEX_MODEL) || cleanEnvValue(env.OPENCLAW_MODEL);
     this._reasoningEffort = cleanEnvValue(env.CODEX_REASONING_EFFORT);
     this._serviceTier = cleanEnvValue(env.CODEX_SERVICE_TIER) || cleanEnvValue(env.OPENAI_SERVICE_TIER);
+    this._streamAgentThinking = /^(1|true|yes)$/i.test(cleanEnvValue(env.OPENAGENTS_STREAM_AGENT_THINKING));
+    this._emitCommandStatus = /^(1|true|yes)$/i.test(cleanEnvValue(env.OPENAGENTS_EMIT_COMMAND_STATUS));
 
     // Per-channel thread tracking (like Claude's session IDs)
     this._channelThreads = {};
@@ -465,19 +467,24 @@ class CodexAdapter extends BaseAdapter {
               hasToolUseSinceLastText = false;
             }
             responseTexts.push(item.text);
-            // Stream as thinking (like Claude adapter)
-            try { await this.sendThinking(msgChannel, item.text); } catch {}
+            if (this._streamAgentThinking) {
+              try { await this.sendThinking(msgChannel, item.text); } catch {}
+            }
           } else if (item.type === 'command_execution') {
             hasToolUseSinceLastText = true;
             const cmdText = this._summarizeCommandForStatus(item.command || '');
             const exitCode = item.exit_code;
-            const status = this._formatCommandStatus(item.command || '', exitCode);
-            try { await this.sendStatus(msgChannel, status); } catch {}
+            if (this._emitCommandStatus) {
+              const status = this._formatCommandStatus(item.command || '', exitCode);
+              try { await this.sendStatus(msgChannel, status); } catch {}
+            }
             this._log(`Command: ${cmdText} → exit ${exitCode}`);
           } else if (item.type === 'file_change') {
             hasToolUseSinceLastText = true;
             const filename = item.filename || '';
-            try { await this.sendStatus(msgChannel, `**Editing:** \`${filename}\``); } catch {}
+            if (this._emitCommandStatus) {
+              try { await this.sendStatus(msgChannel, `**Editing:** \`${filename}\``); } catch {}
+            }
             this._log(`File change: ${filename}`);
           }
         } else if (eventType === 'turn.failed') {
