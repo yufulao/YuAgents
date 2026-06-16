@@ -36,6 +36,7 @@ export interface WorkspaceAgent {
   hasActiveWork?: boolean;
   activitySummary?: string | null;
   currentChannel?: string | null;
+  activeTask?: WorkspaceAgentTask | null;
   modelProvider?: string | null;
   model?: string | null;
   modelName?: string | null;
@@ -45,6 +46,33 @@ export interface WorkspaceAgent {
   managedMetadata?: Record<string, unknown> | null;
   lastHeartbeatAt: string | null;
   joinedAt: string | null;
+}
+
+export interface WorkspaceAgentTaskDependency {
+  id: string;
+  title: string;
+  status: string;
+  assignee?: string | null;
+  claimedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface WorkspaceAgentTask {
+  id: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  priority?: string | null;
+  assignee?: string | null;
+  claimedBy?: string | null;
+  createdBy?: string | null;
+  channelName?: string | null;
+  waitingOnDependency?: boolean;
+  dependsOn?: string[];
+  dependencies?: WorkspaceAgentTaskDependency[];
+  result?: string | null;
+  updatedAt?: string | null;
+  claimedAt?: string | null;
 }
 
 /** Per-skill install status stored under enabledSkills.skill_status[skillId]. */
@@ -335,6 +363,30 @@ export interface NetworkAgent {
   managed_metadata?: Record<string, unknown> | null;
   activity_summary?: string | null;
   current_channel?: string | null;
+  active_task?: {
+    id: string;
+    title: string;
+    description?: string | null;
+    status: string;
+    priority?: string | null;
+    assignee?: string | null;
+    claimed_by?: string | null;
+    created_by?: string | null;
+    channel_name?: string | null;
+    waiting_on_dependency?: boolean;
+    depends_on?: string[];
+    dependencies?: Array<{
+      id: string;
+      title: string;
+      status: string;
+      assignee?: string | null;
+      claimed_by?: string | null;
+      updated_at?: string | null;
+    }>;
+    result?: string | null;
+    updated_at?: string | null;
+    claimed_at?: string | null;
+  } | null;
   last_heartbeat_at: string | null;
   joined_at: string | null;
 }
@@ -460,6 +512,30 @@ export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgen
     hasActiveWork: agent.has_active_work ?? false,
     activitySummary: agent.activity_summary || null,
     currentChannel: agent.current_channel || null,
+    activeTask: agent.active_task ? {
+      id: agent.active_task.id,
+      title: agent.active_task.title,
+      description: agent.active_task.description || null,
+      status: agent.active_task.status,
+      priority: agent.active_task.priority || null,
+      assignee: agent.active_task.assignee || null,
+      claimedBy: agent.active_task.claimed_by || null,
+      createdBy: agent.active_task.created_by || null,
+      channelName: agent.active_task.channel_name || null,
+      waitingOnDependency: agent.active_task.waiting_on_dependency || false,
+      dependsOn: agent.active_task.depends_on || [],
+      dependencies: (agent.active_task.dependencies || []).map((dependency) => ({
+        id: dependency.id,
+        title: dependency.title,
+        status: dependency.status,
+        assignee: dependency.assignee || null,
+        claimedBy: dependency.claimed_by || null,
+        updatedAt: dependency.updated_at || null,
+      })),
+      result: agent.active_task.result || null,
+      updatedAt: agent.active_task.updated_at || null,
+      claimedAt: agent.active_task.claimed_at || null,
+    } : null,
     modelProvider: agent.model_provider || null,
     model: agent.model || agent.model_name || null,
     modelName: agent.model_name || agent.model || null,

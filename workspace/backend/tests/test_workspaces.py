@@ -138,11 +138,13 @@ class TestGetWorkspace:
             workspace_id=workspace["id"],
             channel_name="general",
             title="ENG-124 detail progress",
+            description="Detailed workspace task context",
             status="in_progress",
             priority="normal",
             assignee="agent-beta",
             claimed_by="agent-beta",
             created_by="agent-alpha",
+            result="Workspace task latest result",
         )
         db.add(task)
         db.commit()
@@ -158,6 +160,9 @@ class TestGetWorkspace:
         assert beta["hasActiveWork"] is True
         assert beta["activitySummary"] == "进行中: ENG-124 detail progress"
         assert beta["activeTask"]["id"] == task.id
+        assert beta["activeTask"]["description"] == "Detailed workspace task context"
+        assert beta["activeTask"]["result"] == "Workspace task latest result"
+        assert beta["activeTask"]["channelName"] == "general"
 
     def test_get_nonexistent_workspace(self, client):
         """Nonexistent workspace returns 404."""

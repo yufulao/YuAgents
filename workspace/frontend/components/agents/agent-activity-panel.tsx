@@ -9,6 +9,7 @@ import {
   Circle,
   CircleStop,
   Clock,
+  ListTodo,
   Loader2,
   Pencil,
   RefreshCw,
@@ -141,6 +142,20 @@ function getAgentActivities(
     });
 }
 
+function shortText(value: string | null | undefined, maxLength = 420) {
+  const text = (value || '').trim();
+  if (!text) return '';
+  return text.length > maxLength ? `${text.slice(0, maxLength).trim()}...` : text;
+}
+
+function taskStatusLabel(status: string | null | undefined) {
+  if (status === 'in_progress') return '进行中';
+  if (status === 'todo') return '待处理';
+  if (status === 'done') return '已完成';
+  if (status === 'cancelled') return '已取消';
+  return status || '未知';
+}
+
 export function AgentActivityPanel({
   agents,
   sessions,
@@ -224,9 +239,54 @@ export function AgentActivityPanel({
                   </div>
                 </div>
                 <div className="ml-7 mt-1 min-w-0 max-w-full overflow-hidden">
-                  <p className="whitespace-normal break-words text-[11px] leading-snug text-muted-foreground line-clamp-2">
+                  <p className="whitespace-normal break-words text-[11px] leading-snug text-muted-foreground">
                     {activity.summary}
                   </p>
+                  {activity.agent.activeTask && (
+                    <div className="mt-1.5 space-y-1 rounded-md border border-border/70 bg-muted/30 px-2 py-1.5">
+                      <div className="flex min-w-0 items-start gap-1.5">
+                        <ListTodo className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            <span className="break-words text-[11px] font-medium leading-snug">
+                              {activity.agent.activeTask.title}
+                            </span>
+                            <span className="shrink-0 rounded border px-1 py-px text-[10px] text-muted-foreground">
+                              {activity.agent.activeTask.waitingOnDependency ? '等待依赖' : taskStatusLabel(activity.agent.activeTask.status)}
+                            </span>
+                          </div>
+                          {activity.agent.activeTask.dependencies && activity.agent.activeTask.dependencies.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {activity.agent.activeTask.dependencies.map((dependency) => (
+                                <span
+                                  key={dependency.id}
+                                  className="max-w-full truncate rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                                  title={dependency.title}
+                                >
+                                  依赖 {dependency.title}: {taskStatusLabel(dependency.status)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {shortText(activity.agent.activeTask.result) && (
+                            <p className="mt-1 whitespace-pre-wrap break-words text-[10.5px] leading-snug text-foreground/80">
+                              {shortText(activity.agent.activeTask.result)}
+                            </p>
+                          )}
+                          {!shortText(activity.agent.activeTask.result) && shortText(activity.agent.activeTask.description) && (
+                            <p className="mt-1 whitespace-pre-wrap break-words text-[10.5px] leading-snug text-foreground/70">
+                              {shortText(activity.agent.activeTask.description)}
+                            </p>
+                          )}
+                          {activity.agent.activeTask.updatedAt && (
+                            <p className="mt-1 text-[10px] text-muted-foreground">
+                              更新 {timeAgo(activity.agent.activeTask.updatedAt)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );

@@ -7,6 +7,7 @@ import {
   Copy,
   Cpu,
   Folder,
+  ListTodo,
   Monitor,
   Pencil,
   Power,
@@ -25,6 +26,20 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+
+function shortText(value: string | null | undefined, maxLength = 1200) {
+  const text = (value || '').trim();
+  if (!text) return '';
+  return text.length > maxLength ? `${text.slice(0, maxLength).trim()}...` : text;
+}
+
+function taskStatusLabel(status: string | null | undefined) {
+  if (status === 'in_progress') return '进行中';
+  if (status === 'todo') return '待处理';
+  if (status === 'done') return '已完成';
+  if (status === 'cancelled') return '已取消';
+  return status || '未知';
+}
 
 export function AgentProfilePanel() {
   const { selectedAgentName, setSelectedAgentName, isMobile, agentPanelWidth, setAgentPanelWidth } = useLayout();
@@ -361,6 +376,67 @@ export function AgentProfilePanel() {
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-3.5">
+          {agent.activeTask && (
+            <div className="overflow-hidden rounded-lg border">
+              <div className="flex items-center justify-between border-b px-3.5 py-2.5">
+                <span className="flex items-center gap-1.5 text-xs font-medium">
+                  <ListTodo className="size-3.5 text-muted-foreground" />
+                  当前进度
+                </span>
+                <span className={cn(
+                  'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                  agent.activeTask.waitingOnDependency
+                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                    : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+                )}>
+                  {agent.activeTask.waitingOnDependency ? '等待依赖' : taskStatusLabel(agent.activeTask.status)}
+                </span>
+              </div>
+              <div className="space-y-3 p-3.5">
+                <div>
+                  <div className="break-words text-[13px] font-medium leading-snug">{agent.activeTask.title}</div>
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                    {agent.activeTask.channelName && <span>线程 {agent.activeTask.channelName}</span>}
+                    {agent.activeTask.updatedAt && <span>更新 {new Date(agent.activeTask.updatedAt).toLocaleString()}</span>}
+                    {agent.activeTask.claimedBy && <span>负责人 {agent.activeTask.claimedBy}</span>}
+                  </div>
+                </div>
+
+                {agent.activeTask.dependencies && agent.activeTask.dependencies.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-medium text-muted-foreground">依赖</div>
+                    <div className="space-y-1">
+                      {agent.activeTask.dependencies.map((dependency) => (
+                        <div key={dependency.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5">
+                          <span className="min-w-0 truncate text-[11px]" title={dependency.title}>{dependency.title}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">{taskStatusLabel(dependency.status)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {shortText(agent.activeTask.result) && (
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-medium text-muted-foreground">最近写回</div>
+                    <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-2.5 py-2 text-[12px] leading-relaxed">
+                      {shortText(agent.activeTask.result)}
+                    </p>
+                  </div>
+                )}
+
+                {!shortText(agent.activeTask.result) && shortText(agent.activeTask.description) && (
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-medium text-muted-foreground">任务说明</div>
+                    <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-2.5 py-2 text-[12px] leading-relaxed">
+                      {shortText(agent.activeTask.description)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="overflow-hidden rounded-lg border">
             <div className="border-b px-3.5 py-2.5">
               <span className="text-xs font-medium">说明</span>

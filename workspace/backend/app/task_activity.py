@@ -22,6 +22,7 @@ DONE_DEPENDENCY_STATUSES = {"done", "cancelled"}
 class AgentTaskActivity:
     task: WorkspaceTask
     waiting_on_dependency: bool
+    dependencies: tuple[WorkspaceTask, ...] = ()
 
 
 def _parse_depends_on(value: Any) -> list[str]:
@@ -48,7 +49,7 @@ def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, A
     tasks = db.execute(
         select(WorkspaceTask).where(WorkspaceTask.workspace_id == str(workspace_id))
     ).scalars().all()
-    status_by_id = {str(task.id): task.status for task in tasks}
+    task_by_id = {str(task.id): task for task in tasks}
     active_tasks = [
         task for task in tasks
         if task.status in ACTIVE_TASK_STATUSES and (task.claimed_by or task.assignee)
@@ -60,12 +61,16 @@ def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, A
         agent_name = task.claimed_by or task.assignee
         if not agent_name or agent_name in by_agent:
             continue
-        waiting = any(
-            status_by_id.get(dep) not in DONE_DEPENDENCY_STATUSES
-            for dep in _parse_depends_on(task.depends_on)
-            if dep in status_by_id
+        dependencies = tuple(
+            task_by_id[dep] for dep in _parse_depends_on(task.depends_on)
+            if dep in task_by_id
         )
-        by_agent[agent_name] = AgentTaskActivity(task=task, waiting_on_dependency=waiting)
+        waiting = any(dep.status not in DONE_DEPENDENCY_STATUSES for dep in dependencies)
+        by_agent[agent_name] = AgentTaskActivity(
+            task=task,
+            waiting_on_dependency=waiting,
+            dependencies=dependencies,
+        )
     return by_agent
 
 
@@ -79,17 +84,68 @@ def task_activity_summary(activity: AgentTaskActivity) -> str:
     return f"{prefix}: {task.title}"
 
 
-def task_activity_payload(activity: AgentTaskActivity | None) -> dict[str, Any] | None:
-    if activity is None:
-        return None
-    task = activity.task
+def _dependency_payload(task: WorkspaceTask, camel_case: bool) -> dict[str, Any]:
+    if camel_case:
+        return {
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "assignee": task.assignee,
+            "claimedBy": task.claimed_by,
+            "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+        }
     return {
         "id": task.id,
         "title": task.title,
         "status": task.status,
         "assignee": task.assignee,
         "claimed_by": task.claimed_by,
+        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
+
+
+def task_activity_payload(
+    activity: AgentTaskActivity | None,
+    *,
+    camel_case: bool = False,
+) -> dict[str, Any] | None:
+    if activity is None:
+        return None
+    task = activity.task
+    dependencies = [_dependency_payload(dep, camel_case) for dep in activity.dependencies]
+    depends_on = _parse_depends_on(task.depends_on)
+    if camel_case:
+        return {
+            "id": task.id,
+            "title": task.title,
+            "description": task.description,
+            "status": task.status,
+            "priority": task.priority,
+            "assignee": task.assignee,
+            "claimedBy": task.claimed_by,
+            "createdBy": task.created_by,
+            "channelName": task.channel_name,
+            "waitingOnDependency": activity.waiting_on_dependency,
+            "dependsOn": depends_on,
+            "dependencies": dependencies,
+            "result": task.result,
+            "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+            "claimedAt": task.claimed_at.isoformat() if task.claimed_at else None,
+        }
+    return {
+        "id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "status": task.status,
+        "priority": task.priority,
+        "assignee": task.assignee,
+        "claimed_by": task.claimed_by,
+        "created_by": task.created_by,
         "channel_name": task.channel_name,
         "waiting_on_dependency": activity.waiting_on_dependency,
+        "depends_on": depends_on,
+        "dependencies": dependencies,
+        "result": task.result,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        "claimed_at": task.claimed_at.isoformat() if task.claimed_at else None,
     }

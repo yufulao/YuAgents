@@ -243,7 +243,7 @@ def _format_member_agent(
         "credentialRef": cfg.credential_ref if cfg else None,
         "activitySummary": activity_summary,
         "currentChannel": current_channel,
-        "activeTask": task_activity_payload(task_activity),
+        "activeTask": task_activity_payload(task_activity, camel_case=True),
         "managedMetadata": metadata,
         "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
         "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
