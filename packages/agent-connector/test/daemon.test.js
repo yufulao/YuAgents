@@ -421,6 +421,8 @@ describe('Daemon', () => {
     assert.deepEqual(sent, [
       '**Running:** `workspace API request` (exit 0)',
       '**Running:** `git status --short --branch` (exit 0)',
+      '**Running:** `different command` (exit 0)',
+      '**Running:** `another different command` (exit 0)',
     ]);
   });
 
@@ -624,7 +626,7 @@ describe('Daemon', () => {
     assert.equal(adapter._channelQueues.general[0].messageId, 'event-agent');
   });
 
-  it('BaseAdapter does not emit visible queue status for human messages', async () => {
+  it('BaseAdapter restores visible queue status for human messages', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
       channelName: 'general',
@@ -645,7 +647,7 @@ describe('Daemon', () => {
       content: 'please continue',
     });
 
-    assert.equal(statusCount, 0);
+    assert.equal(statusCount, 1);
     assert.equal(adapter._channelQueues.general.length, 1);
     assert.equal(adapter._channelQueues.general[0].messageId, 'event-human');
   });
