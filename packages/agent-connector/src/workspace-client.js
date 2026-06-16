@@ -159,7 +159,7 @@ class WorkspaceClient {
    */
   async sendMessage(workspaceId, channelName, token, content, {
     senderType = 'agent', senderName, messageType = 'chat', metadata, attachments, sessionId,
-    spec, specToolCallId,
+    spec, specToolCallId, details,
   } = {}) {
     const sourcePrefix = senderType === 'agent' ? 'openagents' : 'human';
     const source = senderName ? `${sourcePrefix}:${senderName}` : `${sourcePrefix}:unknown`;
@@ -168,6 +168,7 @@ class WorkspaceClient {
     if (attachments && attachments.length) payload.attachments = attachments;
     if (spec) payload.spec = spec;
     if (specToolCallId) payload.spec_tool_call_id = specToolCallId;
+    if (details && Array.isArray(details) && details.length) payload.details = details;
 
     return this.sendEvent(workspaceId, {
       type: 'workspace.message.posted',

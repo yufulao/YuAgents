@@ -474,6 +474,12 @@ class CodexAdapter extends BaseAdapter {
             hasToolUseSinceLastText = true;
             const cmdText = this._summarizeCommandForStatus(item.command || '');
             const exitCode = item.exit_code;
+            this._recordProcessDetail(msgChannel, {
+              kind: 'command',
+              label: '命令',
+              value: cmdText,
+              exit_code: exitCode,
+            });
             if (this._emitCommandStatus) {
               const status = this._formatCommandStatus(item.command || '', exitCode);
               try { await this.sendStatus(msgChannel, status); } catch {}
@@ -482,6 +488,11 @@ class CodexAdapter extends BaseAdapter {
           } else if (item.type === 'file_change') {
             hasToolUseSinceLastText = true;
             const filename = item.filename || '';
+            this._recordProcessDetail(msgChannel, {
+              kind: 'edit',
+              label: '编辑',
+              value: filename,
+            });
             if (this._emitCommandStatus) {
               try { await this.sendStatus(msgChannel, `**Editing:** \`${filename}\``); } catch {}
             }
