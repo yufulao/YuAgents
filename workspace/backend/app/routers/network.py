@@ -76,6 +76,9 @@ class HeartbeatRequest(BaseModel):
     network: str
     session_id: Optional[str] = None  # issued by /v1/join; mismatch → session_revoked
     activity_state: Optional[str] = None  # "idle" clears stale thinking/running UI state
+    activity_summary: Optional[str] = None
+    activity_details: Optional[list[dict]] = None
+    current_channel: Optional[str] = None
 
 class ComposingRequest(BaseModel):
     network: str
@@ -301,6 +304,9 @@ async def heartbeat(
             "agent_name": body.agent_name,
             "session_id": body.session_id,
             "activity_state": body.activity_state,
+            "activity_summary": body.activity_summary,
+            "activity_details": body.activity_details,
+            "current_channel": body.current_channel,
         },
     )
 

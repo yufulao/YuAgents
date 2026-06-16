@@ -377,6 +377,55 @@ class TestHeartbeat:
         assert cfg.config_metadata["activity_summary"] == "cmake --build --preset windows-fast-gate"
         assert cfg.config_metadata["current_channel"] == "general"
 
+    def test_active_heartbeat_updates_live_activity_detail(self, client, workspace, db):
+        """Detailed heartbeats project the current command into human-facing status."""
+        from app.models import AgentConfig, WorkspaceMember
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+        sid = joined.json()["data"]["session_id"]
+
+        cfg = AgentConfig(
+            workspace_id=workspace["id"],
+            handle="agent-beta",
+            display_name="agent-beta",
+            avatar={"type": "pixel", "value": "test"},
+            agent_type="codex",
+            config_metadata={
+                "lifecycle_state": "online",
+                "activity_summary": "",
+                "current_channel": None,
+            },
+        )
+        db.add(cfg)
+        db.commit()
+
+        resp = client.post("/v1/heartbeat", json={
+            "agent_name": "agent-beta",
+            "network": workspace["id"],
+            "session_id": sid,
+            "activity_state": "running_command",
+            "activity_summary": "命令: cmake --build --preset windows-fast-gate",
+            "activity_details": [
+                {"kind": "command", "label": "命令", "value": "cmake --build --preset windows-fast-gate"},
+            ],
+            "current_channel": "channel-main",
+        })
+        assert resp.status_code == 200
+
+        db.refresh(cfg)
+        member = db.get(WorkspaceMember, (workspace["id"], "agent-beta"))
+        assert member.status == "running_command"
+        assert cfg.config_metadata["lifecycle_state"] == "running_command"
+        assert cfg.config_metadata["activity_summary"] == "命令: cmake --build --preset windows-fast-gate"
+        assert cfg.config_metadata["activity_details"][0]["value"] == "cmake --build --preset windows-fast-gate"
+        assert cfg.config_metadata["current_channel"] == "channel-main"
+
     def test_heartbeat_unknown_agent(self, client, workspace):
         """Heartbeat for non-member is a no-op but still succeeds (event recorded)."""
         resp = client.post("/v1/heartbeat", json={
