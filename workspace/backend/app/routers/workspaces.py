@@ -42,6 +42,13 @@ from app.models import (
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _workspace_filter
 from app.services.local_agent_control import LocalAgentControlError, control_local_agent
+from app.task_activity import (
+    AgentTaskActivity,
+    active_task_activity_by_agent,
+    active_task_activity_for_agent,
+    task_activity_payload,
+    task_activity_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -181,11 +188,29 @@ def _merge_enabled_skills(member_skills: dict | None, cfg_skills: dict | None) -
     return merged or None
 
 
-def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | None = None) -> dict:
+def _format_member_agent(
+    m: WorkspaceMember,
+    now: datetime,
+    cfg: AgentConfig | None = None,
+    task_activity: AgentTaskActivity | None = None,
+) -> dict:
     display_name = cfg.display_name if cfg else m.agent_name
     avatar = cfg.avatar if cfg else _default_avatar(m.agent_name)
     metadata = (cfg.config_metadata if cfg else None) or {}
-    projected = project_agent_status(m, now, AGENT_TIMEOUT, cfg)
+    projected = project_agent_status(
+        m,
+        now,
+        AGENT_TIMEOUT,
+        cfg,
+        active_task=task_activity is not None,
+        waiting_on_dependency=task_activity.waiting_on_dependency if task_activity else False,
+    )
+    metadata_state = str(metadata.get("lifecycle_state") or "").lower()
+    activity_summary = metadata.get("activity_summary")
+    current_channel = metadata.get("current_channel")
+    if task_activity and (not activity_summary or metadata_state in {"", "idle", "online", "offline", "stopped"}):
+        activity_summary = task_activity_summary(task_activity)
+        current_channel = current_channel or task_activity.task.channel_name
     return {
         "id": cfg.id if cfg else f"{m.workspace_id}:{m.agent_name}",
         "handle": m.agent_name,
@@ -216,16 +241,31 @@ def _format_member_agent(m: WorkspaceMember, now: datetime, cfg: AgentConfig | N
         "mode": cfg.mode if cfg else None,
         "quality": cfg.quality if cfg else None,
         "credentialRef": cfg.credential_ref if cfg else None,
-        "activitySummary": metadata.get("activity_summary"),
-        "currentChannel": metadata.get("current_channel"),
+        "activitySummary": activity_summary,
+        "currentChannel": current_channel,
+        "activeTask": task_activity_payload(task_activity),
         "managedMetadata": metadata,
         "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
         "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
     }
 
 
-def _format_workspace(ws: Workspace, members: list, now: datetime) -> dict:
-    agents = [_format_member_agent(m, now, getattr(m, "_agent_config", None)) for m in members]
+def _format_workspace(
+    ws: Workspace,
+    members: list,
+    now: datetime,
+    task_activity_by_agent: dict[str, AgentTaskActivity] | None = None,
+) -> dict:
+    task_activity_by_agent = task_activity_by_agent or {}
+    agents = [
+        _format_member_agent(
+            m,
+            now,
+            getattr(m, "_agent_config", None),
+            task_activity_by_agent.get(m.agent_name),
+        )
+        for m in members
+    ]
 
     settings = ws.settings or {}
     return {
@@ -417,7 +457,15 @@ def list_workspaces(
     for ws in workspaces:
         _attach_agent_configs(db, str(ws.id), ws.members)
 
-    results = [_format_workspace(ws, ws.members, now) for ws in workspaces]
+    results = [
+        _format_workspace(
+            ws,
+            ws.members,
+            now,
+            active_task_activity_by_agent(db, str(ws.id)),
+        )
+        for ws in workspaces
+    ]
 
     return success_response(results)
 
@@ -483,7 +531,12 @@ def resolve_workspace(
     _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
-    return success_response(_format_workspace(workspace, members, now))
+    return success_response(_format_workspace(
+        workspace,
+        members,
+        now,
+        active_task_activity_by_agent(db, str(workspace.id)),
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +567,12 @@ def get_workspace(
     _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
-    return success_response(_format_workspace(workspace, members, now))
+    return success_response(_format_workspace(
+        workspace,
+        members,
+        now,
+        active_task_activity_by_agent(db, str(workspace.id)),
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +630,12 @@ def update_workspace(
     _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
-    return success_response(_format_workspace(workspace, members, now))
+    return success_response(_format_workspace(
+        workspace,
+        members,
+        now,
+        active_task_activity_by_agent(db, str(workspace.id)),
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -620,7 +683,12 @@ def claim_workspace(
     _attach_agent_configs(db, str(workspace.id), members)
 
     now = datetime.now(timezone.utc)
-    return success_response(_format_workspace(workspace, members, now))
+    return success_response(_format_workspace(
+        workspace,
+        members,
+        now,
+        active_task_activity_by_agent(db, str(workspace.id)),
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -819,7 +887,12 @@ def create_managed_agent(
     db.commit()
 
     now = datetime.now(timezone.utc)
-    return success_response(_format_member_agent(member, now, cfg))
+    return success_response(_format_member_agent(
+        member,
+        now,
+        cfg,
+        active_task_activity_for_agent(db, str(workspace.id), member.agent_name),
+    ))
 
 
 @router.patch("/{workspace_id}/agents/{agent_name}")
@@ -937,7 +1010,12 @@ def control_managed_agent(
     db.commit()
 
     return success_response({
-        "agent": _format_member_agent(member, now, cfg),
+        "agent": _format_member_agent(
+            member,
+            now,
+            cfg,
+            active_task_activity_for_agent(db, str(workspace.id), member.agent_name),
+        ),
         "control": result,
     })
 
@@ -1108,7 +1186,12 @@ def update_member(
     db.commit()
 
     now = datetime.now(timezone.utc)
-    return success_response(_format_member_agent(member, now, cfg))
+    return success_response(_format_member_agent(
+        member,
+        now,
+        cfg,
+        active_task_activity_for_agent(db, str(workspace.id), member.agent_name),
+    ))
 
 
 # ---------------------------------------------------------------------------
