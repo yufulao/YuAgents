@@ -97,6 +97,7 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
   const scrollIntentRef = useRef(0);
   const programmaticBottomScrollRef = useRef(false);
   const previousContentKeyRef = useRef('');
+  const previousScrollKeyRef = useRef(scrollKey ?? 0);
 
   // Separate loading indicators (optimistic) from real messages
   const loadingMessages = useMemo(() => messages.filter((m) => m.messageType === 'loading'), [messages]);
@@ -200,9 +201,11 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
 
   // Force scroll when scrollKey changes (user sent a message).
   useEffect(() => {
-    if (scrollKey) {
+    const nextScrollKey = scrollKey ?? 0;
+    if (nextScrollKey > previousScrollKeyRef.current) {
       requestAnimationFrame(() => scrollToBottom());
     }
+    previousScrollKeyRef.current = nextScrollKey;
   }, [scrollKey, scrollToBottom]);
 
   // Track scroll position for "scroll to bottom" button + infinite scroll upward
