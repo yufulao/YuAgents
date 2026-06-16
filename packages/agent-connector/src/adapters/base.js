@@ -753,7 +753,16 @@ class BaseAdapter {
       msg._queueId = queueId;
       msg._queuedAt = Date.now();
       this._channelQueues[channel].push(msg);
-      this._log(`Queued message ${queueId} in ${channel}`);
+      if ((msg.senderType || '') !== 'agent') {
+        try {
+          await this.sendStatus(channel, 'message queued — will process after current task', {
+            queued_message: (msg.content || '').slice(0, 200),
+            queue_id: queueId,
+          });
+        } catch {}
+      } else {
+        this._log(`Queued message ${queueId} in ${channel}`);
+      }
       return;
     }
 
@@ -795,7 +804,11 @@ class BaseAdapter {
       if (await this._dropStaleQueuedMessage(channel, nextMsg)) {
         continue;
       }
-      if (nextMsg._queueId) this._log(`Processing queued message ${nextMsg._queueId} in ${channel}`);
+        if (nextMsg._queueId && (nextMsg.senderType || '') !== 'agent') {
+          try { await this.sendStatus(channel, 'processing queued message', { queue_id: nextMsg._queueId, queue_status: 'processed' }); } catch {}
+        } else if (nextMsg._queueId) {
+          this._log(`Processing queued message ${nextMsg._queueId} in ${channel}`);
+        }
       try {
         await this._handleMessage(nextMsg);
         await this._ackMessage(nextMsg);
@@ -963,8 +976,6 @@ class BaseAdapter {
 
   _statusDedupeKey(channel, content) {
     if (/workspace api request/i.test(content)) return `${channel || ''}\n<workspace-api-status>`;
-    if (/^\*\*Running:\*\*/i.test(content)) return `${channel || ''}\n<command-status>`;
-    if (/^\*\*Editing:\*\*/i.test(content)) return `${channel || ''}\n<editing-status>`;
     return `${channel || ''}\n${content}`;
   }
 
