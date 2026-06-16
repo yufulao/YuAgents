@@ -64,6 +64,7 @@ class BaseAdapter {
     this._agentQueueTtlMs = Number.parseInt(this.agentEnv.OPENAGENTS_AGENT_QUEUE_TTL_MS || '', 10) || STALE_AGENT_QUEUE_MS;
     this._statusDedupeMs = Number.parseInt(this.agentEnv.OPENAGENTS_STATUS_DEDUPE_MS || '', 10) || STATUS_DEDUPE_MS;
     this._recentStatusPosts = new Map();
+    this._pendingProcessDetails = new Map();
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
     this._channelQueues = {};
@@ -901,7 +902,10 @@ class BaseAdapter {
     const cleanContent = this._sanitizeStatusContent(content);
     if (!cleanContent) return;
     const metadata = this._sanitizeStatusMetadata({ agent_mode: this._mode, ...extraMeta });
-    if (this._shouldSuppressStatus(channel, cleanContent, metadata)) return;
+    if (this._shouldSuppressStatus(channel, cleanContent, metadata)) {
+      this._recordProcessDetail(channel, this._processDetailFromStatus(cleanContent, metadata));
+      return;
+    }
     try {
       await this.client.sendMessage(this.workspaceId, channel, this.token, cleanContent, {
         senderType: 'agent',
@@ -967,6 +971,44 @@ class BaseAdapter {
     return value;
   }
 
+  _processDetailFromStatus(content, metadata = {}) {
+    const running = String(content || '').match(/\*\*Running:\*\*\s*`([^`]+)`(?:\s*\(exit\s*([^)]+)\))?/i);
+    if (running) {
+      const detail = { kind: 'command', label: '命令', value: running[1] };
+      if (running[2]) detail.exit_code = running[2];
+      return detail;
+    }
+    const editing = String(content || '').match(/\*\*Editing:\*\*\s*`([^`]+)`/i);
+    if (editing) return { kind: 'edit', label: '编辑', value: editing[1] };
+    return {
+      kind: 'status',
+      label: metadata && metadata.queue_status ? '队列状态' : '状态',
+      value: content,
+    };
+  }
+
+  _recordProcessDetail(channel, detail) {
+    if (!channel || !detail || typeof detail !== 'object') return;
+    const value = this._redactSensitiveText(detail.value || detail.content || detail.text || '').trim();
+    if (!value) return;
+    const label = this._redactSensitiveText(detail.label || detail.kind || '过程').trim() || '过程';
+    const clean = {
+      ...detail,
+      label: label.slice(0, 40),
+      value: value.length > 1000 ? `${value.slice(0, 997)}...` : value,
+      at: detail.at || new Date().toISOString(),
+    };
+    const list = this._pendingProcessDetails.get(channel) || [];
+    list.push(this._sanitizeStatusMetadata(clean));
+    this._pendingProcessDetails.set(channel, list.slice(-40));
+  }
+
+  _drainProcessDetails(channel) {
+    const list = this._pendingProcessDetails.get(channel) || [];
+    this._pendingProcessDetails.delete(channel);
+    return list;
+  }
+
   _redactSensitiveText(value) {
     if (value === null || value === undefined) return '';
     return String(value)
@@ -1000,8 +1042,12 @@ class BaseAdapter {
     }
   }
 
-  async sendResponse(channel, content) {
+  async sendResponse(channel, content, opts = {}) {
     const { cleanContent, spec, specToolCallId } = extractA2UISpec(content);
+    const suppliedDetails = Array.isArray(opts.details) ? opts.details : [];
+    const details = [...this._drainProcessDetails(channel), ...suppliedDetails]
+      .filter((detail) => detail && typeof detail === 'object')
+      .map((detail) => this._sanitizeStatusMetadata(detail));
     try {
       await this.client.sendMessage(this.workspaceId, channel, this.token, cleanContent, {
         senderType: 'agent',
@@ -1009,6 +1055,7 @@ class BaseAdapter {
         sessionId: this._sessionId,
         spec,
         specToolCallId,
+        details,
       });
     } catch (e) {
       if (e instanceof SessionRevokedError) {

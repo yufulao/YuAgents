@@ -80,4 +80,27 @@ describe('CodexAdapter', () => {
     assert.equal(adapter._streamAgentThinking, true);
     assert.equal(adapter._emitCommandStatus, true);
   });
+
+  it('attaches hidden process details to the final response', async () => {
+    const adapter = makeAdapter();
+    let sentOptions = null;
+    adapter.client = {
+      sendMessage: async (_workspaceId, _channel, _token, _content, options) => {
+        sentOptions = options;
+      },
+    };
+
+    adapter._recordProcessDetail('session-test', {
+      kind: 'command',
+      label: '命令',
+      value: 'npm test',
+      exit_code: 0,
+    });
+    await adapter.sendResponse('session-test', 'done');
+
+    assert.equal(sentOptions.details.length, 1);
+    assert.equal(sentOptions.details[0].kind, 'command');
+    assert.equal(sentOptions.details[0].label, '命令');
+    assert.equal(sentOptions.details[0].value, 'npm test');
+  });
 });
