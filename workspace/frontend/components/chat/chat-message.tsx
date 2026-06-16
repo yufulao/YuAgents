@@ -278,16 +278,75 @@ const PROCESS_METADATA_LABELS: Record<string, string> = {
   status: '状态',
 };
 
+const DETAIL_BLOCKED_KEYS = new Set([
+  'prompt',
+  'raw_prompt',
+  'system_prompt',
+  'systemPrompt',
+  'fullPrompt',
+  'messages',
+  'token',
+  'authorization',
+  'api_key',
+  'apiKey',
+]);
+
 function detailValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(detailValue).filter(Boolean).join('\n');
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
     return Object.entries(record)
-      .filter(([, entry]) => entry !== undefined && entry !== null && String(entry).trim() !== '')
+      .filter(([key, entry]) => !DETAIL_BLOCKED_KEYS.has(key) && entry !== undefined && entry !== null && String(entry).trim() !== '')
       .map(([key, entry]) => `${key}: ${detailValue(entry)}`)
       .join('\n');
   }
   return String(value ?? '').trim();
+}
+
+function detailLabelFromKind(kind: string): string {
+  const normalized = kind.trim().toLowerCase();
+  if (normalized === 'command' || normalized === 'tool' || normalized === 'tool_call') return '命令';
+  if (normalized === 'edit' || normalized === 'file_change' || normalized === 'file') return '编辑';
+  if (normalized === 'thinking' || normalized === 'thought') return '思考';
+  if (normalized === 'todo' || normalized === 'todos') return 'To-do';
+  if (normalized === 'status' || normalized === 'progress') return '状态';
+  return kind.trim() || '详情';
+}
+
+function payloadProcessDetails(raw: unknown): ProcessDetail[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.flatMap(payloadProcessDetails);
+  }
+  if (typeof raw !== 'object') {
+    const value = detailValue(raw);
+    return value ? [{ label: '详情', value }] : [];
+  }
+
+  const record = raw as Record<string, unknown>;
+  const nested = record.details || record.process_details || record.processDetails || record.steps;
+  if (Array.isArray(nested)) return payloadProcessDetails(nested);
+
+  const rawLabel = record.label || record.title || record.name || record.kind || record.type;
+  const label = typeof rawLabel === 'string' ? detailLabelFromKind(rawLabel) : '详情';
+  const value = detailValue(
+    record.value ??
+    record.content ??
+    record.text ??
+    record.summary ??
+    record.command ??
+    record.path ??
+    record.filename ??
+    Object.fromEntries(Object.entries(record).filter(([key]) => (
+      key !== 'label' &&
+      key !== 'title' &&
+      key !== 'name' &&
+      key !== 'kind' &&
+      key !== 'type' &&
+      !DETAIL_BLOCKED_KEYS.has(key)
+    )))
+  );
+  return value ? [{ label, value }] : [];
 }
 
 function processDetails(message: WorkspaceMessage): ProcessDetail[] {
@@ -480,8 +539,9 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [], pro
   const thread = useMemo(() => getThreadInfo(message), [message]);
   const details = useMemo(() => {
     const stepDetails = stepProcessDetails(processSteps);
+    const payloadDetails = payloadProcessDetails(message.details);
     const messageProcessDetails = processDetails(message);
-    return [...stepDetails, ...messageProcessDetails];
+    return [...stepDetails, ...payloadDetails, ...messageProcessDetails];
   }, [message, processSteps]);
   const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
   const attachments: Attachment[] = rawAttachments.map((a) => ({
