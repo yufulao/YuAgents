@@ -22,15 +22,20 @@ export function MobileHeader() {
   const { viewMode, setViewMode, openMobileList, openMobileDetail } = useLayout();
   const { workspace, createSession, sessions, agents } = useWorkspace();
 
-  // Close sheet when clicking a session
+  // Close sheet when clicking a session or selecting an agent profile.
   useEffect(() => {
     if (isSheetOpen) {
       const handler = () => setIsSheetOpen(false);
-      // Give the session click time to propagate
+      // Give the click time to propagate.
       const timeout = setTimeout(() => {
         document.addEventListener('session-selected', handler, { once: true });
+        document.addEventListener('agent-selected', handler, { once: true });
       }, 0);
-      return () => clearTimeout(timeout);
+      return () => {
+        clearTimeout(timeout);
+        document.removeEventListener('session-selected', handler);
+        document.removeEventListener('agent-selected', handler);
+      };
     }
   }, [isSheetOpen]);
 

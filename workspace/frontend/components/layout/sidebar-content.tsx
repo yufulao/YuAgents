@@ -164,7 +164,7 @@ function SidebarSection({
 
 export function SidebarContent({ forceExpanded = false }: { forceExpanded?: boolean } = {}) {
   const router = useRouter();
-  const { isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName } = useLayout();
+  const { isMobile, isSidebarOpen, sidebarToggle, viewMode, setViewMode, setSelectedAgentName, openMobileDetail } = useLayout();
   const {
     agents,
     sessions,
@@ -234,6 +234,14 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
   const toggleSection = (key: string) => {
     setCollapsedSections((prev) => ({ ...prev, [key]: !(prev[key] ?? false) }));
   };
+  const handleSelectAgent = (agentName: string) => {
+    setSelectedAgentName(agentName);
+    if (isMobile) {
+      setViewMode('threads');
+      openMobileDetail();
+      document.dispatchEvent(new CustomEvent('agent-selected'));
+    }
+  };
 
   const isExpanded = forceExpanded || isSidebarOpen;
 
@@ -259,7 +267,7 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
             <Tooltip key={agent.agentName}>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => setSelectedAgentName(agent.agentName)}
+                  onClick={() => handleSelectAgent(agent.agentName)}
                   className="cursor-pointer rounded-full transition-shadow hover:ring-2 hover:ring-zinc-300 dark:hover:ring-zinc-600"
                 >
                   <AgentAvatar
@@ -338,7 +346,7 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
                     key={agent.agentName}
                     agent={agent}
                     status={agentStatusDot(agent)}
-                    onClick={() => setSelectedAgentName(agent.agentName)}
+                    onClick={() => handleSelectAgent(agent.agentName)}
                   />
                 ))}
               </div>

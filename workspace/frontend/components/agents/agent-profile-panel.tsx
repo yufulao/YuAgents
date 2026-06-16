@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
+  ChevronLeft,
   Check,
   Copy,
   Cpu,
@@ -27,7 +28,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function AgentProfilePanel() {
-  const { selectedAgentName, setSelectedAgentName, isMobile, agentPanelWidth, setAgentPanelWidth } = useLayout();
+  const { selectedAgentName, setSelectedAgentName, isMobile, openMobileList, agentPanelWidth, setAgentPanelWidth } = useLayout();
   const { agents, refreshWorkspace } = useWorkspace();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -213,6 +214,11 @@ export function AgentProfilePanel() {
     }
   }, [agent, isDisabled, refreshWorkspace]);
 
+  const handleClose = useCallback(() => {
+    setSelectedAgentName(null);
+    if (isMobile) openMobileList();
+  }, [isMobile, openMobileList, setSelectedAgentName]);
+
   const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (isMobile) return;
     event.preventDefault();
@@ -285,7 +291,7 @@ export function AgentProfilePanel() {
     <>
       <div
         className="absolute inset-0 z-10 bg-black/10"
-        onClick={() => setSelectedAgentName(null)}
+        onClick={handleClose}
       />
 
       <div
@@ -310,15 +316,36 @@ export function AgentProfilePanel() {
             <span className="my-2 w-px rounded-full bg-border opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
           </div>
         )}
-        <div className="flex items-center justify-end px-3 pt-3">
-          <button
-            onClick={() => setSelectedAgentName(null)}
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
-            title="关闭"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+        {isMobile ? (
+          <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between border-b bg-background px-3">
+            <button
+              onClick={handleClose}
+              className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              title="返回列表"
+            >
+              <ChevronLeft className="size-4" />
+              返回
+            </button>
+            <button
+              onClick={handleClose}
+              className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="关闭 Agent 信息"
+              aria-label="关闭 Agent 信息"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-end px-3 pt-3">
+            <button
+              onClick={handleClose}
+              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+              title="关闭"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
 
         <div className="px-5 pb-4">
           <div className="flex items-center gap-3">
