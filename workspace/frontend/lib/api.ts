@@ -17,7 +17,7 @@ import type {
   WorkspaceFile,
   WorkspaceSession,
 } from './types';
-import { eventToMessage } from './types';
+import { eventToMessage, normalizeWorkspaceAgent } from './types';
 import { getApiUrl } from './api-url';
 
 /** Map snake_case file response from backend to camelCase WorkspaceFile. */
@@ -111,7 +111,11 @@ class WorkspaceApi {
   // ---------------------------------------------------------------------------
 
   async getWorkspace(): Promise<Workspace> {
-    return this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`);
+    const workspace = await this.request<Workspace>(`/v1/workspaces/${this.workspaceId}`);
+    return {
+      ...workspace,
+      agents: (workspace.agents || []).map(normalizeWorkspaceAgent),
+    };
   }
 
   async updateWorkspace(updates: { name?: string; settings?: Record<string, unknown> }): Promise<Workspace> {

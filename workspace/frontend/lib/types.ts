@@ -486,66 +486,76 @@ export function eventToMessage(event: ONMEvent): WorkspaceMessage {
   };
 }
 
-/** Convert a NetworkAgent from discover to a WorkspaceAgent. */
-export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgent {
-  const agentName = agent.handle || agent.address.replace(/^openagents:/, '');
+function normalizeAgentTask(task: any): WorkspaceAgentTask | null {
+  if (!task) return null;
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description || null,
+    status: task.status,
+    priority: task.priority || null,
+    assignee: task.assignee || null,
+    claimedBy: task.claimed_by ?? task.claimedBy ?? null,
+    createdBy: task.created_by ?? task.createdBy ?? null,
+    channelName: task.channel_name ?? task.channelName ?? null,
+    waitingOnDependency: task.waiting_on_dependency ?? task.waitingOnDependency ?? false,
+    dependsOn: task.depends_on ?? task.dependsOn ?? [],
+    dependencies: (task.dependencies || []).map((dependency: any) => ({
+      id: dependency.id,
+      title: dependency.title,
+      status: dependency.status,
+      assignee: dependency.assignee || null,
+      claimedBy: dependency.claimed_by ?? dependency.claimedBy ?? null,
+      updatedAt: dependency.updated_at ?? dependency.updatedAt ?? null,
+    })),
+    result: task.result || null,
+    updatedAt: task.updated_at ?? task.updatedAt ?? null,
+    claimedAt: task.claimed_at ?? task.claimedAt ?? null,
+  };
+}
+
+/** Convert an API agent shape to a WorkspaceAgent. Accepts discover snake_case and workspace-detail camelCase. */
+export function normalizeWorkspaceAgent(agent: any): WorkspaceAgent {
+  const agentName = agent.agentName || agent.handle || (agent.address || '').replace(/^openagents:/, '') || 'agent';
   return {
     id: agent.id || agentName,
     handle: agentName,
     agentName,
-    displayName: agent.display_name || agentName,
+    displayName: agent.displayName ?? agent.display_name ?? agentName,
     avatar: agent.avatar || null,
-    avatarUrl: agent.avatar_url || null,
+    avatarUrl: agent.avatarUrl ?? agent.avatar_url ?? null,
     role: agent.role,
-    agentType: agent.agent_type || null,
-    serverHost: agent.server_host || null,
-    workingDir: agent.working_dir || null,
+    agentType: agent.agentType ?? agent.agent_type ?? null,
+    serverHost: agent.serverHost ?? agent.server_host ?? null,
+    workingDir: agent.workingDir ?? agent.working_dir ?? null,
     description: agent.description || null,
-    enabledSkills: agent.enabled_skills || null,
+    enabledSkills: agent.enabledSkills ?? agent.enabled_skills ?? null,
     status: agent.status,
-    lifecycleState: agent.lifecycle_state || (agent.lifecycle_status === 'disabled' ? 'stopped' : agent.status),
-    presenceStatus: agent.presence_status || agent.status,
-    activityState: agent.activity_state || agent.lifecycle_state || agent.status,
-    workloadState: agent.workload_state || null,
-    displayStatus: agent.display_status || agent.status,
-    isConnected: agent.is_connected ?? agent.status === 'online',
-    hasActiveWork: agent.has_active_work ?? false,
-    activitySummary: agent.activity_summary || null,
-    currentChannel: agent.current_channel || null,
-    activeTask: agent.active_task ? {
-      id: agent.active_task.id,
-      title: agent.active_task.title,
-      description: agent.active_task.description || null,
-      status: agent.active_task.status,
-      priority: agent.active_task.priority || null,
-      assignee: agent.active_task.assignee || null,
-      claimedBy: agent.active_task.claimed_by || null,
-      createdBy: agent.active_task.created_by || null,
-      channelName: agent.active_task.channel_name || null,
-      waitingOnDependency: agent.active_task.waiting_on_dependency || false,
-      dependsOn: agent.active_task.depends_on || [],
-      dependencies: (agent.active_task.dependencies || []).map((dependency) => ({
-        id: dependency.id,
-        title: dependency.title,
-        status: dependency.status,
-        assignee: dependency.assignee || null,
-        claimedBy: dependency.claimed_by || null,
-        updatedAt: dependency.updated_at || null,
-      })),
-      result: agent.active_task.result || null,
-      updatedAt: agent.active_task.updated_at || null,
-      claimedAt: agent.active_task.claimed_at || null,
-    } : null,
-    modelProvider: agent.model_provider || null,
+    lifecycleState: agent.lifecycleState ?? agent.lifecycle_state ?? (agent.lifecycle_status === 'disabled' ? 'stopped' : agent.status),
+    presenceStatus: agent.presenceStatus ?? agent.presence_status ?? agent.status,
+    activityState: agent.activityState ?? agent.activity_state ?? agent.lifecycleState ?? agent.lifecycle_state ?? agent.status,
+    workloadState: agent.workloadState ?? agent.workload_state ?? null,
+    displayStatus: agent.displayStatus ?? agent.display_status ?? agent.status,
+    isConnected: agent.isConnected ?? agent.is_connected ?? agent.status === 'online',
+    hasActiveWork: agent.hasActiveWork ?? agent.has_active_work ?? false,
+    activitySummary: agent.activitySummary ?? agent.activity_summary ?? null,
+    currentChannel: agent.currentChannel ?? agent.current_channel ?? null,
+    activeTask: normalizeAgentTask(agent.activeTask ?? agent.active_task),
+    modelProvider: agent.modelProvider ?? agent.model_provider ?? null,
     model: agent.model || agent.model_name || null,
-    modelName: agent.model_name || agent.model || null,
+    modelName: agent.modelName ?? agent.model_name ?? agent.model ?? null,
     mode: agent.mode || null,
     quality: agent.quality || null,
-    credentialRef: agent.credential_ref || null,
-    managedMetadata: agent.managed_metadata || null,
-    lastHeartbeatAt: agent.last_heartbeat_at || null,
-    joinedAt: agent.joined_at || null,
+    credentialRef: agent.credentialRef ?? agent.credential_ref ?? null,
+    managedMetadata: agent.managedMetadata ?? agent.managed_metadata ?? null,
+    lastHeartbeatAt: agent.lastHeartbeatAt ?? agent.last_heartbeat_at ?? null,
+    joinedAt: agent.joinedAt ?? agent.joined_at ?? null,
   };
+}
+
+/** Convert a NetworkAgent from discover to a WorkspaceAgent. */
+export function networkAgentToWorkspaceAgent(agent: NetworkAgent): WorkspaceAgent {
+  return normalizeWorkspaceAgent(agent);
 }
 
 /** Convert a NetworkChannel from discover to a WorkspaceSession for the thread UI. */
