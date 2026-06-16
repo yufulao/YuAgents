@@ -452,6 +452,44 @@ class TestDiscover:
         assert beta["display_status"] == "online"
         assert beta["has_active_work"] is False
 
+    def test_discover_projects_claimed_task_progress(self, client, workspace, db):
+        """Claimed in-progress tasks keep agent progress visible between messages."""
+        from app.models import WorkspaceTask
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+
+        task = WorkspaceTask(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            title="ENG-123 visible progress",
+            status="in_progress",
+            priority="normal",
+            assignee="agent-beta",
+            claimed_by="agent-beta",
+            created_by="agent-alpha",
+        )
+        db.add(task)
+        db.commit()
+
+        resp = client.get("/v1/discover", params={"network": workspace["id"]},
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        agents = resp.json()["data"]["agents"]
+        beta = next(a for a in agents if a["address"] == "openagents:agent-beta")
+        assert beta["presence_status"] == "online"
+        assert beta["activity_state"] == "thinking"
+        assert beta["workload_state"] == "active"
+        assert beta["display_status"] == "thinking"
+        assert beta["has_active_work"] is True
+        assert beta["activity_summary"] == "进行中: ENG-123 visible progress"
+        assert beta["active_task"]["id"] == task.id
+
     def test_discover_channels(self, client, workspace):
         """Discover shows workspace channels."""
         resp = client.get("/v1/discover", params={"network": workspace["id"]},

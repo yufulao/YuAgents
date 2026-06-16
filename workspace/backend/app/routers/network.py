@@ -35,6 +35,11 @@ from app.database import get_db
 from app.models import AgentConfig, Channel, Workspace, WorkspaceMember
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
+from app.task_activity import (
+    active_task_activity_by_agent,
+    task_activity_payload,
+    task_activity_summary,
+)
 from openagents.core.onm_events import Event
 from openagents.core.onm_mods import EventRejected, PipelineContext
 
@@ -395,12 +400,27 @@ def discover(
         select(AgentConfig).where(AgentConfig.workspace_id == str(workspace.id))
     ).scalars().all()
     configs_by_handle = {c.handle: c for c in configs}
+    task_activity_by_agent = active_task_activity_by_agent(db, str(workspace.id))
 
     agents = []
     for m in members:
         cfg = configs_by_handle.get(m.agent_name)
         metadata = (cfg.config_metadata if cfg else None) or {}
-        projected = project_agent_status(m, now, AGENT_TIMEOUT, cfg)
+        task_activity = task_activity_by_agent.get(m.agent_name)
+        projected = project_agent_status(
+            m,
+            now,
+            AGENT_TIMEOUT,
+            cfg,
+            active_task=task_activity is not None,
+            waiting_on_dependency=task_activity.waiting_on_dependency if task_activity else False,
+        )
+        metadata_state = str(metadata.get("lifecycle_state") or "").lower()
+        activity_summary = metadata.get("activity_summary")
+        current_channel = metadata.get("current_channel")
+        if task_activity and (not activity_summary or metadata_state in {"", "idle", "online", "offline", "stopped"}):
+            activity_summary = task_activity_summary(task_activity)
+            current_channel = current_channel or task_activity.task.channel_name
         agents.append({
             "id": cfg.id if cfg else f"{workspace.id}:{m.agent_name}",
             "address": f"openagents:{m.agent_name}",
@@ -428,8 +448,9 @@ def discover(
             "mode": cfg.mode if cfg else None,
             "quality": cfg.quality if cfg else None,
             "credential_ref": cfg.credential_ref if cfg else None,
-            "activity_summary": metadata.get("activity_summary"),
-            "current_channel": metadata.get("current_channel"),
+            "activity_summary": activity_summary,
+            "current_channel": current_channel,
+            "active_task": task_activity_payload(task_activity),
             "managed_metadata": metadata,
             "last_heartbeat_at": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
             "joined_at": m.joined_at.isoformat() if m.joined_at else None,

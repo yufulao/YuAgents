@@ -122,6 +122,43 @@ class TestGetWorkspace:
         assert agents[0]["agentName"] == "agent-alpha"
         assert agents[0]["role"] == "master"
 
+    def test_get_workspace_projects_claimed_task_progress(self, client, workspace, db):
+        """Workspace agent detail includes active task progress."""
+        from app.models import WorkspaceTask
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+
+        task = WorkspaceTask(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            title="ENG-124 detail progress",
+            status="in_progress",
+            priority="normal",
+            assignee="agent-beta",
+            claimed_by="agent-beta",
+            created_by="agent-alpha",
+        )
+        db.add(task)
+        db.commit()
+
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        beta = next(a for a in resp.json()["data"]["agents"] if a["agentName"] == "agent-beta")
+        assert beta["presenceStatus"] == "online"
+        assert beta["activityState"] == "thinking"
+        assert beta["workloadState"] == "active"
+        assert beta["displayStatus"] == "thinking"
+        assert beta["hasActiveWork"] is True
+        assert beta["activitySummary"] == "进行中: ENG-124 detail progress"
+        assert beta["activeTask"]["id"] == task.id
+
     def test_get_nonexistent_workspace(self, client):
         """Nonexistent workspace returns 404."""
         resp = client.get("/v1/workspaces/nonexistent")

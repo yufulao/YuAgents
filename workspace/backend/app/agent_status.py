@@ -56,6 +56,8 @@ def project_agent_status(
     now: datetime,
     timeout: timedelta,
     cfg: AgentConfig | None = None,
+    active_task: bool = False,
+    waiting_on_dependency: bool = False,
 ) -> dict[str, str | bool]:
     metadata = _metadata(cfg)
     raw_status = str(member.status or "offline")
@@ -101,6 +103,9 @@ def project_agent_status(
         activity_state = "error"
     else:
         activity_state = "idle"
+
+    if presence_status == "online" and activity_state == "idle" and active_task:
+        activity_state = "waiting_input" if waiting_on_dependency else "thinking"
 
     if activity_state == "waiting_input":
         workload_state = "waiting"
