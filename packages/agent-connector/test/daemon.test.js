@@ -563,6 +563,47 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
+  it('BaseAdapter keeps stale queued agent chat handoffs', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._agentQueueTtlMs = 1000;
+    const handled = [];
+    adapter._handleMessage = async (msg) => { handled.push(msg.messageId); };
+    const acked = [];
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId) => {
+      acked.push(deliveryId);
+      return { status: 'acked' };
+    };
+    const handoff = {
+      messageId: 'agent-pass-chat',
+      _deliveryId: 'delivery-pass-chat',
+      _deliveryKind: 'attention',
+      _attentionReason: 'routed',
+      _queueId: 'q-pass',
+      _queuedAt: Date.now() - 2000,
+      senderType: 'agent',
+      messageType: 'chat',
+      content: 'ENG-117B PASS / no blocker',
+    };
+    adapter._channelQueues.general = [handoff];
+    adapter._markMessageInFlight(handoff);
+
+    await adapter._channelWorker('general', { messageId: 'current-human', senderType: 'human', content: 'current' });
+
+    assert.deepEqual(handled, ['current-human', 'agent-pass-chat']);
+    assert.deepEqual(acked, ['delivery-pass-chat']);
+    assert.equal(adapter._processedIds.has('agent-pass-chat'), true);
+    assert.equal(adapter._isInFlightMessage(handoff), false);
+    assert.deepEqual(adapter._channelQueues.general, []);
+  });
+
   it('BaseAdapter absorbs ambient deliveries when channel is busy', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

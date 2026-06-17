@@ -839,6 +839,7 @@ class BaseAdapter {
     if (!Number.isFinite(queuedAt) || Date.now() - queuedAt < this._agentQueueTtlMs) return false;
     if ((msg.senderType || '') !== 'agent') return false;
     if ((msg._deliveryKind || '') !== 'attention') return false;
+    if ((msg.messageType || '') === 'chat') return false;
     return true;
   }
 
