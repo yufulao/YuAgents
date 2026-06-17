@@ -752,7 +752,7 @@ class BaseAdapter {
       const queueId = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       msg._queueId = queueId;
       msg._queuedAt = Date.now();
-      this._channelQueues[channel].push(msg);
+      this._enqueueChannelMessage(channel, msg);
       if ((msg.senderType || '') !== 'agent') {
         try {
           await this.sendStatus(channel, 'message queued — will process after current task', {
@@ -769,6 +769,26 @@ class BaseAdapter {
     // Run channel worker (don't await — parallel execution)
     this._channelWorker(channel, msg);
     this._wakeControlPoller();
+  }
+
+  _queuedMessagePriority(msg) {
+    const senderType = String(msg && msg.senderType || '').toLowerCase();
+    if (senderType === 'human') return 0;
+    if (senderType && senderType !== 'agent') return 1;
+    if (String(msg && msg._deliveryKind || '').toLowerCase() === 'attention') return 2;
+    return 3;
+  }
+
+  _enqueueChannelMessage(channel, msg) {
+    if (!this._channelQueues[channel]) this._channelQueues[channel] = [];
+    const queue = this._channelQueues[channel];
+    const priority = this._queuedMessagePriority(msg);
+    const idx = queue.findIndex((queued) => this._queuedMessagePriority(queued) > priority);
+    if (idx === -1) {
+      queue.push(msg);
+    } else {
+      queue.splice(idx, 0, msg);
+    }
   }
 
   async _cancelQueuedMessage(channel, queueId) {

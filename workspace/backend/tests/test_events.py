@@ -575,6 +575,74 @@ class TestAgentDeliveries:
         assert again.status_code == 200
         assert again.json()["data"]["deliveries"] == []
 
+    def test_pending_deliveries_prioritize_human_messages(self, client, workspace, db):
+        join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert join.status_code == 200
+        session_id = join.json()["data"]["session_id"]
+
+        channel_name = workspace["channel"]["name"]
+        agent_event = EventRecord(
+            id="agent-old-backlog",
+            network_id=workspace["id"],
+            type="workspace.message.posted",
+            source="openagents:agent-beta",
+            target=f"channel/{channel_name}",
+            payload={"content": "old agent backlog", "sender_type": "agent"},
+            metadata_={},
+            timestamp=1,
+            visibility="channel",
+        )
+        human_event = EventRecord(
+            id="human-new-mention",
+            network_id=workspace["id"],
+            type="workspace.message.posted",
+            source="human:user1",
+            target=f"channel/{channel_name}",
+            payload={"content": "new human mention", "sender_type": "human"},
+            metadata_={},
+            timestamp=2,
+            visibility="channel",
+        )
+        db.add(agent_event)
+        db.add(human_event)
+        db.flush()
+        db.add(AgentDelivery(
+            event_id=agent_event.id,
+            workspace_id=workspace["id"],
+            agent_name="agent-alpha",
+            channel_name=channel_name,
+            delivery_kind="attention",
+            attention_reason="mention",
+            status="pending",
+        ))
+        db.add(AgentDelivery(
+            event_id=human_event.id,
+            workspace_id=workspace["id"],
+            agent_name="agent-alpha",
+            channel_name=channel_name,
+            delivery_kind="attention",
+            attention_reason="mention",
+            status="pending",
+        ))
+        db.commit()
+
+        leased = client.get("/v1/agent-deliveries/pending", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": session_id,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert leased.status_code == 200
+        deliveries = leased.json()["data"]["deliveries"]
+        assert [item["event"]["id"] for item in deliveries[:2]] == [
+            "human-new-mention",
+            "agent-old-backlog",
+        ]
+
     def test_delivery_requires_current_session(self, client, workspace):
         resp = client.get("/v1/agent-deliveries/pending", params={
             "network": workspace["id"],

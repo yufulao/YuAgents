@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, cast, func, or_, select, Text
+from sqlalchemy import and_, case, cast, func, or_, select, Text
 from sqlalchemy.orm import Session
 
 from app import cache
@@ -436,7 +436,12 @@ def lease_pending_deliveries(
                 ),
             ),
         )
-        .order_by(AgentDelivery.created_at.asc(), EventRecord.timestamp.asc(), AgentDelivery.id.asc())
+        .order_by(
+            case((EventRecord.source.like("human:%"), 0), else_=1),
+            AgentDelivery.created_at.asc(),
+            EventRecord.timestamp.asc(),
+            AgentDelivery.id.asc(),
+        )
         .limit(limit)
     ).all()
 
