@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen,
@@ -128,22 +129,108 @@ function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; st
   );
 }
 
+type SidebarSectionKey = 'agents' | 'queue' | 'features';
+
+const SIDEBAR_SECTION_HEIGHTS_KEY = 'x-sidebar-section-heights';
+const SIDEBAR_SECTION_HEIGHTS: Record<SidebarSectionKey, { default: number; min: number; max: number }> = {
+  agents: { default: 192, min: 80, max: 420 },
+  queue: { default: 120, min: 56, max: 360 },
+  features: { default: 248, min: 136, max: 420 },
+};
+
+function clampSectionHeight(key: SidebarSectionKey, value: number) {
+  const limits = SIDEBAR_SECTION_HEIGHTS[key];
+  return Math.min(limits.max, Math.max(limits.min, Math.round(value)));
+}
+
+function defaultSectionHeights(): Record<SidebarSectionKey, number> {
+  return {
+    agents: SIDEBAR_SECTION_HEIGHTS.agents.default,
+    queue: SIDEBAR_SECTION_HEIGHTS.queue.default,
+    features: SIDEBAR_SECTION_HEIGHTS.features.default,
+  };
+}
+
+function readStoredSectionHeights() {
+  if (typeof window === 'undefined') return defaultSectionHeights();
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SIDEBAR_SECTION_HEIGHTS_KEY) || '{}') as Partial<Record<SidebarSectionKey, number>>;
+    const defaults = defaultSectionHeights();
+    return (Object.keys(defaults) as SidebarSectionKey[]).reduce((next, key) => {
+      const stored = parsed[key];
+      next[key] = Number.isFinite(stored) ? clampSectionHeight(key, stored as number) : defaults[key];
+      return next;
+    }, {} as Record<SidebarSectionKey, number>);
+  } catch {
+    return defaultSectionHeights();
+  }
+}
+
 function SidebarSection({
+  sectionKey,
   title,
   count,
   collapsed,
   onToggle,
+  height,
+  onHeightChange,
   className,
   children,
 }: {
+  sectionKey: SidebarSectionKey;
   title: string;
   count?: number;
   collapsed: boolean;
   onToggle: () => void;
+  height: number;
+  onHeightChange: (key: SidebarSectionKey, height: number) => void;
   className?: string;
   children: React.ReactNode;
 }) {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
+  const limits = SIDEBAR_SECTION_HEIGHTS[sectionKey];
+
+  const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (collapsed) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startY = event.clientY;
+    const startHeight = height;
+    const body = document.body;
+    const previousCursor = body.style.cursor;
+    const previousUserSelect = body.style.userSelect;
+
+    body.style.cursor = 'row-resize';
+    body.style.userSelect = 'none';
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      onHeightChange(sectionKey, startHeight + moveEvent.clientY - startY);
+    };
+
+    const handlePointerUp = () => {
+      body.style.cursor = previousCursor;
+      body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handlePointerMove);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  };
+
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (collapsed) return;
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      onHeightChange(sectionKey, height - 16);
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      onHeightChange(sectionKey, height + 16);
+    }
+  };
+
   return (
     <section className={cn('min-w-0', className)}>
       <button
@@ -157,7 +244,28 @@ function SidebarSection({
           <span className="shrink-0 text-[11px]">{count}</span>
         )}
       </button>
-      <div hidden={collapsed}>{children}</div>
+      <div hidden={collapsed} className="relative">
+        <div
+          className="min-w-0 overflow-y-auto overscroll-contain pr-1"
+          style={{ height }}
+        >
+          {children}
+        </div>
+        <div
+          role="separator"
+          aria-label={`调整${title}高度`}
+          aria-orientation="horizontal"
+          aria-valuemin={limits.min}
+          aria-valuemax={limits.max}
+          aria-valuenow={height}
+          tabIndex={0}
+          onPointerDown={handleResizePointerDown}
+          onKeyDown={handleResizeKeyDown}
+          className="group flex h-3 cursor-row-resize items-center justify-center outline-none"
+        >
+          <span className="h-px w-10 rounded-full bg-border opacity-60 transition-all group-hover:w-16 group-hover:bg-primary/50 group-hover:opacity-100 group-focus-visible:w-16 group-focus-visible:bg-primary/60 group-focus-visible:opacity-100" />
+        </div>
+      </div>
     </section>
   );
 }
@@ -188,8 +296,21 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
   const [newThreadOpen, setNewThreadOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [sectionHeights, setSectionHeights] = useState<Record<SidebarSectionKey, number>>(defaultSectionHeights);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    setSectionHeights(readStoredSectionHeights());
+  }, []);
+
+  const setSectionHeight = useCallback((key: SidebarSectionKey, height: number) => {
+    setSectionHeights((prev) => {
+      const next = { ...prev, [key]: clampSectionHeight(key, height) };
+      window.localStorage.setItem(SIDEBAR_SECTION_HEIGHTS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const isDark = mounted && theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
@@ -336,11 +457,14 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
 
           <div className="space-y-3 px-2.5">
             <SidebarSection
+              sectionKey="agents"
               title={`Agents（${nonOfflineCount}/${visibleAgents.length}）`}
               collapsed={isSectionCollapsed('agents')}
               onToggle={() => toggleSection('agents')}
+              height={sectionHeights.agents}
+              onHeightChange={setSectionHeight}
             >
-              <div className="max-h-48 space-y-0.5 overflow-y-auto">
+              <div className="space-y-0.5">
                 {visibleAgents.map((agent) => (
                   <AgentListButton
                     key={agent.agentName}
@@ -353,18 +477,24 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
             </SidebarSection>
 
             <SidebarSection
+              sectionKey="queue"
               title="队列"
               count={currentThreadTaskCount}
               collapsed={isSectionCollapsed('queue')}
               onToggle={() => toggleSection('queue')}
+              height={sectionHeights.queue}
+              onHeightChange={setSectionHeight}
             >
               <div id="thread-status-sidebar-slot" className="min-h-8 min-w-0" />
             </SidebarSection>
 
             <SidebarSection
+              sectionKey="features"
               title="功能"
               collapsed={isSectionCollapsed('features')}
               onToggle={() => toggleSection('features')}
+              height={sectionHeights.features}
+              onHeightChange={setSectionHeight}
             >
               <div className="space-y-0.5">
                 <NavButton active={viewMode === 'threads'} icon={<MessageSquare className="size-[15px]" />} label="会话" count={sessions.filter((s) => !s.sessionId.startsWith('routine:')).length} onClick={() => setViewMode('threads')} />
