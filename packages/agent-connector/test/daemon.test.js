@@ -632,6 +632,40 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general || [], []);
   });
 
+  it('BaseAdapter absorbs ambient deliveries without starting idle work', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    let ackedDelivery = null;
+    let handled = 0;
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId) => {
+      ackedDelivery = deliveryId;
+      return { status: 'acked' };
+    };
+    adapter._handleMessage = async () => { handled += 1; };
+
+    await adapter._dispatchMessage({
+      messageId: 'event-ambient-idle',
+      _deliveryId: 'delivery-ambient-idle',
+      _deliveryKind: 'ambient',
+      sessionId: 'general',
+      content: 'passive room context',
+    });
+
+    assert.equal(ackedDelivery, 'delivery-ambient-idle');
+    assert.equal(handled, 0);
+    assert.equal(adapter._channelBusy.has('general'), false);
+    assert.equal(adapter._processedIds.has('event-ambient-idle'), true);
+    assert.equal(adapter._isInFlightMessage({ messageId: 'event-ambient-idle' }), false);
+    assert.deepEqual(adapter._channelQueues.general || [], []);
+  });
+
   it('BaseAdapter does not emit visible queue status for agent deliveries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
