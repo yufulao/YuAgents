@@ -164,6 +164,44 @@ class TestGetWorkspace:
         assert beta["activeTask"]["result"] == "Workspace task latest result"
         assert beta["activeTask"]["channelName"] == "general"
 
+    def test_get_workspace_does_not_project_assigned_todo_as_active_work(self, client, workspace, db):
+        """Assigned but unclaimed todo tasks are queued work, not live agent activity."""
+        from app.models import WorkspaceTask
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+
+        task = WorkspaceTask(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            title="ENG-125 queued scout",
+            description="Queued but not claimed",
+            status="todo",
+            priority="normal",
+            assignee="agent-beta",
+            claimed_by=None,
+            created_by="agent-alpha",
+        )
+        db.add(task)
+        db.commit()
+
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        beta = next(a for a in resp.json()["data"]["agents"] if a["agentName"] == "agent-beta")
+        assert beta["presenceStatus"] == "online"
+        assert beta["activityState"] == "idle"
+        assert beta["workloadState"] == "idle"
+        assert beta["displayStatus"] == "online"
+        assert beta["hasActiveWork"] is False
+        assert beta["activitySummary"] in (None, "")
+        assert beta["activeTask"] is None
+
     def test_get_workspace_projects_waiting_todo_as_waiting_activity(self, client, workspace, db):
         """Waiting personal todos keep dependency lanes out of false thinking state."""
         from app.models import TodoRecord, WorkspaceTask
