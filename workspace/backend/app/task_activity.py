@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import TodoRecord, WorkspaceTask
 
 
-ACTIVE_TASK_STATUSES = {"todo", "in_progress"}
+ACTIVE_TASK_STATUSES = {"in_progress"}
 DONE_DEPENDENCY_STATUSES = {"done", "cancelled"}
 WAITING_TODO_MARKERS = (
     "wait for",
