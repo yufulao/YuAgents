@@ -16,7 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Channel, WorkspaceMember, WorkspaceTask
+from app.models import Channel, ChannelMember, WorkspaceMember, WorkspaceTask
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _emit_event, _resolve_workspace, _verify_workspace_access
 from openagents.core.onm_events import Event
@@ -150,9 +150,45 @@ def _resolve_active_channel_name(db: Session, workspace_id: str, channel: Option
     return channel_name if record else None
 
 
+def _ensure_assignee_channel_participant(
+    db: Session,
+    workspace_id: str,
+    channel_name: Optional[str],
+    assignee: Optional[str],
+) -> bool:
+    agent_name = _normalize_agent_name(assignee)
+    if not agent_name:
+        return True
+    if not channel_name:
+        return False
+    member = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.agent_name == agent_name,
+        )
+    ).scalar_one_or_none()
+    if not member:
+        return False
+    channel = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace_id,
+            Channel.name == channel_name,
+            Channel.status == "active",
+        )
+    ).scalar_one_or_none()
+    if not channel:
+        return False
+    existing = db.get(ChannelMember, (channel.id, agent_name))
+    if not existing:
+        db.add(ChannelMember(channel_id=channel.id, agent_name=agent_name))
+        db.flush()
+    return True
+
+
 async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: str, source: str, token: Optional[str]):
     channel = task.channel_name or "default"
     assignee = _normalize_agent_name(task.assignee)
+    _ensure_assignee_channel_participant(db, str(workspace.id), channel, assignee)
     mention = f"@{assignee} " if assignee and action in {"created", "updated"} else ""
     status = task.status or "todo"
     content = f"{mention}Workspace task {action}: [{status}] {task.title}"
@@ -196,6 +232,9 @@ async def create_workspace_task(
     channel_name = _resolve_active_channel_name(db, str(workspace.id), body.channel)
     if not channel_name:
         return json_response(ResponseCode.BAD_REQUEST, "channel is required and must reference an active channel")
+    assignee = _normalize_agent_name(body.assignee)
+    if assignee and not _ensure_assignee_channel_participant(db, str(workspace.id), channel_name, assignee):
+        return json_response(ResponseCode.BAD_REQUEST, "assignee must be a workspace member in an active channel")
 
     now = _utcnow()
     created_by = body.source.strip()
@@ -207,7 +246,7 @@ async def create_workspace_task(
         description=body.description,
         status=body.status,
         priority=body.priority,
-        assignee=_normalize_agent_name(body.assignee),
+        assignee=assignee,
         created_by=created_by,
         depends_on=body.depends_on or [],
         updated_at=now,
@@ -327,7 +366,10 @@ async def update_workspace_task(
             return json_response(ResponseCode.BAD_REQUEST, "Invalid task priority")
         task.priority = body.priority
     if body.assignee is not None:
-        task.assignee = _normalize_agent_name(body.assignee)
+        assignee = _normalize_agent_name(body.assignee)
+        if assignee and not _ensure_assignee_channel_participant(db, str(workspace.id), task.channel_name, assignee):
+            return json_response(ResponseCode.BAD_REQUEST, "assignee must be a workspace member in an active channel")
+        task.assignee = assignee
     if body.description is not None:
         task.description = body.description
     if body.result is not None:
