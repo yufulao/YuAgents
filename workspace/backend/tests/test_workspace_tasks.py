@@ -159,7 +159,9 @@ def test_create_workspace_task_requires_active_channel(client, workspace):
     assert "active channel" in nonexistent.json()["message"]
 
 
-def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
+def test_create_workspace_task_adds_assignee_to_channel_and_wakes(client, workspace, db):
+    from app.models import Channel, ChannelMember
+
     channel_name = workspace["channel"]["name"]
     beta_join = client.post("/v1/join", json={
         "agent_name": "agent-beta",
@@ -169,14 +171,42 @@ def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
     assert beta_join.status_code == 200
     beta_session = beta_join.json()["data"]["session_id"]
 
-    join_channel = client.post("/v1/events", json={
-        "type": "network.channel.join",
-        "source": "human:user1",
-        "target": f"channel/{channel_name}",
-        "payload": {"channel": channel_name, "agent_name": "agent-beta"},
+    created = client.post("/v1/workspace-tasks", json={
         "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Scout independent RHI work",
+        "assignee": "agent-beta",
+        "source": "openagents:agent-alpha",
     }, headers={"X-Workspace-Token": workspace["token"]})
-    assert join_channel.status_code == 200
+    assert created.status_code == 200
+    task = created.json()["data"]["task"]
+    assert task["assignee"] == "agent-beta"
+
+    channel = db.query(Channel).filter_by(workspace_id=workspace["id"], name=channel_name).one()
+    assert db.get(ChannelMember, (channel.id, "agent-beta")) is not None
+
+    pending = client.get("/v1/agent-deliveries/pending", params={
+        "network": workspace["id"],
+        "agent": "agent-beta",
+        "session_id": beta_session,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert pending.status_code == 200
+    deliveries = pending.json()["data"]["deliveries"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["delivery_kind"] == "attention"
+    assert deliveries[0]["event"]["payload"]["content"].startswith("@agent-beta Workspace task created:")
+    assert deliveries[0]["event"]["metadata"]["target_agents"] == ["agent-beta"]
+
+
+def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    beta_join = client.post("/v1/join", json={
+        "agent_name": "agent-beta",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert beta_join.status_code == 200
+    beta_session = beta_join.json()["data"]["session_id"]
 
     created = client.post("/v1/workspace-tasks", json={
         "network": workspace["id"],
