@@ -759,6 +759,42 @@ describe('Daemon', () => {
     );
   });
 
+  it('BaseAdapter interrupts a long busy channel for queued human messages', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+      agentEnv: { OPENAGENTS_HUMAN_INTERRUPT_AFTER_MS: '1' },
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    adapter._channelBusySince.set('general', Date.now() - 5000);
+    adapter.sendStatus = async () => {};
+    let interrupted = null;
+    adapter._interruptChannelForHuman = async (channel, msg, context) => {
+      interrupted = { channel, messageId: msg.messageId, busyMs: context.busyMs };
+      return true;
+    };
+
+    await adapter._dispatchMessage({
+      messageId: 'human-interrupt',
+      _deliveryId: 'delivery-human',
+      _deliveryKind: 'attention',
+      _attentionReason: 'mention',
+      sessionId: 'general',
+      senderType: 'human',
+      content: 'stop waiting and answer me',
+    });
+
+    assert.equal(interrupted.channel, 'general');
+    assert.equal(interrupted.messageId, 'human-interrupt');
+    assert.ok(interrupted.busyMs >= 1);
+    assert.equal(adapter._channelQueues.general[0].messageId, 'human-interrupt');
+  });
+
   it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
