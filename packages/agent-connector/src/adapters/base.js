@@ -29,6 +29,7 @@ const DELIVERY_LEASE_SECONDS = 6 * 60 * 60;
 const STALE_AGENT_QUEUE_MS = 30 * 1000;
 const STATUS_DEDUPE_MS = 30 * 1000;
 const GENERIC_STATUS_DEDUPE_MS = 2 * 60 * 1000;
+const HUMAN_INTERRUPT_AFTER_MS = 10 * 60 * 1000;
 
 class BaseAdapter {
   /**
@@ -68,6 +69,8 @@ class BaseAdapter {
     this._latestProcessDetails = new Map();
     // Per-channel task tracking for parallel execution
     this._channelBusy = new Set();
+    this._channelBusySince = new Map();
+    this._channelHumanInterrupting = new Set();
     this._channelQueues = {};
     // Cached workspace.browser_enabled. Populated lazily on first read so we
     // don't pay an HTTP roundtrip per message — adapters that toggle the
@@ -761,6 +764,7 @@ class BaseAdapter {
             queue_id: queueId,
           });
         } catch {}
+        await this._maybeInterruptBusyChannelForHuman(channel, msg);
       } else {
         this._log(`Queued message ${queueId} in ${channel}`);
       }
@@ -792,6 +796,35 @@ class BaseAdapter {
     }
   }
 
+  async _maybeInterruptBusyChannelForHuman(channel, msg) {
+    if (String(msg && msg.senderType || '').toLowerCase() !== 'human') return false;
+    const thresholdMs = Number.parseInt(this.agentEnv.OPENAGENTS_HUMAN_INTERRUPT_AFTER_MS || '', 10) || HUMAN_INTERRUPT_AFTER_MS;
+    if (thresholdMs <= 0) return false;
+    const busySince = this._channelBusySince.get(channel);
+    if (!busySince) return false;
+    const busyMs = Date.now() - busySince;
+    if (busyMs < thresholdMs) return false;
+    if (this._channelHumanInterrupting.has(channel)) return false;
+
+    this._channelHumanInterrupting.add(channel);
+    try {
+      const interrupted = await this._interruptChannelForHuman(channel, msg, { busyMs, thresholdMs });
+      if (interrupted) {
+        this._log(`Interrupted busy channel ${channel} after ${Math.round(busyMs / 1000)}s for human message ${msg.messageId || msg.id || msg._queueId || ''}`);
+      }
+      return interrupted;
+    } catch (e) {
+      this._log(`Human interrupt failed for ${channel}: ${e && e.message ? e.message : e}`);
+      return false;
+    } finally {
+      this._channelHumanInterrupting.delete(channel);
+    }
+  }
+
+  async _interruptChannelForHuman(_channel, _msg, _context) {
+    return false;
+  }
+
   async _cancelQueuedMessage(channel, queueId) {
     const queue = this._channelQueues[channel];
     if (!queue) return false;
@@ -806,6 +839,7 @@ class BaseAdapter {
 
   async _channelWorker(channel, msg) {
     this._channelBusy.add(channel);
+    this._channelBusySince.set(channel, Date.now());
     try {
       await this._handleMessage(msg);
       await this._ackMessage(msg);
@@ -839,6 +873,7 @@ class BaseAdapter {
       }
     }
     this._channelBusy.delete(channel);
+    this._channelBusySince.delete(channel);
   }
 
   // ------------------------------------------------------------------

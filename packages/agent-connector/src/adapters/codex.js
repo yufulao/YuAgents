@@ -298,6 +298,18 @@ class CodexAdapter extends BaseAdapter {
     await super._onControlAction(action, payload);
   }
 
+  async _interruptChannelForHuman(channel, _msg, context = {}) {
+    const proc = this._channelProcesses[channel];
+    if (!proc || proc.exitCode !== null) return false;
+    proc._openagentsInterrupted = true;
+    const busyMinutes = Math.max(1, Math.round((context.busyMs || 0) / 60000));
+    try {
+      await this.sendStatus(channel, `Interrupted a stuck task after ${busyMinutes} min to process a human message.`);
+    } catch {}
+    await this._stopProcess(proc);
+    return true;
+  }
+
   // ------------------------------------------------------------------
   // Message handler
   // ------------------------------------------------------------------
@@ -358,6 +370,9 @@ class CodexAdapter extends BaseAdapter {
       try {
         const result = await this._spawnCodex(cmd, env, msgChannel, fullPrompt);
 
+        if (result.interrupted) {
+          return;
+        }
         if (this._isNoResponseText(result.responseText)) {
           return;
         }
@@ -525,7 +540,10 @@ class CodexAdapter extends BaseAdapter {
 
         delete this._channelProcesses[msgChannel];
 
-        if (code !== 0) {
+        const interrupted = proc._openagentsInterrupted === true;
+        if (interrupted) {
+          this._log(`Codex CLI interrupted for ${msgChannel}`);
+        } else if (code !== 0) {
           this._log(`Codex CLI exited with code ${code}`);
           if (stderrBuf.trim()) {
             this._log(`stderr: ${stderrBuf.trim().slice(0, 500)}`);
@@ -536,6 +554,7 @@ class CodexAdapter extends BaseAdapter {
           responseText: responseTexts.join('\n').trim(),
           exitCode: code,
           stderr: stderrBuf,
+          interrupted,
         });
       });
 
