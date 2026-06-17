@@ -475,7 +475,7 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
-  it('BaseAdapter drops stale queued routed agent deliveries', async () => {
+  it('BaseAdapter processes old queued routed agent deliveries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
       channelName: 'general',
@@ -493,10 +493,7 @@ describe('Daemon', () => {
       acked.push(deliveryId);
       return { status: 'acked' };
     };
-    adapter.sendStatus = async () => {
-      throw new Error('stale queued messages should not emit processing status');
-    };
-    const stale = {
+    const queued = {
       messageId: 'old-agent-task',
       _deliveryId: 'delivery-old',
       _deliveryKind: 'attention',
@@ -507,19 +504,19 @@ describe('Daemon', () => {
       messageType: 'task',
       content: 'Workspace task created: old work',
     };
-    adapter._channelQueues.general = [stale];
-    adapter._markMessageInFlight(stale);
+    adapter._channelQueues.general = [queued];
+    adapter._markMessageInFlight(queued);
 
     await adapter._channelWorker('general', { messageId: 'current-human', senderType: 'human', content: 'current' });
 
-    assert.deepEqual(handled, ['current-human']);
+    assert.deepEqual(handled, ['current-human', 'old-agent-task']);
     assert.deepEqual(acked, ['delivery-old']);
     assert.equal(adapter._processedIds.has('old-agent-task'), true);
-    assert.equal(adapter._isInFlightMessage(stale), false);
+    assert.equal(adapter._isInFlightMessage(queued), false);
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
-  it('BaseAdapter drops stale queued mentioned agent deliveries', async () => {
+  it('BaseAdapter processes old queued mentioned agent deliveries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
       channelName: 'general',
@@ -537,10 +534,7 @@ describe('Daemon', () => {
       acked.push(deliveryId);
       return { status: 'acked' };
     };
-    adapter.sendStatus = async () => {
-      throw new Error('stale queued mentions should not emit processing status');
-    };
-    const stale = {
+    const queued = {
       messageId: 'old-agent-mention',
       _deliveryId: 'delivery-mentioned',
       _deliveryKind: 'attention',
@@ -551,15 +545,15 @@ describe('Daemon', () => {
       messageType: 'task',
       content: '@agent-a Workspace task created: old work',
     };
-    adapter._channelQueues.general = [stale];
-    adapter._markMessageInFlight(stale);
+    adapter._channelQueues.general = [queued];
+    adapter._markMessageInFlight(queued);
 
     await adapter._channelWorker('general', { messageId: 'current-human', senderType: 'human', content: 'current' });
 
-    assert.deepEqual(handled, ['current-human']);
+    assert.deepEqual(handled, ['current-human', 'old-agent-mention']);
     assert.deepEqual(acked, ['delivery-mentioned']);
     assert.equal(adapter._processedIds.has('old-agent-mention'), true);
-    assert.equal(adapter._isInFlightMessage(stale), false);
+    assert.equal(adapter._isInFlightMessage(queued), false);
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
@@ -708,6 +702,22 @@ describe('Daemon', () => {
     assert.ok(prompt.includes('create/claim tasks'));
     assert.ok(prompt.includes('visibly coordinate'));
     assert.ok(prompt.includes('__no_response__'));
+  });
+
+  it('BaseAdapter attention delivery prompt requires idempotent handling', () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+
+    const prompt = adapter._buildDeliveryPrompt({ _deliveryKind: 'attention', _attentionReason: 'routed' });
+
+    assert.ok(prompt.includes('at-least-once delivery'));
+    assert.ok(prompt.includes('reconcile against the current task board'));
+    assert.ok(prompt.includes('do not duplicate side effects'));
   });
 
   it('readDaemonPid returns null when no pid file', () => {

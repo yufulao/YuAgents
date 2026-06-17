@@ -801,9 +801,6 @@ class BaseAdapter {
       const queue = this._channelQueues[channel];
       if (!queue || queue.length === 0) break;
       const nextMsg = queue.shift();
-      if (await this._dropStaleQueuedMessage(channel, nextMsg)) {
-        continue;
-      }
         if (nextMsg._queueId && (nextMsg.senderType || '') !== 'agent') {
           try { await this.sendStatus(channel, 'processing queued message', { queue_id: nextMsg._queueId, queue_status: 'processed' }); } catch {}
         } else if (nextMsg._queueId) {
@@ -821,26 +818,6 @@ class BaseAdapter {
       }
     }
     this._channelBusy.delete(channel);
-  }
-
-  async _dropStaleQueuedMessage(channel, msg) {
-    if (!msg || !this._isStaleQueuedAgentMessage(msg)) return false;
-    this._log(`Dropping stale queued agent delivery ${msg._queueId || msg._deliveryId || msg.messageId || ''} in ${channel}`);
-    try {
-      await this._ackMessage(msg);
-    } finally {
-      this._clearMessageInFlight(msg);
-    }
-    return true;
-  }
-
-  _isStaleQueuedAgentMessage(msg) {
-    const queuedAt = Number(msg && msg._queuedAt);
-    if (!Number.isFinite(queuedAt) || Date.now() - queuedAt < this._agentQueueTtlMs) return false;
-    if ((msg.senderType || '') !== 'agent') return false;
-    if ((msg._deliveryKind || '') !== 'attention') return false;
-    if ((msg.messageType || '') === 'chat') return false;
-    return true;
   }
 
   // ------------------------------------------------------------------
@@ -1265,7 +1242,12 @@ class BaseAdapter {
     }
     if (kind === 'attention') {
       const reason = msg && msg._attentionReason ? ` (${msg._attentionReason})` : '';
-      return `Delivery kind: attention${reason}. This message was routed to you for visible handling.`;
+      return [
+        `Delivery kind: attention${reason}. This message was routed to you for visible handling.`,
+        'Treat routed/mentioned messages as at-least-once delivery: they may be delayed, retried, or already reflected in current task state.',
+        'Before creating, claiming, updating, or completing work, reconcile against the current task board, todos, recent messages, and repository state.',
+        'If the message is stale or already handled, acknowledge the current state concisely or return exactly: __no_response__; do not duplicate side effects.',
+      ].join('\n');
     }
     return '';
   }
