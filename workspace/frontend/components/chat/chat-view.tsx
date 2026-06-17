@@ -617,31 +617,32 @@ export function ChatView() {
                 <UserPlus className="size-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="max-h-[min(70vh,28rem)] w-[min(calc(100vw-1rem),20rem)] overflow-y-auto">
               {(() => {
                 const participants = currentSession?.participants || [];
-                const onlineAgents = agents.filter((a) => a.status === 'online');
-                const inThread = onlineAgents.filter((a) => participants.includes(a.agentName));
-                const notInThread = onlineAgents.filter((a) => !participants.includes(a.agentName));
+                const inThread = agents.filter((a) => participants.includes(a.agentName));
+                const notInThread = agents.filter((a) => !participants.includes(a.agentName));
                 return (
                   <>
                     {inThread.length > 0 && (
                       <>
-                        <DropdownMenuLabel>In this thread</DropdownMenuLabel>
+                        <DropdownMenuLabel>当前会话 ({inThread.length})</DropdownMenuLabel>
                         {inThread.map((agent) => (
                             <div
                               key={agent.agentName}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-md group"
+                              className="flex min-h-10 items-center gap-2 rounded-md px-2 py-1.5"
                             >
                               <AgentAvatar name={agent.agentName} avatar={agent.avatar} avatarUrl={agent.avatarUrl} size={20} />
-                              <span className="text-sm flex-1 truncate">{agent.agentName}</span>
+                              <span className="min-w-0 flex-1 truncate text-left text-sm">{agent.agentName}</span>
                               {inThread.length > 1 && (
                                 <button
+                                  type="button"
                                   onClick={() => currentSessionId && removeParticipant(currentSessionId, agent.agentName)}
-                                  className="size-5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                                  title="Remove from thread"
+                                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                  title="移出当前会话"
                                 >
                                   <X className="size-3" />
+                                  <span>移除</span>
                                 </button>
                               )}
                             </div>
@@ -651,22 +652,23 @@ export function ChatView() {
                     {notInThread.length > 0 && (
                       <>
                         {inThread.length > 0 && <DropdownMenuSeparator />}
-                        <DropdownMenuLabel>Add to thread</DropdownMenuLabel>
+                        <DropdownMenuLabel>添加到会话 ({notInThread.length})</DropdownMenuLabel>
                         {notInThread.map((agent) => (
                             <button
+                              type="button"
                               key={agent.agentName}
                               onClick={() => currentSessionId && addParticipant(currentSessionId, agent.agentName)}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors"
+                              className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent"
                             >
                               <AgentAvatar name={agent.agentName} avatar={agent.avatar} avatarUrl={agent.avatarUrl} size={20} />
-                              <span className="text-sm flex-1 truncate text-left">{agent.agentName}</span>
+                              <span className="min-w-0 flex-1 truncate text-left text-sm">{agent.agentName}</span>
                               <Plus className="size-3 text-muted-foreground shrink-0" />
                             </button>
                         ))}
                       </>
                     )}
-                    {onlineAgents.length === 0 && (
-                      <p className="text-sm text-muted-foreground px-2 py-3 text-center">No agents online</p>
+                    {agents.length === 0 && (
+                      <p className="px-2 py-3 text-center text-sm text-muted-foreground">暂无 Agent</p>
                     )}
                   </>
                 );
