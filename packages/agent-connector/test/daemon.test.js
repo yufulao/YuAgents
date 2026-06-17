@@ -687,6 +687,44 @@ describe('Daemon', () => {
     assert.equal(adapter._channelQueues.general[0].messageId, 'event-human');
   });
 
+  it('BaseAdapter prioritizes human messages ahead of queued agent backlog', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    adapter.sendStatus = async () => {};
+
+    await adapter._dispatchMessage({
+      messageId: 'old-agent',
+      _deliveryId: 'delivery-agent',
+      _deliveryKind: 'attention',
+      _attentionReason: 'mention',
+      sessionId: 'general',
+      senderType: 'agent',
+      content: 'old agent handoff',
+    });
+    await adapter._dispatchMessage({
+      messageId: 'new-human',
+      _deliveryId: 'delivery-human',
+      _deliveryKind: 'attention',
+      _attentionReason: 'mention',
+      sessionId: 'general',
+      senderType: 'human',
+      content: 'please handle this now',
+    });
+
+    assert.deepEqual(
+      adapter._channelQueues.general.map((msg) => msg.messageId),
+      ['new-human', 'old-agent'],
+    );
+  });
+
   it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
