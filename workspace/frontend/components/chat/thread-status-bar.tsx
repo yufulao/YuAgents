@@ -216,7 +216,7 @@ export function ThreadStatusBar({
     <div
       className={cn(
         'flex flex-col gap-0.5 text-[11px] text-muted-foreground',
-        isSidebar ? 'max-h-64 overflow-y-auto px-2 pb-2' : 'px-1 py-1',
+        isSidebar ? 'px-2 pb-2' : 'px-1 py-1',
         className,
       )}
     >
