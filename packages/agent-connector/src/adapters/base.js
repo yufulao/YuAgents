@@ -30,15 +30,6 @@ const STALE_AGENT_QUEUE_MS = 30 * 1000;
 const STATUS_DEDUPE_MS = 30 * 1000;
 const GENERIC_STATUS_DEDUPE_MS = 2 * 60 * 1000;
 const HUMAN_INTERRUPT_AFTER_MS = 10 * 60 * 1000;
-const SELF_TASK_NUDGE_MS = 5 * 60 * 1000;
-const SELF_TASK_NUDGE_WAIT_MARKERS = [
-  'wait',
-  'waiting',
-  'blocked',
-  '等待',
-  '依赖',
-  '阻塞',
-];
 
 class BaseAdapter {
   /**
@@ -73,9 +64,6 @@ class BaseAdapter {
     this._deliveryLeaseSeconds = DELIVERY_LEASE_SECONDS;
     this._agentQueueTtlMs = Number.parseInt(this.agentEnv.OPENAGENTS_AGENT_QUEUE_TTL_MS || '', 10) || STALE_AGENT_QUEUE_MS;
     this._statusDedupeMs = Number.parseInt(this.agentEnv.OPENAGENTS_STATUS_DEDUPE_MS || '', 10) || STATUS_DEDUPE_MS;
-    this._selfTaskNudgeMs = Number.parseInt(this.agentEnv.OPENAGENTS_SELF_TASK_NUDGE_MS || '', 10) || SELF_TASK_NUDGE_MS;
-    this._lastSelfTaskNudgeAt = 0;
-    this._selfTaskNudgeInFlight = false;
     this._recentStatusPosts = new Map();
     this._pendingProcessDetails = new Map();
     this._latestProcessDetails = new Map();
@@ -692,9 +680,6 @@ class BaseAdapter {
         }
       } else {
         idleCount++;
-        if (!composingActive) {
-          await this._maybeDispatchSelfTaskNudge();
-        }
       }
 
       // Sidecar poll: A2UI tool_result events. These are the user's response
@@ -808,80 +793,6 @@ class BaseAdapter {
       queue.push(msg);
     } else {
       queue.splice(idx, 0, msg);
-    }
-  }
-
-  _taskLooksWaiting(task) {
-    const text = [
-      task && task.title,
-      task && task.description,
-      task && task.result,
-    ].filter(Boolean).join('\n').toLowerCase();
-    return SELF_TASK_NUDGE_WAIT_MARKERS.some((marker) => text.includes(marker));
-  }
-
-  _selectSelfTaskNudge(tasks) {
-    const active = (tasks || []).filter((task) => {
-      if (!task || task.status !== 'in_progress') return false;
-      const owner = task.claimed_by || task.claimedBy || task.assignee;
-      if (owner !== this.agentName) return false;
-      return !this._taskLooksWaiting(task);
-    });
-    if (!active.length) return null;
-    active.sort((a, b) => {
-      const au = Date.parse(a.updated_at || a.updatedAt || a.claimed_at || a.claimedAt || a.created_at || a.createdAt || '') || 0;
-      const bu = Date.parse(b.updated_at || b.updatedAt || b.claimed_at || b.claimedAt || b.created_at || b.createdAt || '') || 0;
-      return au - bu;
-    });
-    return active[0];
-  }
-
-  async _maybeDispatchSelfTaskNudge() {
-    if (this._selfTaskNudgeMs <= 0) return false;
-    if (this._selfTaskNudgeInFlight) return false;
-    if (Date.now() - this._lastSelfTaskNudgeAt < this._selfTaskNudgeMs) return false;
-    if (this._channelBusy.size > 0) return false;
-
-    this._selfTaskNudgeInFlight = true;
-    try {
-      const result = await this.client.listWorkspaceTasks(
-        this.workspaceId,
-        null,
-        this.token,
-        { assignee: this.agentName, active: true },
-      );
-      const tasks = (result && (result.tasks || result.items || result.data)) || [];
-      const task = this._selectSelfTaskNudge(tasks);
-      if (!task) {
-        this._lastSelfTaskNudgeAt = Date.now();
-        return false;
-      }
-
-      this._lastSelfTaskNudgeAt = Date.now();
-      const channel = task.channel_name || task.channelName || this.channelName || 'general';
-      const taskId = task.id || task.task_id || '';
-      const title = task.title || 'active workspace task';
-      this._log(`Self-nudging active task ${taskId || title} in ${channel}`);
-      await this._dispatchMessage({
-        messageId: `self-task-nudge:${this.agentName}:${taskId || title}:${this._lastSelfTaskNudgeAt}`,
-        sessionId: channel,
-        senderType: 'system',
-        senderName: 'system:self-task-nudge',
-        messageType: 'chat',
-        content: [
-          `Self-check: you still own an in-progress workspace task: ${taskId ? `${taskId} — ` : ''}${title}.`,
-          'Continue it now, or explicitly update the task to waiting/blocked/done with evidence.',
-          'Before changing files, reconcile the current task board, recent messages, and repository state.',
-        ].join('\n'),
-        metadata: { self_task_nudge: true, task_id: taskId },
-      });
-      return true;
-    } catch (e) {
-      this._log(`Self task nudge failed: ${e && e.message ? e.message : e}`);
-      this._lastSelfTaskNudgeAt = Date.now();
-      return false;
-    } finally {
-      this._selfTaskNudgeInFlight = false;
     }
   }
 
