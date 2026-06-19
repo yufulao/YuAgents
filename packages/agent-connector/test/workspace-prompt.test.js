@@ -56,7 +56,6 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Scheduling is context-driven'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
-    assert.ok(prompt.includes('Owned in-progress shared tasks are durable goals'));
     assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));
@@ -121,33 +120,7 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Passive Ambient Messages'));
     assert.ok(prompt.includes('Active Shared Tasks'));
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
-    assert.equal(prompt.includes('persistent goal loop'), false);
     assert.ok(prompt.includes('Do not flatten roles.'));
-  });
-
-  it('treats owned in-progress shared tasks as a persistent goal loop', () => {
-    const prompt = buildRuntimeContextPrompt({
-      self: {
-        agent_name: '八云紫',
-        role: 'master',
-        agent_type: 'codex',
-        status: 'online',
-      },
-      channel: { name: '工作室' },
-      active_tasks: [{
-        id: 'task-owned',
-        title: '继续实现 relay',
-        status: 'in_progress',
-        priority: 'high',
-        assignee: '八云紫',
-        claimed_by: '八云紫',
-        description: 'Implement and verify.',
-      }],
-    });
-
-    assert.ok(prompt.includes('persistent goal loop'));
-    assert.ok(prompt.includes('continue them or update each to done/waiting/blocked with evidence'));
-    assert.ok(prompt.includes('task-owned: [in_progress] 继续实现 relay'));
   });
 
   it('keeps runtime context within a hard budget while preserving owned tasks', () => {

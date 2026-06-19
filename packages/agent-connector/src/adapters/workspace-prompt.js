@@ -92,14 +92,13 @@ function buildRuntimeRulePackPrompt() {
   return (
     '\n## OpenAgents Runtime Rule Pack (mandatory)\n' +
     '- `docs/*.md` are design references, not automatic memory; follow injected runtime rules and context packs.\n' +
-    '- Channel messages are context; @mentions are explicit attention.\n' +
-    '- Ambient is passive: unless named/routed, owner, or lead, do not create/claim tasks, @mention, assign, or coordinate.\n' +
-    '- Preserve role boundaries and route by role/description/status.\n' +
+    '- Channel messages are context for channel members; @mentions are explicit attention/delegation.\n' +
+    '- Ambient is passive: unless named/routed, task owner, or lead, do not create/claim tasks, @mention, assign, or coordinate.\n' +
+    '- Preserve role boundaries and use agent role/description/status when routing work.\n' +
     '- Non-leads report evidence/blockers; do not direct the lead unless delegated.\n' +
     '- Scheduling is context-driven: derive needed work functions; do not force a fixed planner/implementer/QA template.\n' +
-    '- Create shared tasks only when separate owners improve clarity/throughput.\n' +
-    '- Claim shared tasks before implementation; update result/evidence; keep personal todos private.\n' +
-    '- Owned in-progress shared tasks are durable goals: continue until done/waiting/blocked/handoff.\n'
+    '- Create shared tasks only when separate owners improve clarity/throughput; otherwise keep work single-owner.\n' +
+    '- Claim shared tasks before implementation, update result/evidence, and keep personal todos private.\n'
   );
 }
 
@@ -179,9 +178,6 @@ function buildRuntimeContextPrompt(context, options = {}) {
     const shownTasks = [...ownedTasks, ...otherTasks].slice(0, 10);
     parts.push(`\n### Active Shared Tasks (${shownTasks.length}/${tasks.length})`);
     parts.push('Shared ownership tasks. Claim before implementation; update status/result when done.');
-    if (ownedTasks.some((task) => task.status === 'in_progress')) {
-      parts.push('Your owned in-progress tasks are the persistent goal loop: before ending, continue them or update each to done/waiting/blocked with evidence.');
-    }
     for (const task of shownTasks) {
       const owner = task.claimed_by || task.assignee || 'unassigned';
       const desc = task.description ? ` — ${_truncate(task.description, 90)}` : '';
