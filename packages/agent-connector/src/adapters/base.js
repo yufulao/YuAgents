@@ -755,7 +755,6 @@ class BaseAdapter {
         this.agentName,
         this.token,
         {
-          channelName: this.channelName,
           sessionId: this._sessionId,
           leaseSeconds: GOAL_LEASE_SECONDS,
         },

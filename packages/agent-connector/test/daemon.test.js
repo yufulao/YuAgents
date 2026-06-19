@@ -666,7 +666,7 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general || [], []);
   });
 
-  it('BaseAdapter claims due workspace goals as coordinator checkpoint turns', async () => {
+  it('BaseAdapter claims due workspace goals across workspace channels as coordinator checkpoint turns', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
       channelName: 'general',
@@ -682,7 +682,7 @@ describe('Daemon', () => {
       calls.push({ workspaceId, agentName, token, opts });
       return {
         id: 'goal-1',
-        channel_name: 'general',
+        channel_name: 'workroom',
         coordinator: 'agent-a',
         objective: 'Coordinate relay validation',
         stop_condition: 'All lanes pass with evidence',
@@ -699,8 +699,9 @@ describe('Daemon', () => {
     assert.equal(calls[0].workspaceId, 'ws');
     assert.equal(calls[0].agentName, 'agent-a');
     assert.equal(calls[0].opts.sessionId, 'sess-1');
-    assert.equal(calls[0].opts.channelName, 'general');
+    assert.equal(Object.prototype.hasOwnProperty.call(calls[0].opts, 'channelName'), false);
     assert.equal(msg.messageId, 'goal:goal-1:3');
+    assert.equal(msg.sessionId, 'workroom');
     assert.equal(msg._deliveryKind, 'goal');
     assert.ok(msg.content.includes('Objective: Coordinate relay validation'));
     assert.ok(msg.content.includes('Stop condition: All lanes pass with evidence'));
