@@ -286,6 +286,9 @@ export function AgentProfilePanel() {
   const profileStatus = agent.activityState && agent.activityState !== 'idle'
     ? agent.activityState
     : agent.presenceStatus || agent.status;
+  const profileStatusLabel = profileStatus === 'waiting_input'
+    ? (agent.activeTask?.waitingOnDependency ? '等待依赖' : '等待')
+    : profileStatus;
   const profileStatusTone = profileStatus === 'online' || profileStatus === 'idle'
     ? 'online'
     : (!profileStatus || profileStatus === 'offline' || profileStatus === 'stopped' || profileStatus === 'disabled') ? 'offline' : 'active';
@@ -390,7 +393,7 @@ export function AgentProfilePanel() {
                     profileStatusTone === 'offline' && 'bg-zinc-400',
                     profileStatusTone === 'active' && 'bg-amber-500',
                   )} />
-                  {profileStatus}
+                  {profileStatusLabel}
                 </span>
                 {modelLabel && (
                   <span className="truncate font-mono text-[11px] text-muted-foreground">

@@ -97,13 +97,20 @@ function getAgentSidebarStatus(agent: WorkspaceAgent, liveStatus?: string) {
   return normalizeStatus(liveStatus) || getAgentBaseStatus(agent);
 }
 
+function getAgentSidebarStatusLabel(agent: WorkspaceAgent, status: string) {
+  if (status === 'waiting_input') {
+    return agent.activeTask?.waitingOnDependency ? '等待依赖' : '等待';
+  }
+  return status;
+}
+
 function isOfflineStatus(status?: string | null) {
   const normalized = normalizeStatus(status);
   return !normalized || normalized === 'offline' || normalized === 'stopped' || normalized === 'disabled';
 }
 
 function AgentListButton({ agent, status, onClick }: { agent: WorkspaceAgent; status: string; onClick: () => void }) {
-  const statusLabel = getAgentSidebarStatus(agent, status);
+  const statusLabel = getAgentSidebarStatusLabel(agent, getAgentSidebarStatus(agent, status));
   return (
     <button
       onClick={onClick}

@@ -56,7 +56,7 @@ const STATE_META: Record<ActivityState, { label: string; className: string; icon
   thinking: { label: '思考中', className: 'text-amber-600 dark:text-amber-400', icon: Brain },
   editing_file: { label: '编辑文件', className: 'text-amber-600 dark:text-amber-400', icon: Pencil },
   running_command: { label: '执行命令', className: 'text-amber-600 dark:text-amber-400', icon: Terminal },
-  waiting_input: { label: '等待输入', className: 'text-violet-600 dark:text-violet-400', icon: Clock },
+  waiting_input: { label: '等待', className: 'text-violet-600 dark:text-violet-400', icon: Clock },
   stopping: { label: '停止中', className: 'text-zinc-500 dark:text-zinc-400', icon: Loader2 },
   stopped: { label: '已停止', className: 'text-zinc-500 dark:text-zinc-400', icon: CircleStop },
   error: { label: '阻塞', className: 'text-red-600 dark:text-red-400', icon: AlertTriangle },
@@ -101,6 +101,13 @@ function normalizeState(agent: WorkspaceAgent, hasActiveThread: boolean): Activi
   return 'offline';
 }
 
+function stateLabel(activity: AgentActivity) {
+  if (activity.state === 'waiting_input' && activity.agent.activeTask?.waitingOnDependency) {
+    return '等待依赖';
+  }
+  return STATE_META[activity.state].label;
+}
+
 function getCurrentSession(
   agent: WorkspaceAgent,
   sessions: WorkspaceSession[],
@@ -124,7 +131,7 @@ function getAgentActivities(
     .map((agent) => {
       const session = getCurrentSession(agent, sessions, activeSessionIds);
       const state = normalizeState(agent, Boolean(session));
-      const summary = agent.activitySummary || STATE_META[state].label;
+      const summary = agent.activitySummary || (state === 'waiting_input' && agent.activeTask?.waitingOnDependency ? '等待依赖' : STATE_META[state].label);
       const updatedAt = session?.lastEventAt
         ? new Date(session.lastEventAt).toISOString()
         : agent.lastHeartbeatAt || session?.createdAt || null;
@@ -229,7 +236,7 @@ export function AgentActivityPanel({
                           'size-3',
                           (activity.state === 'thinking' || activity.state === 'editing_file' || activity.state === 'running_command' || activity.state === 'starting' || activity.state === 'stopping') && 'animate-pulse',
                         )} />
-                        {meta.label}
+                        {stateLabel(activity)}
                       </span>
                     </div>
                     <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
