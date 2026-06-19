@@ -111,6 +111,13 @@ describe('workspace prompt budget', () => {
         claimed_by: '博丽灵梦',
         description: 'QA verify mobile layout.',
       }],
+      active_goals: [{
+        id: 'goal-1',
+        objective: '持续统筹 L1 批次',
+        stop_condition: '所有子任务 done 或明确 blocked',
+        status: 'active',
+        checkpoint: '等待 QA 证据',
+      }],
       runtime_rules: ['Do not flatten roles.'],
     });
 
@@ -120,6 +127,9 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Passive Ambient Messages'));
     assert.ok(prompt.includes('Active Shared Tasks'));
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
+    assert.ok(prompt.includes('Active Coordinator Goals'));
+    assert.ok(prompt.includes('goal-1: [active] 持续统筹 L1 批次'));
+    assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });
 

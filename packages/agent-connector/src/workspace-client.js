@@ -282,6 +282,24 @@ class WorkspaceClient {
     return data.data || data || null;
   }
 
+  async claimDueWorkspaceGoal(workspaceId, agentName, token, {
+    channelName,
+    sessionId,
+    leaseSeconds = 900,
+  } = {}) {
+    if (!sessionId) return null;
+    const payload = {
+      network: workspaceId,
+      coordinator: agentName,
+      session_id: sessionId,
+      lease_seconds: leaseSeconds,
+    };
+    if (channelName) payload.channel = channelName;
+    const data = await this._post('/v1/workspace-goals/claim-due', payload, this._wsHeaders(token));
+    const result = data.data || data || {};
+    return result.goal || null;
+  }
+
   /**
    * Fetch the latest workspace.message.posted event id (head cursor).
    * Used by adapters to skip past existing events on join in O(1) instead

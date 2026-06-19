@@ -26,7 +26,7 @@ from app.channel_visibility import (
     visible_channel_names,
 )
 from app.database import get_db
-from app.models import AgentDelivery, Channel, ChannelMember, EventRecord, Workspace, WorkspaceMember, WorkspaceTask
+from app.models import AgentDelivery, Channel, ChannelMember, EventRecord, Workspace, WorkspaceGoal, WorkspaceMember, WorkspaceTask
 from app.pipeline_factory import pipeline
 from app.response import ResponseCode, json_response, success_response
 from app.routers.network import _verify_workspace_access, _workspace_filter
@@ -202,6 +202,24 @@ def _task_context_payload(task: WorkspaceTask) -> dict:
         "depends_on": task.depends_on or [],
         "result": task.result,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
+
+
+def _goal_context_payload(goal: WorkspaceGoal) -> dict:
+    return {
+        "id": goal.id,
+        "channel_name": goal.channel_name,
+        "coordinator": goal.coordinator,
+        "objective": goal.objective,
+        "stop_condition": goal.stop_condition,
+        "status": goal.status,
+        "checkpoint": goal.checkpoint,
+        "progress_log": goal.progress_log,
+        "cadence_seconds": goal.cadence_seconds,
+        "run_count": goal.run_count,
+        "last_run_at": goal.last_run_at.isoformat() if goal.last_run_at else None,
+        "next_run_at": goal.next_run_at.isoformat() if goal.next_run_at else None,
+        "updated_at": goal.updated_at.isoformat() if goal.updated_at else None,
     }
 
 
@@ -639,6 +657,17 @@ def get_agent_context(
         task_query.order_by(WorkspaceTask.created_at.asc(), WorkspaceTask.id.asc()).limit(30)
     ).scalars().all()
 
+    goal_query = select(WorkspaceGoal).where(
+        WorkspaceGoal.workspace_id == workspace.id,
+        WorkspaceGoal.status.in_(["active", "paused", "blocked"]),
+        WorkspaceGoal.coordinator == agent,
+    )
+    if channel:
+        goal_query = goal_query.where(WorkspaceGoal.channel_name == channel)
+    goal_rows = db.execute(
+        goal_query.order_by(WorkspaceGoal.created_at.asc(), WorkspaceGoal.id.asc()).limit(10)
+    ).scalars().all()
+
     return success_response({
         "workspace": {
             "id": str(workspace.id),
@@ -663,6 +692,7 @@ def get_agent_context(
         "recent_messages": recent_messages,
         "ambient_messages": ambient_messages,
         "active_tasks": [_task_context_payload(t) for t in task_rows],
+        "active_goals": [_goal_context_payload(g) for g in goal_rows],
         "runtime_rules": [
             "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
             "Ambient delivery is passive context only: do not create/claim tasks, @mention others, assign work, or send visible coordination unless explicitly addressed, already owning the referenced task, or acting as channel lead on a required coordination decision.",
@@ -674,6 +704,7 @@ def get_agent_context(
             "Agents assigned to verification should reproduce and report evidence; agents assigned to implementation should own code changes.",
             "If another agent must act, @mention that agent explicitly and include a concrete handoff.",
             "Use shared workspace tasks for multi-agent work ownership; use personal todos only for your own execution plan.",
+            "Use workspace goals for long-running coordinator loops: one durable objective, a verifiable stop condition, checkpoint evidence, and explicit pause/resume/done/blocked state.",
         ],
     })
 
