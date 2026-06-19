@@ -247,6 +247,84 @@ class TestGetWorkspace:
         assert beta["activitySummary"] == "等待依赖: ENG-124 verification lane"
         assert beta["activeTask"]["waitingOnDependency"] is True
 
+    def test_get_workspace_projects_waiting_task_result_as_waiting_activity(self, client, workspace, db):
+        """Waiting text in a claimed task result should not look like live thinking."""
+        from app.models import WorkspaceTask
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+
+        task = WorkspaceTask(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            title="ENG-126 verification lane",
+            description="Verify after implementation lands",
+            status="in_progress",
+            priority="normal",
+            assignee="agent-beta",
+            claimed_by="agent-beta",
+            created_by="agent-alpha",
+            result="Claimed and waiting. Wait for ENG-126A implementation evidence before VQ.",
+        )
+        db.add(task)
+        db.commit()
+
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        beta = next(a for a in resp.json()["data"]["agents"] if a["agentName"] == "agent-beta")
+        assert beta["activityState"] == "waiting_input"
+        assert beta["workloadState"] == "waiting"
+        assert beta["displayStatus"] == "waiting_input"
+        assert beta["activitySummary"] == "等待: ENG-126 verification lane"
+        assert beta["activeTask"]["waitingOnDependency"] is True
+
+    def test_get_workspace_projects_stale_claimed_task_as_waiting_activity(self, client, workspace, db):
+        """Old in-progress tasks without live activity should not keep an agent thinking forever."""
+        from datetime import datetime, timedelta, timezone
+
+        from app.models import WorkspaceTask
+
+        joined = client.post("/v1/join", json={
+            "agent_name": "agent-beta",
+            "token": workspace["token"],
+            "network": workspace["id"],
+            "agent_type": "codex",
+        })
+        assert joined.status_code == 200
+        stale_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+        task = WorkspaceTask(
+            workspace_id=workspace["id"],
+            channel_name="general",
+            title="ENG-127 stale self lane",
+            description="Self-held implementation lane",
+            status="in_progress",
+            priority="normal",
+            assignee="agent-beta",
+            claimed_by="agent-beta",
+            created_by="agent-beta",
+            claimed_at=stale_at,
+            updated_at=stale_at,
+        )
+        db.add(task)
+        db.commit()
+
+        resp = client.get(f"/v1/workspaces/{workspace['id']}",
+                          headers={"X-Workspace-Token": workspace["token"]})
+        assert resp.status_code == 200
+        beta = next(a for a in resp.json()["data"]["agents"] if a["agentName"] == "agent-beta")
+        assert beta["activityState"] == "waiting_input"
+        assert beta["workloadState"] == "waiting"
+        assert beta["displayStatus"] == "waiting_input"
+        assert beta["activitySummary"] == "停滞: ENG-127 stale self lane"
+        assert beta["activeTask"]["waitingOnDependency"] is True
+
     def test_get_nonexistent_workspace(self, client):
         """Nonexistent workspace returns 404."""
         resp = client.get("/v1/workspaces/nonexistent")

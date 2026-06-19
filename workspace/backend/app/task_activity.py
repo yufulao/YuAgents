@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -16,11 +16,16 @@ from app.models import TodoRecord, WorkspaceTask
 
 ACTIVE_TASK_STATUSES = {"in_progress"}
 DONE_DEPENDENCY_STATUSES = {"done", "cancelled"}
+STALE_TASK_WAITING_AFTER = timedelta(minutes=30)
 WAITING_TODO_MARKERS = (
+    "wait",
     "wait for",
     "waiting for",
+    "waiting",
+    "blocked",
     "等待",
     "依赖",
+    "阻塞",
 )
 
 
@@ -28,6 +33,7 @@ WAITING_TODO_MARKERS = (
 class AgentTaskActivity:
     task: WorkspaceTask
     waiting_on_dependency: bool
+    waiting_reason: str | None = None
     dependencies: tuple[WorkspaceTask, ...] = ()
 
 
@@ -51,6 +57,30 @@ def _sort_key(task: WorkspaceTask) -> tuple[int, datetime]:
     return (1 if task.status == "in_progress" else 0, updated)
 
 
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _has_waiting_marker(*parts: Any) -> bool:
+    text = "\n".join(str(part or "") for part in parts).lower()
+    return any(marker in text for marker in WAITING_TODO_MARKERS)
+
+
+def _is_stale_task(task: WorkspaceTask, now: datetime) -> bool:
+    updated = (
+        _naive_utc(task.updated_at)
+        or _naive_utc(task.claimed_at)
+        or _naive_utc(task.created_at)
+    )
+    if updated is None:
+        return False
+    return now - updated > STALE_TASK_WAITING_AFTER
+
+
 def _waiting_todos_by_agent(db: Session, workspace_id: str) -> set[str]:
     rows = db.execute(
         select(TodoRecord).where(
@@ -61,8 +91,7 @@ def _waiting_todos_by_agent(db: Session, workspace_id: str) -> set[str]:
     waiting: set[str] = set()
     for todo in rows:
         agent = todo.assignee or (todo.created_by or "").replace("openagents:", "", 1)
-        content = str(todo.content or "").lower()
-        if agent and any(marker in content for marker in WAITING_TODO_MARKERS):
+        if agent and _has_waiting_marker(todo.content):
             waiting.add(agent)
     return waiting
 
@@ -78,6 +107,7 @@ def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, A
     ]
     active_tasks.sort(key=_sort_key, reverse=True)
     waiting_todos = _waiting_todos_by_agent(db, workspace_id)
+    now = datetime.utcnow()
 
     by_agent: dict[str, AgentTaskActivity] = {}
     for task in active_tasks:
@@ -88,13 +118,21 @@ def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, A
             task_by_id[dep] for dep in _parse_depends_on(task.depends_on)
             if dep in task_by_id
         )
-        waiting = (
-            any(dep.status not in DONE_DEPENDENCY_STATUSES for dep in dependencies)
-            or agent_name in waiting_todos
-        )
+        has_pending_dependencies = any(dep.status not in DONE_DEPENDENCY_STATUSES for dep in dependencies)
+        has_waiting_text = _has_waiting_marker(task.result, task.description, task.title)
+        stale_task = _is_stale_task(task, now)
+        waiting = has_pending_dependencies or agent_name in waiting_todos or has_waiting_text or stale_task
+        waiting_reason = None
+        if has_pending_dependencies or agent_name in waiting_todos:
+            waiting_reason = "dependency"
+        elif has_waiting_text:
+            waiting_reason = "waiting"
+        elif stale_task:
+            waiting_reason = "stale"
         by_agent[agent_name] = AgentTaskActivity(
             task=task,
             waiting_on_dependency=waiting,
+            waiting_reason=waiting_reason,
             dependencies=dependencies,
         )
     return by_agent
@@ -106,7 +144,14 @@ def active_task_activity_for_agent(db: Session, workspace_id: str, agent_name: s
 
 def task_activity_summary(activity: AgentTaskActivity) -> str:
     task = activity.task
-    prefix = "等待依赖" if activity.waiting_on_dependency else "进行中"
+    if activity.waiting_reason == "dependency":
+        prefix = "等待依赖"
+    elif activity.waiting_reason == "stale":
+        prefix = "停滞"
+    elif activity.waiting_on_dependency:
+        prefix = "等待"
+    else:
+        prefix = "进行中"
     return f"{prefix}: {task.title}"
 
 
