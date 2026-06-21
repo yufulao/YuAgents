@@ -53,6 +53,30 @@ describe('CodexAdapter', () => {
     assert.equal(cmd.includes('-C', 4), false);
   });
 
+  it('extracts resume thread ids for precise process cleanup', () => {
+    const adapter = makeAdapter();
+    const cmd = ['codex', '-C', 'C:/repo', 'exec', 'resume', '11111111-2222-3333-4444-555555555555', '--json'];
+
+    assert.equal(adapter._extractResumeThreadId(cmd), '11111111-2222-3333-4444-555555555555');
+    assert.equal(adapter._extractResumeThreadId(['codex', 'exec', '--json']), null);
+  });
+
+  it('marks running subprocesses interrupted when stopped by control', async () => {
+    const adapter = makeAdapter();
+    const proc = { pid: 12345, exitCode: null };
+    adapter._channelProcesses['session-test'] = proc;
+    const stopped = [];
+    adapter._stopProcess = async (p) => { stopped.push(p); };
+    adapter.sendStatus = async () => {};
+
+    await adapter._onControlAction('stop', {});
+
+    assert.equal(proc._openagentsInterrupted, true);
+    assert.equal(proc._openagentsStopReason, 'control stop');
+    assert.deepEqual(stopped, [proc]);
+    assert.equal(adapter._channelProcesses['session-test'], undefined);
+  });
+
   it('summarizes command status without exposing workspace tokens', () => {
     const adapter = makeAdapter();
     const command = String.raw`"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Command '$headers = @{ "X-Workspace-Token" = "abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG" }; Invoke-RestMethod -Headers $headers -Uri http://127.0.0.1:8000/v1/workspace-tasks'`;

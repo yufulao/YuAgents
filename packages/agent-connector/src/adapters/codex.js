@@ -263,11 +263,31 @@ class CodexAdapter extends BaseAdapter {
   // Process management
   // ------------------------------------------------------------------
 
+  stop() {
+    super.stop();
+    this._stopAllChannelProcesses('agent stop').catch(() => {});
+  }
+
+  async _stopAllChannelProcesses(reason) {
+    const entries = Object.entries(this._channelProcesses);
+    for (const [channel, proc] of entries) {
+      if (proc && proc.exitCode === null) {
+        proc._openagentsInterrupted = true;
+        proc._openagentsStopReason = reason;
+        await this._stopProcess(proc);
+      }
+      delete this._channelProcesses[channel];
+    }
+  }
+
   async _stopProcess(proc) {
     if (!proc || proc.exitCode !== null) return;
     try {
       if (IS_WINDOWS) {
+        const descendantPids = this._windowsProcessTree(proc.pid);
         try { execSync(`taskkill /F /T /PID ${proc.pid}`, { timeout: 5000 }); } catch {}
+        this._killWindowsPids(descendantPids);
+        this._killWindowsSessionResidue(proc);
       } else {
         try { process.kill(-proc.pid, 'SIGTERM'); } catch {
           proc.kill('SIGTERM');
@@ -288,7 +308,11 @@ class CodexAdapter extends BaseAdapter {
   async _onControlAction(action, payload) {
     if (action === 'stop') {
       for (const [channel, proc] of Object.entries(this._channelProcesses)) {
-        await this._stopProcess(proc);
+        if (proc) {
+          proc._openagentsInterrupted = true;
+          proc._openagentsStopReason = 'control stop';
+          await this._stopProcess(proc);
+        }
         delete this._channelProcesses[channel];
         try { await this.sendStatus(channel, 'Execution stopped by user'); } catch {}
       }
@@ -308,6 +332,70 @@ class CodexAdapter extends BaseAdapter {
     } catch {}
     await this._stopProcess(proc);
     return true;
+  }
+
+  _windowsProcessSnapshot() {
+    if (!IS_WINDOWS) return [];
+    try {
+      const script = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress';
+      const out = execSync(`powershell -NoProfile -Command "${script}"`, {
+        encoding: 'utf-8',
+        timeout: 5000,
+        windowsHide: true,
+      }).trim();
+      if (!out) return [];
+      const parsed = JSON.parse(out);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [];
+    }
+  }
+
+  _windowsProcessTree(rootPid) {
+    if (!IS_WINDOWS || !rootPid) return [];
+    const snapshot = this._windowsProcessSnapshot();
+    const children = new Map();
+    for (const proc of snapshot) {
+      const parent = Number(proc.ParentProcessId);
+      const pid = Number(proc.ProcessId);
+      if (!parent || !pid) continue;
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(pid);
+    }
+    const result = [];
+    const stack = [Number(rootPid)];
+    const seen = new Set();
+    while (stack.length) {
+      const pid = stack.pop();
+      if (!pid || seen.has(pid) || pid === process.pid) continue;
+      seen.add(pid);
+      result.push(pid);
+      for (const child of children.get(pid) || []) stack.push(child);
+    }
+    return result;
+  }
+
+  _killWindowsPids(pids) {
+    if (!IS_WINDOWS) return;
+    for (const pid of [...new Set(pids || [])]) {
+      if (!pid || pid === process.pid) continue;
+      try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true }); } catch {}
+    }
+  }
+
+  _killWindowsSessionResidue(proc) {
+    if (!IS_WINDOWS || !proc) return;
+    const threadId = proc._openagentsThreadId;
+    if (!threadId) return;
+    const needle = String(threadId).toLowerCase();
+    const pids = [];
+    for (const item of this._windowsProcessSnapshot()) {
+      const pid = Number(item.ProcessId);
+      const commandLine = String(item.CommandLine || '').toLowerCase();
+      if (!pid || pid === process.pid) continue;
+      if (commandLine.includes(needle)) pids.push(pid);
+    }
+    this._killWindowsPids(pids);
   }
 
   // ------------------------------------------------------------------
@@ -442,6 +530,8 @@ class CodexAdapter extends BaseAdapter {
         windowsHide: true,
         shell: IS_WINDOWS,
       });
+      proc._openagentsThreadId = this._extractResumeThreadId(cmd);
+      proc._openagentsWorkingDir = this.workingDir || '';
       this._channelProcesses[msgChannel] = proc;
 
       const responseTexts = [];
@@ -563,6 +653,13 @@ class CodexAdapter extends BaseAdapter {
         reject(err);
       });
     });
+  }
+
+  _extractResumeThreadId(cmd) {
+    const parts = Array.isArray(cmd) ? cmd : [];
+    const resumeIdx = parts.indexOf('resume');
+    if (resumeIdx === -1 || resumeIdx + 1 >= parts.length) return null;
+    return parts[resumeIdx + 1] || null;
   }
 
   // ------------------------------------------------------------------

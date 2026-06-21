@@ -859,6 +859,38 @@ describe('Daemon', () => {
     assert.equal(adapter._channelQueues.general[0].messageId, 'human-interrupt');
   });
 
+  it('BaseAdapter interrupts queued humans after the default short threshold', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    adapter._channelBusySince.set('general', Date.now() - 95_000);
+    adapter.sendStatus = async () => {};
+    let interrupted = false;
+    adapter._interruptChannelForHuman = async () => {
+      interrupted = true;
+      return true;
+    };
+
+    await adapter._dispatchMessage({
+      messageId: 'human-default-interrupt',
+      _deliveryId: 'delivery-human',
+      _deliveryKind: 'attention',
+      _attentionReason: 'mention',
+      sessionId: 'general',
+      senderType: 'human',
+      content: 'stop and answer me',
+    });
+
+    assert.equal(interrupted, true);
+  });
+
   it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',
