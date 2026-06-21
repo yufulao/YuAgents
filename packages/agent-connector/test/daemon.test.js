@@ -891,6 +891,75 @@ describe('Daemon', () => {
     assert.equal(interrupted, true);
   });
 
+  it('BaseAdapter immediately interrupts urgent human stop messages', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    adapter._channelBusy.add('general');
+    adapter._channelBusySince.set('general', Date.now());
+    adapter.sendStatus = async () => {};
+    let interrupted = false;
+    adapter._interruptChannelForHuman = async () => {
+      interrupted = true;
+      return true;
+    };
+
+    await adapter._dispatchMessage({
+      messageId: 'human-stop-now',
+      _deliveryId: 'delivery-human',
+      _deliveryKind: 'attention',
+      _attentionReason: 'mention',
+      sessionId: 'general',
+      senderType: 'human',
+      content: '不要继续下线干活，先停下',
+    });
+
+    assert.equal(interrupted, true);
+  });
+
+  it('BaseAdapter releases queued deliveries instead of draining after stop', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    adapter._sessionId = 'sess-1';
+    const handled = [];
+    const failed = [];
+    adapter._handleMessage = async (msg) => {
+      handled.push(msg.messageId);
+      adapter.stop();
+    };
+    adapter._ackMessage = async () => {};
+    adapter.client.ackDelivery = async (_workspaceId, _agentName, _token, deliveryId, _sessionId, opts) => {
+      failed.push({ deliveryId, status: opts.status });
+      return { status: opts.status };
+    };
+    adapter._channelQueues.general = [{
+      messageId: 'queued-human',
+      _deliveryId: 'delivery-queued',
+      _deliveryAttempts: 1,
+      sessionId: 'general',
+      senderType: 'human',
+      content: 'do not continue',
+    }];
+
+    await adapter._channelWorker('general', { messageId: 'current', sessionId: 'general', content: 'current' });
+
+    assert.deepEqual(handled, ['current']);
+    assert.deepEqual(failed, [{ deliveryId: 'delivery-queued', status: 'failed' }]);
+    assert.equal(adapter._channelQueues.general.length, 0);
+  });
+
   it('BaseAdapter ambient delivery prompt forbids coordination side effects', () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

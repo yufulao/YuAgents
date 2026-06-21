@@ -55,6 +55,7 @@ class BaseAdapter {
     this._lastEventId = null;
     this._lastToolResultId = null;
     this._running = false;
+    this._stopRequested = false;
     this._stopReason = null;
     this._sessionId = null;  // issued by server on /v1/join; used to prove liveness
     this._processedIds = new Set();
@@ -98,6 +99,7 @@ class BaseAdapter {
 
   async run() {
     this._running = true;
+    this._stopRequested = false;
     this._stopReason = null;
 
     // Announce agent to workspace
@@ -160,6 +162,7 @@ class BaseAdapter {
   }
 
   stop() {
+    this._stopRequested = true;
     this._running = false;
   }
 
@@ -859,12 +862,13 @@ class BaseAdapter {
 
   async _maybeInterruptBusyChannelForHuman(channel, msg) {
     if (String(msg && msg.senderType || '').toLowerCase() !== 'human') return false;
+    const urgentInterrupt = this._isUrgentHumanInterruptMessage(msg);
     const thresholdMs = Number.parseInt(this.agentEnv.OPENAGENTS_HUMAN_INTERRUPT_AFTER_MS || '', 10) || HUMAN_INTERRUPT_AFTER_MS;
-    if (thresholdMs <= 0) return false;
+    if (thresholdMs <= 0 && !urgentInterrupt) return false;
     const busySince = this._channelBusySince.get(channel);
     if (!busySince) return false;
     const busyMs = Date.now() - busySince;
-    if (busyMs < thresholdMs) return false;
+    if (!urgentInterrupt && busyMs < thresholdMs) return false;
     if (this._channelHumanInterrupting.has(channel)) return false;
 
     this._channelHumanInterrupting.add(channel);
@@ -884,6 +888,12 @@ class BaseAdapter {
 
   async _interruptChannelForHuman(_channel, _msg, _context) {
     return false;
+  }
+
+  _isUrgentHumanInterruptMessage(msg) {
+    const content = String(msg && msg.content || '').toLowerCase();
+    if (!content) return false;
+    return /(\bstop\b|\bpause\b|\bcancel\b|do not continue|don't continue|停止|停下|中断|暂停|别继续|不要继续|别再|不要再|不要.*下.?一线|不要.*干活|别.*下.?一线|别.*干活)/i.test(content);
   }
 
   async _cancelQueuedMessage(channel, queueId) {
@@ -913,6 +923,12 @@ class BaseAdapter {
     }
 
     // Drain queue
+    if (this._stopRequested) {
+      await this._releaseQueuedMessagesForStoppedChannel(channel);
+      this._channelBusy.delete(channel);
+      this._channelBusySince.delete(channel);
+      return;
+    }
     while (true) {
       const queue = this._channelQueues[channel];
       if (!queue || queue.length === 0) break;
@@ -932,9 +948,24 @@ class BaseAdapter {
         await this._failMessage(nextMsg, e);
         this._clearMessageInFlight(nextMsg);
       }
+      if (this._stopRequested) {
+        await this._releaseQueuedMessagesForStoppedChannel(channel);
+        break;
+      }
     }
     this._channelBusy.delete(channel);
     this._channelBusySince.delete(channel);
+  }
+
+  async _releaseQueuedMessagesForStoppedChannel(channel) {
+    const queue = this._channelQueues[channel];
+    if (!queue || queue.length === 0) return;
+    while (queue.length > 0) {
+      const msg = queue.shift();
+      this._log(`Releasing queued message ${msg._queueId || msg.messageId || msg.id || ''} in ${channel} because adapter stopped`);
+      await this._failMessage(msg, new Error('agent stopped before queued message processed'));
+      this._clearMessageInFlight(msg);
+    }
   }
 
   // ------------------------------------------------------------------
