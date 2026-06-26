@@ -375,7 +375,7 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
 
   if (!isExpanded) {
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <div className="flex justify-center px-2.5 py-1">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -390,7 +390,7 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
           </Tooltip>
         </div>
 
-        <div className="flex flex-1 flex-col items-center gap-2 py-3">
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-3">
           {visibleAgents.map((agent) => (
             <Tooltip key={agent.agentName}>
               <TooltipTrigger asChild>
@@ -450,18 +450,18 @@ export function SidebarContent({ forceExpanded = false }: { forceExpanded?: bool
 
   return (
     <>
-      <div className="flex h-full flex-col">
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="px-3.5 pb-3">
-            <button
-              onClick={handleNewThread}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <Plus className="size-4" />
-              <span>新建会话</span>
-            </button>
-          </div>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="shrink-0 px-3.5 pb-3">
+          <button
+            onClick={handleNewThread}
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="size-4" />
+            <span>新建会话</span>
+          </button>
+        </div>
 
+        <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-3 px-2.5">
             <SidebarSection
               sectionKey="agents"

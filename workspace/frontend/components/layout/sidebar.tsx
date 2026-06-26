@@ -67,7 +67,7 @@ export function Sidebar() {
     >
       <div
         className={cn(
-          'grow shrink-0 flex flex-col',
+          'min-h-0 grow shrink-0 flex flex-col',
           !isResizing && 'transition-all duration-300',
         )}
         style={{ width: isSidebarOpen ? 'var(--sidebar-width)' : 'var(--sidebar-width-collapsed)' }}

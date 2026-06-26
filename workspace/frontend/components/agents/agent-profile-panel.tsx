@@ -316,7 +316,7 @@ export function AgentProfilePanel() {
         ref={panelRef}
         style={isMobile ? undefined : { width: 'var(--agent-panel-width)' }}
         className={cn(
-          'absolute bottom-0 right-0 top-0 z-20 flex flex-col border-l bg-background shadow-xl animate-in slide-in-from-right duration-200',
+          'absolute bottom-0 right-0 top-0 z-20 flex min-h-0 flex-col overflow-hidden border-l bg-background shadow-xl animate-in slide-in-from-right duration-200',
           isMobile ? 'left-0 w-full' : '',
         )}
       >
@@ -354,7 +354,7 @@ export function AgentProfilePanel() {
             </button>
           </div>
         ) : (
-          <div className="flex items-center justify-end px-3 pt-3">
+          <div className="flex shrink-0 items-center justify-end px-3 pt-3">
             <button
               onClick={handleClose}
               className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
@@ -365,7 +365,7 @@ export function AgentProfilePanel() {
           </div>
         )}
 
-        <div className="px-5 pb-4">
+        <div className="shrink-0 px-5 pb-4">
           <div className="flex items-center gap-3">
             <AgentAvatar
               name={agent.agentName}
@@ -405,7 +405,7 @@ export function AgentProfilePanel() {
           </div>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-3.5">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5">
           {agent.activeTask && (
             <div className="overflow-hidden rounded-lg border">
               <div className="flex items-center justify-between border-b px-3.5 py-2.5">
@@ -634,7 +634,7 @@ export function AgentProfilePanel() {
           </div>
         </div>
 
-        <div className="border-t px-3.5 py-3">
+        <div className="shrink-0 border-t px-3.5 py-3">
           <div className="flex gap-2">
             {!isDisabled && (
               <button
