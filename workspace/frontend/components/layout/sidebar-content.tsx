@@ -253,7 +253,7 @@ function SidebarSection({
       </button>
       <div hidden={collapsed} className="relative">
         <div
-          className="min-w-0 overflow-y-auto overscroll-contain pr-1"
+          className="min-w-0 overflow-y-auto pr-1"
           style={{ height }}
         >
           {children}
