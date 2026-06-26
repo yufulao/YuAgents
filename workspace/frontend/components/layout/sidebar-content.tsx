@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen,
@@ -198,6 +202,29 @@ function SidebarSection({
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const limits = SIDEBAR_SECTION_HEIGHTS[sectionKey];
 
+  const handleSectionWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    const inner = event.currentTarget;
+    if (event.deltaY === 0) return;
+
+    const atTop = inner.scrollTop <= 0;
+    const atBottom = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 1;
+    const shouldChainUp = event.deltaY < 0 && atTop;
+    const shouldChainDown = event.deltaY > 0 && atBottom;
+    if (!shouldChainUp && !shouldChainDown) return;
+
+    const scrollRoot = inner.closest('[data-slot="scroll-area"]');
+    const outer = scrollRoot?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+    if (!outer) return;
+
+    const outerAtTop = outer.scrollTop <= 0;
+    const outerAtBottom = outer.scrollTop + outer.clientHeight >= outer.scrollHeight - 1;
+    const outerCanScroll = (event.deltaY < 0 && !outerAtTop) || (event.deltaY > 0 && !outerAtBottom);
+    if (!outerCanScroll) return;
+
+    event.preventDefault();
+    outer.scrollTop += event.deltaY;
+  };
+
   const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (collapsed) return;
     event.preventDefault();
@@ -255,6 +282,7 @@ function SidebarSection({
         <div
           className="min-w-0 overflow-y-auto pr-1"
           style={{ height }}
+          onWheel={handleSectionWheel}
         >
           {children}
         </div>
