@@ -18,7 +18,7 @@ import {
   User,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { WorkspaceMessage, WorkspaceAgent } from '@/lib/types';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { MarkdownContent } from './markdown-content';
@@ -527,7 +527,6 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [], pro
   const isSystem = message.messageType === 'status';
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const agentNames = agents.map((a) => a.agentName);
   const agent = agents.find((a) => a.agentName === message.senderName);
@@ -543,6 +542,10 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [], pro
     const messageProcessDetails = processDetails(message);
     return [...stepDetails, ...payloadDetails, ...messageProcessDetails];
   }, [message, processSteps]);
+  const [detailsOpen, setDetailsOpen] = useState(() => details.length > 0);
+  useEffect(() => {
+    if (details.length > 0) setDetailsOpen(true);
+  }, [details.length, message.messageId]);
   const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
   const attachments: Attachment[] = rawAttachments.map((a) => ({
     fileId: (a.fileId || a.file_id || '') as string,
@@ -669,18 +672,20 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [], pro
                   {attachments.length}
                 </span>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground gap-1"
-                onClick={() => setDetailsOpen((v) => !v)}
-              >
-                {detailsOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                <Info className="size-3" />
-                详情
-              </Button>
+              {details.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground gap-1"
+                  onClick={() => setDetailsOpen((v) => !v)}
+                >
+                  {detailsOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                  <Info className="size-3" />
+                  详情
+                </Button>
+              )}
             </div>
-            {detailsOpen && (
+            {detailsOpen && details.length > 0 && (
               <ProcessDetails details={details} />
             )}
           </div>

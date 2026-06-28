@@ -313,7 +313,7 @@ function stepSummary(step: WorkspaceMessage): string {
 }
 
 export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents, isActive = false }: IntermediateStepsProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   if (steps.length === 0) return null;
   const hasTerminalStatus = steps.some(isTerminalStatus);
 
