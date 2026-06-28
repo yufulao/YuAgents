@@ -286,9 +286,7 @@ export function AgentProfilePanel() {
   const profileStatus = agent.activityState && agent.activityState !== 'idle'
     ? agent.activityState
     : agent.presenceStatus || agent.status;
-  const profileStatusLabel = profileStatus === 'waiting_input'
-    ? (agent.activeTask?.waitingOnDependency ? '等待依赖' : '等待')
-    : profileStatus;
+  const profileStatusLabel = profileStatus;
   const profileStatusTone = profileStatus === 'online' || profileStatus === 'idle'
     ? 'online'
     : (!profileStatus || profileStatus === 'offline' || profileStatus === 'stopped' || profileStatus === 'disabled') ? 'offline' : 'active';
@@ -419,7 +417,7 @@ export function AgentProfilePanel() {
                     ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
                     : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
                 )}>
-                  {agent.activeTask.waitingOnDependency ? '等待依赖' : taskStatusLabel(agent.activeTask.status)}
+                  {agent.activeTask.waitingOnDependency ? 'waiting_input' : taskStatusLabel(agent.activeTask.status)}
                 </span>
               </div>
               <div className="space-y-3 p-3.5">

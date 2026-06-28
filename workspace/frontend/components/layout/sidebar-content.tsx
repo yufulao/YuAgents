@@ -102,9 +102,6 @@ function getAgentSidebarStatus(agent: WorkspaceAgent, liveStatus?: string) {
 }
 
 function getAgentSidebarStatusLabel(agent: WorkspaceAgent, status: string) {
-  if (status === 'waiting_input') {
-    return agent.activeTask?.waitingOnDependency ? '等待依赖' : '等待';
-  }
   return status;
 }
 

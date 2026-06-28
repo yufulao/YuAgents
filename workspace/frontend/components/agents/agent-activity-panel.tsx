@@ -102,9 +102,6 @@ function normalizeState(agent: WorkspaceAgent, hasActiveThread: boolean): Activi
 }
 
 function stateLabel(activity: AgentActivity) {
-  if (activity.state === 'waiting_input' && activity.agent.activeTask?.waitingOnDependency) {
-    return '等待依赖';
-  }
   return STATE_META[activity.state].label;
 }
 
@@ -131,7 +128,7 @@ function getAgentActivities(
     .map((agent) => {
       const session = getCurrentSession(agent, sessions, activeSessionIds);
       const state = normalizeState(agent, Boolean(session));
-      const summary = agent.activitySummary || (state === 'waiting_input' && agent.activeTask?.waitingOnDependency ? '等待依赖' : STATE_META[state].label);
+      const summary = agent.activitySummary || STATE_META[state].label;
       const updatedAt = session?.lastEventAt
         ? new Date(session.lastEventAt).toISOString()
         : agent.lastHeartbeatAt || session?.createdAt || null;
@@ -259,7 +256,7 @@ export function AgentActivityPanel({
                               {activity.agent.activeTask.title}
                             </span>
                             <span className="shrink-0 rounded border px-1 py-px text-[10px] text-muted-foreground">
-                              {activity.agent.activeTask.waitingOnDependency ? '等待依赖' : taskStatusLabel(activity.agent.activeTask.status)}
+                              {activity.agent.activeTask.waitingOnDependency ? 'waiting_input' : taskStatusLabel(activity.agent.activeTask.status)}
                             </span>
                           </div>
                           {activity.agent.activeTask.dependencies && activity.agent.activeTask.dependencies.length > 0 && (

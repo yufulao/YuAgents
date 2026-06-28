@@ -158,7 +158,7 @@ class TestGetWorkspace:
         assert beta["workloadState"] == "active"
         assert beta["displayStatus"] == "thinking"
         assert beta["hasActiveWork"] is True
-        assert beta["activitySummary"] == "进行中: ENG-124 detail progress"
+        assert beta["activitySummary"] == "in_progress: ENG-124 detail progress"
         assert beta["activeTask"]["id"] == task.id
         assert beta["activeTask"]["description"] == "Detailed workspace task context"
         assert beta["activeTask"]["result"] == "Workspace task latest result"
@@ -244,7 +244,7 @@ class TestGetWorkspace:
         assert beta["activityState"] == "waiting_input"
         assert beta["workloadState"] == "waiting"
         assert beta["displayStatus"] == "waiting_input"
-        assert beta["activitySummary"] == "等待依赖: ENG-124 verification lane"
+        assert beta["activitySummary"] == "waiting_input: ENG-124 verification lane"
         assert beta["activeTask"]["waitingOnDependency"] is True
 
     def test_get_workspace_projects_waiting_task_result_as_waiting_activity(self, client, workspace, db):
@@ -281,7 +281,7 @@ class TestGetWorkspace:
         assert beta["activityState"] == "waiting_input"
         assert beta["workloadState"] == "waiting"
         assert beta["displayStatus"] == "waiting_input"
-        assert beta["activitySummary"] == "等待: ENG-126 verification lane"
+        assert beta["activitySummary"] == "waiting_input: ENG-126 verification lane"
         assert beta["activeTask"]["waitingOnDependency"] is True
 
     def test_get_workspace_projects_stale_claimed_task_as_waiting_activity(self, client, workspace, db):
@@ -322,7 +322,7 @@ class TestGetWorkspace:
         assert beta["activityState"] == "waiting_input"
         assert beta["workloadState"] == "waiting"
         assert beta["displayStatus"] == "waiting_input"
-        assert beta["activitySummary"] == "停滞: ENG-127 stale self lane"
+        assert beta["activitySummary"] == "stalled: ENG-127 stale self lane"
         assert beta["activeTask"]["waitingOnDependency"] is True
 
     def test_get_nonexistent_workspace(self, client):

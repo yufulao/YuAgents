@@ -145,13 +145,13 @@ def active_task_activity_for_agent(db: Session, workspace_id: str, agent_name: s
 def task_activity_summary(activity: AgentTaskActivity) -> str:
     task = activity.task
     if activity.waiting_reason == "dependency":
-        prefix = "等待依赖"
+        prefix = "waiting_input"
     elif activity.waiting_reason == "stale":
-        prefix = "停滞"
+        prefix = "stalled"
     elif activity.waiting_on_dependency:
-        prefix = "等待"
+        prefix = "waiting_input"
     else:
-        prefix = "进行中"
+        prefix = "in_progress"
     return f"{prefix}: {task.title}"
 
 
