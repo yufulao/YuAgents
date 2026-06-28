@@ -135,6 +135,14 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
 
   // Group into chat messages and intermediate step clusters
   const groups = useMemo(() => groupMessages(filteredMessages, showAllSteps), [filteredMessages, showAllSteps]);
+  const latestProcessGroupIndex = useMemo(() => {
+    for (let i = groups.length - 1; i >= 0; i -= 1) {
+      const group = groups[i];
+      if (group.type === 'steps' && group.messages.length > 0) return i;
+      if (group.type === 'chat' && group.processSteps.length > 0) return i;
+    }
+    return -1;
+  }, [groups]);
 
   const hasTerminalStatus = realMessages.some(isTerminalStatus);
 
@@ -388,12 +396,14 @@ export function ChatMessages({ sessionId, messages, agents, showAllSteps, classN
                     message={group.message}
                     agents={agents}
                     processSteps={group.processSteps}
+                    defaultDetailsOpen={index === latestProcessGroupIndex}
                   />
                 ) : (
                   <IntermediateSteps
                     steps={group.messages}
                     agents={agents}
                     isActive={index === groups.length - 1}
+                    defaultExpanded={index === latestProcessGroupIndex}
                   />
                 )}
               </div>

@@ -151,6 +151,7 @@ interface ChatMessageProps {
   message: WorkspaceMessage;
   agents?: WorkspaceAgent[];
   processSteps?: WorkspaceMessage[];
+  defaultDetailsOpen?: boolean;
 }
 
 const LONG_MESSAGE_CHARS = 900;
@@ -521,7 +522,7 @@ function ThreadSummary({ thread }: { thread: ThreadInfo }) {
   );
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, agents = [], processSteps = [] }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, agents = [], processSteps = [], defaultDetailsOpen = false }: ChatMessageProps) {
   const { currentUser } = useWorkspace();
   const isHuman = message.senderType === 'human' || message.senderType === 'user';
   const isSystem = message.messageType === 'status';
@@ -542,10 +543,10 @@ export const ChatMessage = memo(function ChatMessage({ message, agents = [], pro
     const messageProcessDetails = processDetails(message);
     return [...stepDetails, ...payloadDetails, ...messageProcessDetails];
   }, [message, processSteps]);
-  const [detailsOpen, setDetailsOpen] = useState(() => details.length > 0);
+  const [detailsOpen, setDetailsOpen] = useState(() => defaultDetailsOpen && details.length > 0);
   useEffect(() => {
-    if (details.length > 0) setDetailsOpen(true);
-  }, [details.length, message.messageId]);
+    setDetailsOpen(defaultDetailsOpen && details.length > 0);
+  }, [defaultDetailsOpen, details.length, message.messageId]);
   const rawAttachments = (message.metadata?.attachments as Record<string, unknown>[]) || [];
   const attachments: Attachment[] = rawAttachments.map((a) => ({
     fileId: (a.fileId || a.file_id || '') as string,

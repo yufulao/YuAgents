@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
   Brain,
@@ -292,6 +292,7 @@ interface IntermediateStepsProps {
   steps: WorkspaceMessage[];
   agents?: WorkspaceAgent[];
   isActive?: boolean;
+  defaultExpanded?: boolean;
 }
 
 function stepSummary(step: WorkspaceMessage): string {
@@ -312,8 +313,11 @@ function stepSummary(step: WorkspaceMessage): string {
   return parsed.text || step.content || step.messageType || '状态更新';
 }
 
-export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents, isActive = false }: IntermediateStepsProps) {
-  const [expanded, setExpanded] = useState(true);
+export const IntermediateSteps = memo(function IntermediateSteps({ steps, agents, isActive = false, defaultExpanded = false }: IntermediateStepsProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded, steps[0]?.messageId]);
   if (steps.length === 0) return null;
   const hasTerminalStatus = steps.some(isTerminalStatus);
 
