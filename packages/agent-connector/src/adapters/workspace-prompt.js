@@ -82,9 +82,8 @@ function buildCollaborationPrompt() {
   return (
     '\n## Multi-Agent Collaboration\n' +
     'Channel visibility is context; @mentions/routing are attention. ' +
-    'Only @mention when handing concrete work to that agent, never for thanks/ack. ' +
-    'Ambient context is passive: unless named, routed, task owner, or channel lead, do not create/claim tasks, assign, @mention, or visibly coordinate; return no response. ' +
-    'Non-leads report evidence/blockers and do not direct the lead unless delegated.\n'
+    'Only @mention concrete handoffs. Ambient context is passive: unless named/routed, owner, or lead, do not claim/assign/coordinate. ' +
+    'Non-leads report evidence/blockers unless delegated.\n'
   );
 }
 
@@ -92,14 +91,16 @@ function buildRuntimeRulePackPrompt() {
   return (
     '\n## OpenAgents Runtime Rule Pack (mandatory)\n' +
     '- `docs/*.md` are references, not automatic memory; follow injected runtime context.\n' +
-    '- Channel messages are context; @mentions/routing are attention/delegation.\n' +
-    '- Ambient is passive: unless named/routed, task owner, or lead, do not claim, @mention, assign, or coordinate.\n' +
-    '- Preserve role boundaries; route by agent role/description/status.\n' +
+    '- Channel messages=context; @mentions/routing=attention/delegation.\n' +
+    '- Ambient is passive: unless named/routed, owner, or lead, do not claim, assign, or coordinate.\n' +
+    '- Preserve roles; route by role/description/status.\n' +
     '- Non-leads report evidence; do not direct the lead unless delegated.\n' +
-    '- Scheduling is rolling-parallel: do not batch-barrier; freed agents may take safe next work.\n' +
-    '- Create shared tasks only when separate owners improve clarity/throughput.\n' +
-    '- Claim shared tasks before implementation; update result/evidence; keep personal todos private.\n' +
-    '- Long-running goals are self-maintained agent run loops: create/update your goal and checkpoint; never wait for human/platform continuity.\n'
+    '- Scheduling is rolling-parallel: do not batch-barrier; freed agents take safe work.\n' +
+    '- scope-aware parallelism: set lane_type/write_scope/resource_locks/conflicts_with/commit_policy.\n' +
+    '- Repo writers need non-conflicting locks and path-scoped staging/commits.\n' +
+    '- Shared tasks only when separate owners improve clarity/throughput.\n' +
+    '- Claim before implementation; update result/evidence; keep personal todos private.\n' +
+    '- Long-running goals are self-maintained agent run loops: checkpoint yourself; do not rely on platform continuity.\n'
   );
 }
 
@@ -183,7 +184,11 @@ function buildRuntimeContextPrompt(context, options = {}) {
     for (const task of shownTasks) {
       const owner = task.claimed_by || task.assignee || 'unassigned';
       const desc = task.description ? ` — ${_truncate(task.description, 90)}` : '';
-      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${desc}`);
+      const lane = task.lane_type && task.lane_type !== 'unspecified' ? ` | lane=${task.lane_type}` : '';
+      const locks = Array.isArray(task.resource_locks) && task.resource_locks.length ? ` | locks=${task.resource_locks.join(',')}` : '';
+      const scope = Array.isArray(task.write_scope) && task.write_scope.length ? ` | scope=${_truncate(task.write_scope.join(','), 90)}` : '';
+      const sched = task.scheduling && task.scheduling.parallel_safe === false ? ' | scheduling=CONFLICT' : '';
+      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${lane}${locks}${scope}${sched}${desc}`);
     }
     if (tasks.length > shownTasks.length) parts.push(`- … ${tasks.length - shownTasks.length} tasks omitted; use workspace_list_tasks for full board.`);
   }
@@ -448,6 +453,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       'Use shared tasks when work should be assigned, claimed, reviewed, or split across agents. ' +
       'Scheduling derives needed work functions from the actual request and channel context, then matches them to agent role/description/skills/status. ' +
       'Use rolling parallelism, not batch barriers: when one independent lane finishes, re-check team status and immediately release non-overlapping follow-up work to freed agents while other lanes continue. ' +
+      'For parallel implementation, declare lane_type/write_scope/resource_locks/conflicts_with/commit_policy and keep commits path-scoped. ' +
       'Examples: bug work may need analysis/fix/test; feature work may need reference research/design breakdown/implementation. ' +
       'Use only the functions the context actually needs.\n\n' +
       '**Create shared task:**\n' +
@@ -455,7 +461,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `${baseUrl}/v1/workspace-tasks -d '{"network":"${workspaceId}",` +
       `"channel":"${channelName}","source":"openagents:${agentName}",` +
       `"title":"Task title","description":"Acceptance criteria",` +
-      `"assignee":"agent-name","priority":"normal"}'\`\n\n` +
+      `"assignee":"agent-name","priority":"normal","lane_type":"write",` +
+      `"write_scope":["path:Src/Module"],"resource_locks":["path:Src/Module"],` +
+      `"commit_policy":{"stage_mode":"path_scoped","allowed_paths":["Src/Module"]}}'\`\n\n` +
       '**List active shared tasks:**\n' +
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-tasks?network=${workspaceId}&channel=${channelName}&active=true"\`\n\n` +
       '**Claim shared task:**\n' +
@@ -647,6 +655,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
   }
   if (!disabled.has('todos')) {
     lines.push('- Shared tasks: GET /v1/workspace-tasks?network=...&channel=...&active=true');
+    lines.push('- Task scheduling fields: lane_type/write_scope/resource_locks/conflicts_with/commit_policy.');
     lines.push('- Workspace goals: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true (your self-maintained long-run state)');
     lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
@@ -667,6 +676,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     if (!disabled.has('browser')) lines.push('- Browser actions: POST /v1/browser/tabs, /tabs/{id}/navigate, /click, /type; DELETE /tabs/{id}.');
     if (!disabled.has('todos')) {
       lines.push('- Shared tasks: POST/GET /v1/workspace-tasks, POST /v1/workspace-tasks/{id}/claim, PATCH /v1/workspace-tasks/{id}.');
+      lines.push('- Parallel writers: set scheduling fields and commit only declared paths.');
       lines.push('- Workspace goals: POST/GET /v1/workspace-goals; PATCH /v1/workspace-goals/{id} to maintain your own long-running objective, checkpoint, and status.');
       lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
     }

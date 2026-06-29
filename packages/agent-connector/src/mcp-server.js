@@ -63,6 +63,11 @@ function buildToolDefs(disabledModules) {
           assignee: { type: 'string', description: 'Agent name to assign and wake, without @' },
           priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'Task priority' },
           depends_on: { type: 'array', items: { type: 'string' }, description: 'Task IDs that must finish first' },
+          lane_type: { type: 'string', enum: ['unspecified', 'coordination', 'read_only', 'write', 'verification', 'handoff'], description: 'Scheduling lane type. Use read_only/verification/write to make parallel safety explicit.' },
+          write_scope: { type: 'array', items: { type: 'string' }, description: 'Allowed write scope, e.g. paths, modules, APIs, or tests this task may edit.' },
+          resource_locks: { type: 'array', items: { type: 'string' }, description: 'Logical resources this task occupies, e.g. path:Src/Foo, api:Renderer, repo:push.' },
+          conflicts_with: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task must not run in parallel with.' },
+          commit_policy: { type: 'object', description: 'Commit constraints such as stage_mode=path_scoped, allowed_paths, forbidden_paths, push_gate.' },
         },
         required: ['title'],
       },
@@ -101,6 +106,11 @@ function buildToolDefs(disabledModules) {
           assignee: { type: 'string', description: 'New assignee, without @' },
           result: { type: 'string', description: 'Completion result, evidence, or blocker detail' },
           priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'New priority' },
+          lane_type: { type: 'string', enum: ['unspecified', 'coordination', 'read_only', 'write', 'verification', 'handoff'], description: 'Scheduling lane type.' },
+          write_scope: { type: 'array', items: { type: 'string' }, description: 'Allowed write scope for this task.' },
+          resource_locks: { type: 'array', items: { type: 'string' }, description: 'Logical resources occupied by this task.' },
+          conflicts_with: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task must not run in parallel with.' },
+          commit_policy: { type: 'object', description: 'Commit constraints for implementation tasks.' },
         },
         required: ['task_id'],
       },
@@ -896,6 +906,11 @@ class McpServer {
           assignee: args.assignee,
           priority: args.priority,
           dependsOn: args.depends_on,
+          laneType: args.lane_type,
+          writeScope: args.write_scope,
+          resourceLocks: args.resource_locks,
+          conflictsWith: args.conflicts_with,
+          commitPolicy: args.commit_policy,
           source: `openagents:${this.agentName}`,
         });
         const task = result && result.task;
@@ -912,7 +927,9 @@ class McpServer {
         if (!tasks.length) return text('No shared workspace tasks.');
         const lines = tasks.map((t) => {
           const owner = t.claimed_by || t.assignee || 'unassigned';
-          return `- ${t.id}: [${t.status}] ${t.title} → ${owner}`;
+          const lane = t.lane_type && t.lane_type !== 'unspecified' ? ` lane=${t.lane_type}` : '';
+          const locks = Array.isArray(t.resource_locks) && t.resource_locks.length ? ` locks=${t.resource_locks.join(',')}` : '';
+          return `- ${t.id}: [${t.status}] ${t.title} → ${owner}${lane}${locks}`;
         });
         return text(lines.join('\n'));
       }
@@ -936,6 +953,11 @@ class McpServer {
           assignee: args.assignee,
           result: args.result,
           priority: args.priority,
+          laneType: args.lane_type,
+          writeScope: args.write_scope,
+          resourceLocks: args.resource_locks,
+          conflictsWith: args.conflicts_with,
+          commitPolicy: args.commit_policy,
         });
         const task = result && result.task;
         return text(`Workspace task updated: ${task ? `${task.id} [${task.status}] ${task.title}` : args.task_id}`);

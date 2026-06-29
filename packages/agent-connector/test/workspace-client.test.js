@@ -309,6 +309,11 @@ describe('WorkspaceClient', () => {
       title: 'Build task graph',
       assignee: 'agent-beta',
       dependsOn: ['task-0'],
+      laneType: 'write',
+      writeScope: ['path:Src/Renderer'],
+      resourceLocks: ['path:Src/Renderer'],
+      conflictsWith: ['task-x'],
+      commitPolicy: { stage_mode: 'path_scoped', allowed_paths: ['Src/Renderer'] },
       source: 'openagents:lead',
     });
     await client.listWorkspaceTasks('ws-1', 'workroom', 'tok', { assignee: 'agent-beta' });
@@ -317,6 +322,8 @@ describe('WorkspaceClient', () => {
       source: 'openagents:agent-beta',
       status: 'in_review',
       result: 'done',
+      laneType: 'verification',
+      resourceLocks: ['test:Renderer'],
     });
 
     assert.equal(calls[0][0], 'post');
@@ -324,6 +331,11 @@ describe('WorkspaceClient', () => {
     assert.equal(calls[0][2].channel, 'workroom');
     assert.equal(calls[0][2].source, 'openagents:lead');
     assert.deepEqual(calls[0][2].depends_on, ['task-0']);
+    assert.equal(calls[0][2].lane_type, 'write');
+    assert.deepEqual(calls[0][2].write_scope, ['path:Src/Renderer']);
+    assert.deepEqual(calls[0][2].resource_locks, ['path:Src/Renderer']);
+    assert.deepEqual(calls[0][2].conflicts_with, ['task-x']);
+    assert.deepEqual(calls[0][2].commit_policy.allowed_paths, ['Src/Renderer']);
     assert.ok(calls[1][1].startsWith('/v1/workspace-tasks?'));
     assert.ok(calls[1][1].includes('assignee=agent-beta'));
     assert.equal(calls[2][1], '/v1/workspace-tasks/task-1/claim');
@@ -331,6 +343,8 @@ describe('WorkspaceClient', () => {
     assert.equal(calls[3][1], '/v1/workspace-tasks/task-1');
     assert.equal(calls[3][2].status, 'in_review');
     assert.equal(calls[3][2].source, 'openagents:agent-beta');
+    assert.equal(calls[3][2].lane_type, 'verification');
+    assert.deepEqual(calls[3][2].resource_locks, ['test:Renderer']);
   });
 
   it('workspace task helpers do not synthesize unknown source', async () => {

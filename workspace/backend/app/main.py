@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from sqlalchemy import inspect, text
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import config
@@ -28,6 +29,33 @@ logger = logging.getLogger(__name__)
 # never hold a pooled DB connection — or block the event loop — every 10s.
 TIMER_LOOP_INTERVAL_SECONDS = 10
 MAINTENANCE_EVERY_N_CYCLES = 30  # ~5 minutes
+
+
+def _ensure_sqlite_workspace_task_scope_columns(engine):
+    """Patch existing SQLite dev DBs after create_all.
+
+    SQLite create_all creates missing tables but does not add columns to an
+    existing table. Production uses Alembic; this keeps local dev databases
+    usable after model additions.
+    """
+    inspector = inspect(engine)
+    if "workspace_tasks" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("workspace_tasks")}
+    additions = {
+        "lane_type": "TEXT NOT NULL DEFAULT 'unspecified'",
+        "write_scope": "JSON DEFAULT '[]'",
+        "resource_locks": "JSON DEFAULT '[]'",
+        "conflicts_with": "JSON DEFAULT '[]'",
+        "commit_policy": "JSON DEFAULT '{}'",
+    }
+    missing = [(name, ddl) for name, ddl in additions.items() if name not in columns]
+    if not missing:
+        return
+    with engine.begin() as conn:
+        for name, ddl in missing:
+            conn.execute(text(f"ALTER TABLE workspace_tasks ADD COLUMN {name} {ddl}"))
+    logger.info("SQLite: added workspace_tasks columns: %s", ", ".join(name for name, _ in missing))
 
 
 def _run_maintenance():
@@ -265,6 +293,7 @@ async def lifespan(app: FastAPI):
         if _is_sqlite:
             from app import models  # noqa: F401 — ensure all models are registered
             Base.metadata.create_all(bind=engine)
+            _ensure_sqlite_workspace_task_scope_columns(engine)
             logger.info("SQLite: auto-created tables")
     except Exception as e:
         logger.error("LIFESPAN: database import failed: %s", e)

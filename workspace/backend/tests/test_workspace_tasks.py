@@ -106,6 +106,108 @@ def test_create_list_claim_and_update_workspace_task(client, workspace):
     assert len(claimed_events) == 1
 
 
+def test_workspace_task_scope_contract_round_trips_to_context(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    join = client.post("/v1/join", json={
+        "agent_name": "agent-alpha",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert join.status_code == 200
+    session_id = join.json()["data"]["session_id"]
+
+    created = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Implement path-scoped renderer fix",
+        "assignee": "agent-alpha",
+        "priority": "high",
+        "source": "openagents:lead",
+        "lane_type": "write",
+        "write_scope": ["path:Src/Renderer", "test:Renderer"],
+        "resource_locks": ["path:Src/Renderer", "api:Renderer"],
+        "conflicts_with": ["task-blocker"],
+        "commit_policy": {
+            "stage_mode": "path_scoped",
+            "allowed_paths": ["Src/Renderer", "Tests/Renderer"],
+            "push_gate": "coordinator",
+        },
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 200
+    task = created.json()["data"]["task"]
+    assert task["lane_type"] == "write"
+    assert task["write_scope"] == ["path:Src/Renderer", "test:Renderer"]
+    assert task["resource_locks"] == ["path:Src/Renderer", "api:Renderer"]
+    assert task["conflicts_with"] == ["task-blocker"]
+    assert task["commit_policy"]["stage_mode"] == "path_scoped"
+
+    updated = client.patch(f"/v1/workspace-tasks/{task['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:lead",
+        "write_scope": ["path:Src/Renderer/Graph"],
+        "resource_locks": ["path:Src/Renderer/Graph"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert updated.status_code == 200
+    assert updated.json()["data"]["task"]["write_scope"] == ["path:Src/Renderer/Graph"]
+
+    context = client.get("/v1/agent-context", params={
+        "network": workspace["id"],
+        "agent": "agent-alpha",
+        "session_id": session_id,
+        "channel": channel_name,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert context.status_code == 200
+    active = next(t for t in context.json()["data"]["active_tasks"] if t["id"] == task["id"])
+    assert active["lane_type"] == "write"
+    assert active["write_scope"] == ["path:Src/Renderer/Graph"]
+    assert active["resource_locks"] == ["path:Src/Renderer/Graph"]
+    assert active["commit_policy"]["stage_mode"] == "path_scoped"
+    assert active["scheduling"]["parallel_safe"] is True
+
+
+def test_workspace_task_claim_rejects_active_resource_lock_conflict(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    for agent in ("agent-alpha", "agent-beta"):
+        joined = client.post("/v1/join", json={
+            "agent_name": agent,
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert joined.status_code == 200
+
+    first = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Writer A",
+        "assignee": "agent-alpha",
+        "source": "openagents:lead",
+        "lane_type": "write",
+        "resource_locks": ["path:Src/Package"],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+    second = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Writer B",
+        "assignee": "agent-beta",
+        "source": "openagents:lead",
+        "lane_type": "write",
+        "resource_locks": ["path:Src/Package"],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+
+    claim_first = client.post(f"/v1/workspace-tasks/{first['id']}/claim", json={
+        "network": workspace["id"],
+        "agent_name": "agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert claim_first.status_code == 200
+
+    claim_second = client.post(f"/v1/workspace-tasks/{second['id']}/claim", json={
+        "network": workspace["id"],
+        "agent_name": "agent-beta",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert claim_second.status_code == 409
+    assert "resource_locks" in claim_second.json()["message"]
+
+
 def test_create_workspace_task_requires_source(client, workspace):
     channel_name = workspace["channel"]["name"]
     missing = client.post("/v1/workspace-tasks", json={

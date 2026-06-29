@@ -56,6 +56,8 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Scheduling is rolling-parallel'));
     assert.ok(prompt.includes('rolling-parallel'));
     assert.ok(prompt.includes('do not batch-barrier'));
+    assert.ok(prompt.includes('scope-aware'));
+    assert.ok(prompt.includes('resource_locks'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
     assert.ok(prompt.includes('self-maintained agent run loops'));
@@ -115,6 +117,10 @@ describe('workspace prompt budget', () => {
         assignee: '博丽灵梦',
         claimed_by: '博丽灵梦',
         description: 'QA verify mobile layout.',
+        lane_type: 'write',
+        write_scope: ['path:Src/UI'],
+        resource_locks: ['path:Src/UI'],
+        scheduling: { parallel_safe: false, conflicts: [{ task_id: 'task-2' }] },
       }],
       active_goals: [{
         id: 'goal-1',
@@ -132,6 +138,9 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Passive Ambient Messages'));
     assert.ok(prompt.includes('Active Shared Tasks'));
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
+    assert.ok(prompt.includes('lane=write'));
+    assert.ok(prompt.includes('locks=path:Src/UI'));
+    assert.ok(prompt.includes('scheduling=CONFLICT'));
     assert.ok(prompt.includes('Active Self-Maintained Goals'));
     assert.ok(prompt.includes('goal-1: [active] 持续统筹 L1 批次'));
     assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));

@@ -755,6 +755,11 @@ class WorkspaceClient {
     assignee,
     priority,
     dependsOn,
+    laneType,
+    writeScope,
+    resourceLocks,
+    conflictsWith,
+    commitPolicy,
     parentTaskId,
     source,
   } = {}) {
@@ -768,6 +773,11 @@ class WorkspaceClient {
     if (assignee) body.assignee = assignee;
     if (priority) body.priority = priority;
     if (Array.isArray(dependsOn)) body.depends_on = dependsOn;
+    if (laneType) body.lane_type = laneType;
+    if (Array.isArray(writeScope)) body.write_scope = writeScope;
+    if (Array.isArray(resourceLocks)) body.resource_locks = resourceLocks;
+    if (Array.isArray(conflictsWith)) body.conflicts_with = conflictsWith;
+    if (commitPolicy && typeof commitPolicy === 'object') body.commit_policy = commitPolicy;
     if (parentTaskId) body.parent_task_id = parentTaskId;
     const data = await this._post('/v1/workspace-tasks', body, this._wsHeaders(token));
     return data.data || data;
@@ -805,6 +815,11 @@ class WorkspaceClient {
     description,
     result,
     dependsOn,
+    laneType,
+    writeScope,
+    resourceLocks,
+    conflictsWith,
+    commitPolicy,
     acceptedBy,
   } = {}) {
     const body = {
@@ -817,6 +832,11 @@ class WorkspaceClient {
     if (description !== undefined) body.description = description;
     if (result !== undefined) body.result = result;
     if (Array.isArray(dependsOn)) body.depends_on = dependsOn;
+    if (laneType !== undefined) body.lane_type = laneType;
+    if (Array.isArray(writeScope)) body.write_scope = writeScope;
+    if (Array.isArray(resourceLocks)) body.resource_locks = resourceLocks;
+    if (Array.isArray(conflictsWith)) body.conflicts_with = conflictsWith;
+    if (commitPolicy !== undefined && commitPolicy && typeof commitPolicy === 'object') body.commit_policy = commitPolicy;
     if (acceptedBy !== undefined) body.accepted_by = acceptedBy;
     const data = await this._patch(
       `/v1/workspace-tasks/${encodeURIComponent(taskId)}`,

@@ -200,9 +200,47 @@ def _task_context_payload(task: WorkspaceTask) -> dict:
         "created_by": task.created_by,
         "channel_name": task.channel_name,
         "depends_on": task.depends_on or [],
+        "lane_type": task.lane_type or "unspecified",
+        "write_scope": task.write_scope or [],
+        "resource_locks": task.resource_locks or [],
+        "conflicts_with": task.conflicts_with or [],
+        "commit_policy": task.commit_policy or {},
         "result": task.result,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
     }
+
+
+def _task_lock_set(task: WorkspaceTask) -> set[str]:
+    return {str(lock).strip() for lock in (task.resource_locks or []) if str(lock).strip()}
+
+
+def _task_context_with_scheduling(task: WorkspaceTask, active_tasks: list[WorkspaceTask]) -> dict:
+    payload = _task_context_payload(task)
+    explicit_conflicts = {str(item).strip() for item in (task.conflicts_with or []) if str(item).strip()}
+    locks = _task_lock_set(task)
+    conflicts = []
+    for other in active_tasks:
+        if other.id == task.id:
+            continue
+        if other.status not in {"todo", "in_progress", "in_review"}:
+            continue
+        other_explicit = {str(item).strip() for item in (other.conflicts_with or []) if str(item).strip()}
+        shared_locks = sorted(locks & _task_lock_set(other))
+        explicit = other.id in explicit_conflicts or task.id in other_explicit
+        if shared_locks or explicit:
+            conflicts.append({
+                "task_id": other.id,
+                "title": other.title,
+                "status": other.status,
+                "owner": other.claimed_by or other.assignee,
+                "shared_locks": shared_locks,
+                "explicit": explicit,
+            })
+    payload["scheduling"] = {
+        "parallel_safe": not conflicts,
+        "conflicts": conflicts,
+    }
+    return payload
 
 
 def _goal_context_payload(goal: WorkspaceGoal) -> dict:
@@ -691,7 +729,7 @@ def get_agent_context(
         "agents": agents,
         "recent_messages": recent_messages,
         "ambient_messages": ambient_messages,
-        "active_tasks": [_task_context_payload(t) for t in task_rows],
+        "active_tasks": [_task_context_with_scheduling(t, task_rows) for t in task_rows],
         "active_goals": [_goal_context_payload(g) for g in goal_rows],
         "runtime_rules": [
             "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
@@ -699,6 +737,8 @@ def get_agent_context(
             "Do not flatten roles. Use each agent's role and description when deciding delegation.",
             "Non-lead implementers and QA agents report evidence/blockers; they do not assign or direct the channel lead unless explicitly delegated.",
             "Scheduling is context-driven and rolling-parallel, not a fixed org chart or batch barrier: derive work functions from the current request and route safe non-overlapping follow-up work to freed agents while other lanes continue.",
+            "For parallel implementation, use scope-aware task contracts: set lane_type, write_scope, resource_locks, conflicts_with, and commit_policy; do not rely on natural-language promises when multiple writers may run.",
+            "Multiple writers may work in one repository only when their declared scopes and resource locks do not conflict; use path-scoped edits/staging/commits and never include another agent's dirty files.",
             "For a bug, useful functions may be analysis, fix, and test; for a feature, they may be reference research, design breakdown, and implementation. Use the functions the context actually needs.",
             "Create shared tasks for those work functions only when separate owners improve clarity or throughput; keep single-owner work single-owner.",
             "Agents assigned to verification should reproduce and report evidence; agents assigned to implementation should own code changes.",
