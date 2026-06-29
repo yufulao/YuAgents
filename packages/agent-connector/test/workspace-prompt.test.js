@@ -58,6 +58,7 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('do not batch-barrier'));
     assert.ok(prompt.includes('Write frontier first'));
     assert.ok(prompt.includes('same-scope close only'));
+    assert.ok(prompt.includes('repo:* is commit gate only'));
     assert.ok(prompt.includes('scope-aware'));
     assert.ok(prompt.includes('resource_locks'));
     assert.ok(prompt.includes('Ambient is passive'));
@@ -138,6 +139,7 @@ describe('workspace prompt budget', () => {
         active_write_lanes: 0,
         ready_unassigned_write_lanes: 0,
         active_non_write_lanes: 1,
+        commit_gate_locks: ['repo:main'],
         action: 'Create scoped write tasks.',
       },
       runtime_rules: ['Do not flatten roles.'],
@@ -157,6 +159,7 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
     assert.ok(prompt.includes('Scheduling Pressure'));
     assert.ok(prompt.includes('UNDERUTILIZED_WRITERS'));
+    assert.ok(prompt.includes('commit_gates=repo:main'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });
 

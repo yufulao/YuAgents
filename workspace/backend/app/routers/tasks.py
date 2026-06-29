@@ -44,6 +44,7 @@ TASK_LANE_TYPES = {
 IMPLEMENTATION_LANE_TYPES = {"write", "implementation"}
 SUPPORT_LANE_TYPES = {"read", "read_only", "test", "docs", "release"}
 REVIEW_LANE_TYPES = {"verification", "vq", "review"}
+COMMIT_GATE_LOCK_PREFIXES = ("repo:",)
 
 
 class CreateWorkspaceTaskRequest(BaseModel):
@@ -140,8 +141,17 @@ def _normalize_string_list(values: Optional[List[str]]) -> List[str]:
     return normalized
 
 
+def _is_commit_gate_lock(lock: str) -> bool:
+    normalized = (lock or "").strip().lower()
+    return any(normalized.startswith(prefix) for prefix in COMMIT_GATE_LOCK_PREFIXES)
+
+
 def _task_lock_set(task: WorkspaceTask) -> set[str]:
-    return set(_normalize_string_list(task.resource_locks or []))
+    return {
+        lock
+        for lock in _normalize_string_list(task.resource_locks or [])
+        if not _is_commit_gate_lock(lock)
+    }
 
 
 def _task_conflict_summary(task: WorkspaceTask, active_tasks: List[WorkspaceTask]) -> dict:

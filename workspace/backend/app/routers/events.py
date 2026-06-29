@@ -46,6 +46,7 @@ _IMPLEMENTATION_LANE_TYPES = {"write", "implementation"}
 _REVIEW_LANE_TYPES = {"verification", "vq", "review"}
 _NON_WRITE_LANE_TYPES = {"read", "read_only", "test", "docs", "release", "coordination", "handoff"} | _REVIEW_LANE_TYPES
 _NON_WRITER_ROLES = {"qa", "reviewer"}
+_COMMIT_GATE_LOCK_PREFIXES = ("repo:",)
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +216,25 @@ def _task_context_payload(task: WorkspaceTask) -> dict:
 
 
 def _task_lock_set(task: WorkspaceTask) -> set[str]:
-    return {str(lock).strip() for lock in (task.resource_locks or []) if str(lock).strip()}
+    locks = set()
+    for lock in (task.resource_locks or []):
+        item = str(lock).strip()
+        if item and not _is_commit_gate_lock(item):
+            locks.add(item)
+    return locks
+
+
+def _is_commit_gate_lock(lock: str) -> bool:
+    normalized = (lock or "").strip().lower()
+    return any(normalized.startswith(prefix) for prefix in _COMMIT_GATE_LOCK_PREFIXES)
+
+
+def _task_commit_gate_locks(task: WorkspaceTask) -> list[str]:
+    return [
+        str(lock).strip()
+        for lock in (task.resource_locks or [])
+        if str(lock).strip() and _is_commit_gate_lock(str(lock))
+    ]
 
 
 def _task_context_with_scheduling(task: WorkspaceTask, active_tasks: list[WorkspaceTask]) -> dict:
@@ -314,6 +333,11 @@ def _scheduling_pressure_context(
         and (task.assignee or task.claimed_by)
         and (task.lane_type or "unspecified").lower() in _NON_WRITE_LANE_TYPES
     ]
+    broad_write_locks = sorted({
+        lock
+        for task in active_write_lanes
+        for lock in _task_commit_gate_locks(task)
+    })
 
     reason = None
     action = "No scheduling pressure detected."
@@ -328,6 +352,13 @@ def _scheduling_pressure_context(
             "Create scoped write/implementation tasks for safe frontier work, "
             "or record NO_SAFE_WRITE_FRONTIER_REASON with the concrete dependency/lock blocker."
         )
+    elif free_writer_agents and active_write_lanes and not ready_write_lanes:
+        reason = "LOW_WRITE_PARALLELISM"
+        action = (
+            "Generate another non-conflicting write/implementation frontier, "
+            "or record NO_SAFE_WRITE_FRONTIER_REASON using concrete path/module/dependency/test-resource blockers; "
+            "repo:* is only a commit/push/rebase gate."
+        )
 
     return {
         "reason": reason,
@@ -336,6 +367,7 @@ def _scheduling_pressure_context(
         "write_lanes_in_review": len(in_review_write_lanes),
         "ready_unassigned_write_lanes": len(ready_write_lanes),
         "active_non_write_lanes": len(active_non_write_lanes),
+        "commit_gate_locks": broad_write_locks,
         "action": action,
     }
 
@@ -848,6 +880,7 @@ def get_agent_context(
             "Write frontier comes first: do not count QA, VQ, review, or scout work as sufficient parallelism when implementation-capable agents are idle.",
             "VQ/review gates the same scope close or merge only; it must not block unrelated safe implementation frontier.",
             "If scheduling_pressure.reason is UNDERUTILIZED_WRITERS, create scoped write/implementation tasks or record NO_SAFE_WRITE_FRONTIER_REASON with concrete dependency/lock evidence.",
+            "If scheduling_pressure.reason is LOW_WRITE_PARALLELISM, create another non-conflicting write frontier or record NO_SAFE_WRITE_FRONTIER_REASON; repo:* is only a commit/push/rebase gate, not a broad implementation lock.",
             "For parallel implementation, use scope-aware task contracts: set lane_type, write_scope, resource_locks, conflicts_with, and commit_policy; do not rely on natural-language promises when multiple writers may run.",
             "Multiple writers may work in one repository only when their declared scopes and resource locks do not conflict; use path-scoped edits/staging/commits and never include another agent's dirty files.",
             "For a bug, useful functions may be analysis, fix, and test; for a feature, they may be reference research, design breakdown, and implementation. Use the functions the context actually needs.",

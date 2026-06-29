@@ -208,6 +208,48 @@ def test_workspace_task_claim_rejects_active_resource_lock_conflict(client, work
     assert "resource_locks" in claim_second.json()["message"]
 
 
+def test_repo_main_lock_is_commit_gate_not_write_conflict(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    for agent in ("agent-alpha", "agent-beta"):
+        joined = client.post("/v1/join", json={
+            "agent_name": agent,
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert joined.status_code == 200
+
+    first = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Writer A",
+        "assignee": "agent-alpha",
+        "source": "openagents:lead",
+        "lane_type": "write",
+        "resource_locks": ["repo:main", "path:Src/A"],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+    second = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Writer B",
+        "assignee": "agent-beta",
+        "source": "openagents:lead",
+        "lane_type": "write",
+        "resource_locks": ["repo:main", "path:Src/B"],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+
+    claim_first = client.post(f"/v1/workspace-tasks/{first['id']}/claim", json={
+        "network": workspace["id"],
+        "agent_name": "agent-alpha",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert claim_first.status_code == 200
+
+    claim_second = client.post(f"/v1/workspace-tasks/{second['id']}/claim", json={
+        "network": workspace["id"],
+        "agent_name": "agent-beta",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert claim_second.status_code == 200
+
+
 def test_ready_queue_scheduler_assigns_unowned_task_and_wakes_agent(client, workspace):
     channel_name = workspace["channel"]["name"]
     beta_join = client.post("/v1/join", json={

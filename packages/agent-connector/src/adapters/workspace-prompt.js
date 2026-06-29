@@ -100,7 +100,7 @@ function buildRuntimeRulePackPrompt() {
     '- VQ/review gates same-scope close only; unrelated write lanes may continue.\n' +
     '- Ready scheduler: workspace_schedule_tasks assigns safe ready tasks.\n' +
     '- scope-aware: set lane_type/write_scope/resource_locks/conflicts_with/commit_policy.\n' +
-    '- Repo writers need scoped non-conflicting commits.\n' +
+    '- repo:* is commit gate only, not implementation lock.\n' +
     '- Shared tasks only when owners improve throughput.\n' +
     '- Claim before implementation; record evidence; keep todos private.\n' +
     '- Plans: root/stage -> short/tasks -> evidence -> planning.\n' +
@@ -219,8 +219,11 @@ function buildRuntimeContextPrompt(context, options = {}) {
       ? pressure.free_writer_agents.join(',')
       : '';
     parts.push('\n### Scheduling Pressure');
+    const commitGates = Array.isArray(pressure.commit_gate_locks) && pressure.commit_gate_locks.length
+      ? ` | commit_gates=${pressure.commit_gate_locks.join(',')}`
+      : '';
     parts.push(
-      `- ${pressure.reason}: free_writers=${freeWriters || 'none'} | active_write=${pressure.active_write_lanes || 0} | ready_write=${pressure.ready_unassigned_write_lanes || 0} | non_write=${pressure.active_non_write_lanes || 0}`
+      `- ${pressure.reason}: free_writers=${freeWriters || 'none'} | active_write=${pressure.active_write_lanes || 0} | ready_write=${pressure.ready_unassigned_write_lanes || 0} | non_write=${pressure.active_non_write_lanes || 0}${commitGates}`
     );
     if (pressure.action) parts.push(`- action=${_truncate(pressure.action, 180)}`);
   }

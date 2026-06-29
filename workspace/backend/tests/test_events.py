@@ -973,6 +973,66 @@ class TestAgentDeliveries:
         assert pressure["active_non_write_lanes"] == 1
         assert any("UNDERUTILIZED_WRITERS" in rule for rule in context.json()["data"]["runtime_rules"])
 
+    def test_agent_context_reports_low_write_parallelism_with_free_writers(self, client, workspace):
+        channel_name = workspace["channel"]["name"]
+        alpha_join = client.post("/v1/join", json={
+            "agent_name": "agent-alpha",
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert alpha_join.status_code == 200
+        alpha_session = alpha_join.json()["data"]["session_id"]
+
+        for agent in ("agent-beta", "agent-gamma"):
+            joined = client.post("/v1/join", json={
+                "agent_name": agent,
+                "token": workspace["token"],
+                "network": workspace["id"],
+            })
+            assert joined.status_code == 200
+            joined_channel = client.post("/v1/events", json={
+                "type": "network.channel.join",
+                "source": "human:user1",
+                "target": f"channel/{channel_name}",
+                "payload": {"channel": channel_name, "agent_name": agent},
+                "network": workspace["id"],
+            }, headers={"X-Workspace-Token": workspace["token"]})
+            assert joined_channel.status_code == 200
+
+        created = client.post("/v1/workspace-tasks", json={
+            "network": workspace["id"],
+            "channel": channel_name,
+            "title": "Scoped implementation lane",
+            "assignee": "agent-gamma",
+            "source": "openagents:lead",
+            "lane_type": "write",
+            "resource_locks": ["repo:main", "path:Src/A"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert created.status_code == 200
+        task = created.json()["data"]["task"]
+        claimed = client.post(f"/v1/workspace-tasks/{task['id']}/claim", json={
+            "network": workspace["id"],
+            "agent_name": "agent-gamma",
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert claimed.status_code == 200
+
+        context = client.get("/v1/agent-context", params={
+            "network": workspace["id"],
+            "agent": "agent-alpha",
+            "session_id": alpha_session,
+            "channel": channel_name,
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert context.status_code == 200
+        pressure = context.json()["data"]["scheduling_pressure"]
+        assert pressure["reason"] == "LOW_WRITE_PARALLELISM"
+        assert pressure["active_write_lanes"] == 1
+        assert pressure["ready_unassigned_write_lanes"] == 0
+        assert pressure["commit_gate_locks"] == ["repo:main"]
+        assert "agent-beta" in pressure["free_writer_agents"]
+        rules = context.json()["data"]["runtime_rules"]
+        assert any("LOW_WRITE_PARALLELISM" in rule for rule in rules)
+        assert any("repo:* is only a commit/push/rebase gate" in rule for rule in rules)
+
     def test_agent_context_pack_compacts_process_messages_without_changing_event_log(self, client, workspace):
         alpha_join = client.post("/v1/join", json={
             "agent_name": "agent-alpha",
