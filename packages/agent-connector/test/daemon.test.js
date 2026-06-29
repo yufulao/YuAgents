@@ -706,6 +706,8 @@ describe('Daemon', () => {
     assert.ok(msg.content.includes('Objective: Coordinate relay validation'));
     assert.ok(msg.content.includes('Stop condition: All lanes pass with evidence'));
     assert.ok(prompt.includes('self-maintained durable run loop'));
+    assert.ok(prompt.includes('rolling parallelism'));
+    assert.ok(prompt.includes('safe non-overlapping follow-up work'));
     assert.ok(prompt.includes('PATCH /v1/workspace-goals/{id}'));
   });
 

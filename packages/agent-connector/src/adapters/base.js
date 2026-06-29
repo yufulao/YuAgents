@@ -1401,6 +1401,7 @@ class BaseAdapter {
       return [
         'Delivery kind: workspace goal checkpoint. This is your self-maintained durable run loop, not a human chat message or platform-assigned objective.',
         'Drive exactly the referenced objective toward its stop condition. Reconcile current tasks, messages, repo state, and prior checkpoint before acting.',
+        'Use rolling parallelism: do not wait for every active lane to finish before assigning safe non-overlapping follow-up work to agents freed by a completed lane.',
         'If work remains, you must choose the next checkpoint and PATCH /v1/workspace-goals/{id} with checkpoint/progress_log and active status.',
         'Only mark the goal done, blocked, paused, or cancelled when that state is true, no broader objective remains, and you include evidence.',
       ].join('\n');

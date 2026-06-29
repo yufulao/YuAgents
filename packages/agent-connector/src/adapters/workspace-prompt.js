@@ -95,8 +95,8 @@ function buildRuntimeRulePackPrompt() {
     '- Channel messages are context; @mentions/routing are attention/delegation.\n' +
     '- Ambient is passive: unless named/routed, task owner, or lead, do not claim, @mention, assign, or coordinate.\n' +
     '- Preserve role boundaries; route by agent role/description/status.\n' +
-    '- Non-leads report evidence/blockers; do not direct the lead unless delegated.\n' +
-    '- Scheduling is context-driven: derive needed work functions; do not force a fixed template.\n' +
+    '- Non-leads report evidence; do not direct the lead unless delegated.\n' +
+    '- Scheduling is rolling-parallel: do not batch-barrier; freed agents may take safe next work.\n' +
     '- Create shared tasks only when separate owners improve clarity/throughput.\n' +
     '- Claim shared tasks before implementation; update result/evidence; keep personal todos private.\n' +
     '- Long-running goals are self-maintained agent run loops: create/update your goal and checkpoint; never wait for human/platform continuity.\n'
@@ -447,6 +447,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       '\n### Shared Workspace Tasks (Team Ownership)\n\n' +
       'Use shared tasks when work should be assigned, claimed, reviewed, or split across agents. ' +
       'Scheduling derives needed work functions from the actual request and channel context, then matches them to agent role/description/skills/status. ' +
+      'Use rolling parallelism, not batch barriers: when one independent lane finishes, re-check team status and immediately release non-overlapping follow-up work to freed agents while other lanes continue. ' +
       'Examples: bug work may need analysis/fix/test; feature work may need reference research/design breakdown/implementation. ' +
       'Use only the functions the context actually needs.\n\n' +
       '**Create shared task:**\n' +
@@ -691,7 +692,7 @@ function buildGuardrails() {
     'as your text response.\n' +
     '\nIMPORTANT: For multi-agent work, use shared workspace tasks to assign, ' +
     'claim, and track ownership. Scheduling derives work functions from context ' +
-    'and maps them to agent descriptions/skills/status; it is not a fixed team template. ' +
+    'and maps them to agent descriptions/skills/status; use rolling-parallel, not batch barriers. ' +
     'Use separate tasks only when separate owners improve clarity or throughput. After you own a task, use your personal to-do list for your ' +
     'private execution plan.\n' +
     '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +

@@ -53,7 +53,9 @@ describe('workspace prompt budget', () => {
     const skill = buildRuntimeRuleSkillMd();
 
     assert.ok(prompt.includes('docs/*.md'));
-    assert.ok(prompt.includes('Scheduling is context-driven'));
+    assert.ok(prompt.includes('Scheduling is rolling-parallel'));
+    assert.ok(prompt.includes('rolling-parallel'));
+    assert.ok(prompt.includes('do not batch-barrier'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
     assert.ok(prompt.includes('self-maintained agent run loops'));
@@ -61,6 +63,7 @@ describe('workspace prompt budget', () => {
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));
     assert.ok(skill.includes('self-maintained goals'));
+    assert.ok(skill.includes('rolling-parallel'));
   });
 
   it('injects runtime rules into generated workspace skills', () => {
