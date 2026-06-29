@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Durable workspace goal endpoints.
 
-Goals are coordinator-owned run loops for long-running work. They are not
-implementation subtasks; they tell the lead agent what objective to keep
-driving, how to validate progress, and when to stop.
+Goals are agent-owned run loops for long-running work. They are not
+implementation subtasks and they are not human-assigned business goals; the
+owning agent declares what objective it must keep driving, how to validate
+progress, and when to stop.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -186,6 +187,9 @@ async def create_workspace_goal(
     if _is_unknown_source(body.source):
         return json_response(ResponseCode.BAD_REQUEST, "source is required")
     coordinator = _normalize_agent_name(body.coordinator)
+    source_agent = _normalize_agent_name(body.source)
+    if not coordinator or source_agent != coordinator:
+        return json_response(ResponseCode.BAD_REQUEST, "source must match the goal owner agent")
     if not coordinator or not _ensure_coordinator_channel_participant(db, str(workspace.id), body.channel, coordinator):
         return json_response(ResponseCode.BAD_REQUEST, "coordinator must be a workspace member in an active channel")
 
@@ -261,6 +265,9 @@ async def update_workspace_goal(
     goal = db.get(WorkspaceGoal, goal_id)
     if not goal or str(goal.workspace_id) != str(workspace.id):
         return json_response(ResponseCode.NOT_FOUND, "Goal not found")
+    source_agent = _normalize_agent_name(body.source)
+    if source_agent != goal.coordinator:
+        return json_response(ResponseCode.BAD_REQUEST, "source must match the goal owner agent")
 
     now = _utcnow()
     if body.status is not None:
@@ -287,7 +294,7 @@ async def update_workspace_goal(
         goal.lease_until = None
     goal.updated_at = now
 
-    source = body.source.strip() if not _is_unknown_source(body.source) else f"openagents:{goal.coordinator}"
+    source = body.source.strip()
     action = "completed" if goal.status in {"done", "cancelled"} else "updated"
     db.flush()
     await _emit_goal_event(db, workspace, goal, action, source, x_workspace_token)

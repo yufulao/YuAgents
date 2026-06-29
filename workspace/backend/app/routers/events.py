@@ -704,7 +704,7 @@ def get_agent_context(
             "Agents assigned to verification should reproduce and report evidence; agents assigned to implementation should own code changes.",
             "If another agent must act, @mention that agent explicitly and include a concrete handoff.",
             "Use shared workspace tasks for multi-agent work ownership; use personal todos only for your own execution plan.",
-            "Use workspace goals for long-running coordinator loops: one durable objective, a verifiable stop condition, checkpoint evidence, and explicit pause/resume/done/blocked state.",
+            "Workspace goals are self-maintained agent run loops: create or update your own durable objective when continuity is required; the platform only wakes active goals and does not define the next checkpoint for you.",
         ],
     })
 

@@ -56,9 +56,11 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Scheduling is context-driven'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
+    assert.ok(prompt.includes('self-maintained agent run loops'));
     assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));
+    assert.ok(skill.includes('self-maintained goals'));
   });
 
   it('injects runtime rules into generated workspace skills', () => {
@@ -127,7 +129,7 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Passive Ambient Messages'));
     assert.ok(prompt.includes('Active Shared Tasks'));
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
-    assert.ok(prompt.includes('Active Coordinator Goals'));
+    assert.ok(prompt.includes('Active Self-Maintained Goals'));
     assert.ok(prompt.includes('goal-1: [active] 持续统筹 L1 批次'));
     assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
     assert.ok(prompt.includes('Do not flatten roles.'));

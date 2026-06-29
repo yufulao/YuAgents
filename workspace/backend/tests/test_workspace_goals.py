@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tests for durable coordinator workspace goals."""
+"""Tests for durable self-maintained workspace goals."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -18,7 +18,7 @@ def test_create_context_and_claim_due_workspace_goal(client, workspace):
         "network": workspace["id"],
         "channel": channel_name,
         "coordinator": "agent-alpha",
-        "source": "human:user1",
+        "source": "openagents:agent-alpha",
         "objective": "Drive ENG-200 until all delegated lanes finish.",
         "stop_condition": "Parent task is done or explicitly blocked with evidence.",
         "checkpoint": "Create A/B/QA lanes.",
@@ -39,7 +39,7 @@ def test_create_context_and_claim_due_workspace_goal(client, workspace):
     assert context.status_code == 200
     goals = context.json()["data"]["active_goals"]
     assert any(g["id"] == goal["id"] and "ENG-200" in g["objective"] for g in goals)
-    assert any("workspace goals" in rule.lower() for rule in context.json()["data"]["runtime_rules"])
+    assert any("self-maintained" in rule.lower() for rule in context.json()["data"]["runtime_rules"])
 
     claimed = client.post("/v1/workspace-goals/claim-due", json={
         "network": workspace["id"],
@@ -81,7 +81,7 @@ def test_paused_workspace_goal_does_not_claim_due(client, workspace, db):
         "network": workspace["id"],
         "channel": channel_name,
         "coordinator": "agent-alpha",
-        "source": "human:user1",
+        "source": "openagents:agent-alpha",
         "objective": "Keep coordinating until release is green.",
         "stop_condition": "Release checks passed.",
         "cadence_seconds": 60,
@@ -119,3 +119,26 @@ def test_paused_workspace_goal_does_not_claim_due(client, workspace, db):
     }, headers={"X-Workspace-Token": workspace["token"]})
     assert listed.status_code == 200
     assert [g["id"] for g in listed.json()["data"]["goals"]] == [goal_id]
+
+
+def test_human_cannot_create_workspace_goal_for_agent(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    join = client.post("/v1/join", json={
+        "agent_name": "agent-alpha",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert join.status_code == 200
+
+    created = client.post("/v1/workspace-goals", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "coordinator": "agent-alpha",
+        "source": "human:user1",
+        "objective": "Keep coordinating until release is green.",
+        "stop_condition": "Release checks passed.",
+        "cadence_seconds": 60,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 400
+    assert created.json()["code"] == 400
+    assert "source must match" in created.json()["message"]

@@ -705,7 +705,7 @@ describe('Daemon', () => {
     assert.equal(msg._deliveryKind, 'goal');
     assert.ok(msg.content.includes('Objective: Coordinate relay validation'));
     assert.ok(msg.content.includes('Stop condition: All lanes pass with evidence'));
-    assert.ok(prompt.includes('workspace goal checkpoint'));
+    assert.ok(prompt.includes('self-maintained durable run loop'));
     assert.ok(prompt.includes('PATCH /v1/workspace-goals/{id}'));
   });
 
