@@ -85,6 +85,16 @@ function buildToolDefs(disabledModules) {
       },
     },
     {
+      name: 'workspace_schedule_tasks',
+      description: 'Run the ready-queue scheduler now. Assigns unowned ready tasks to free agents when dependencies and scope/resource locks allow parallel execution.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', description: 'Maximum tasks to schedule in this pass', default: 10 },
+        },
+      },
+    },
+    {
       name: 'workspace_claim_task',
       description: 'Claim a shared workspace task before implementation work.',
       inputSchema: {
@@ -932,6 +942,17 @@ class McpServer {
           return `- ${t.id}: [${t.status}] ${t.title} → ${owner}${lane}${locks}`;
         });
         return text(lines.join('\n'));
+      }
+
+      case 'workspace_schedule_tasks': {
+        const data = await this.ws.scheduleWorkspaceTasks(this.workspaceId, this.channelName, this.token, {
+          source: `openagents:${this.agentName}`,
+          limit: args.limit,
+        });
+        const scheduled = (data && data.scheduled) || [];
+        if (!scheduled.length) return text('No ready workspace tasks scheduled.');
+        const lines = scheduled.map((t) => `- ${t.id}: ${t.title} → ${t.assignee || 'unassigned'}`);
+        return text(`Scheduled workspace tasks:\n${lines.join('\n')}`);
       }
 
       case 'workspace_claim_task': {

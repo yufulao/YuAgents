@@ -208,6 +208,99 @@ def test_workspace_task_claim_rejects_active_resource_lock_conflict(client, work
     assert "resource_locks" in claim_second.json()["message"]
 
 
+def test_ready_queue_scheduler_assigns_unowned_task_and_wakes_agent(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    beta_join = client.post("/v1/join", json={
+        "agent_name": "agent-beta",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert beta_join.status_code == 200
+    beta_session = beta_join.json()["data"]["session_id"]
+    join_channel = client.post("/v1/events", json={
+        "type": "network.channel.join",
+        "source": "human:user1",
+        "target": f"channel/{channel_name}",
+        "payload": {"channel": channel_name, "agent_name": "agent-beta"},
+        "network": workspace["id"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert join_channel.status_code == 200
+
+    created = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Read-only package scout",
+        "source": "openagents:lead",
+        "lane_type": "read_only",
+        "resource_locks": ["read:Package"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 200
+    task = created.json()["data"]["task"]
+    assert task["assignee"] == "agent-beta"
+
+    pending = client.get("/v1/agent-deliveries/pending", params={
+        "network": workspace["id"],
+        "agent": "agent-beta",
+        "session_id": beta_session,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert pending.status_code == 200
+    deliveries = pending.json()["data"]["deliveries"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["event"]["payload"]["content"].startswith("@agent-beta Workspace task scheduled:")
+    assert deliveries[0]["event"]["metadata"]["target_agents"] == ["agent-beta"]
+
+
+def test_ready_queue_scheduler_waits_for_dependencies_then_assigns(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    beta_join = client.post("/v1/join", json={
+        "agent_name": "agent-beta",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert beta_join.status_code == 200
+    client.post("/v1/events", json={
+        "type": "network.channel.join",
+        "source": "human:user1",
+        "target": f"channel/{channel_name}",
+        "payload": {"channel": channel_name, "agent_name": "agent-beta"},
+        "network": workspace["id"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+
+    dep = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Dependency task",
+        "assignee": "agent-beta",
+        "source": "openagents:lead",
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+
+    dependent = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Follow-up ready after dependency",
+        "source": "openagents:lead",
+        "depends_on": [dep["id"]],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+    assert dependent["assignee"] is None
+
+    completed = client.patch(f"/v1/workspace-tasks/{dep['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-beta",
+        "status": "done",
+        "result": "dependency complete",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert completed.status_code == 200
+
+    listed = client.get("/v1/workspace-tasks", params={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "active": True,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert listed.status_code == 200
+    active = {task["id"]: task for task in listed.json()["data"]["tasks"]}
+    assert active[dependent["id"]]["assignee"] == "agent-beta"
+
+
 def test_create_workspace_task_requires_source(client, workspace):
     channel_name = workspace["channel"]["name"]
     missing = client.post("/v1/workspace-tasks", json={
@@ -315,6 +408,7 @@ def test_assigning_workspace_task_wakes_new_assignee(client, workspace):
         "channel": channel_name,
         "title": "Review module boundaries",
         "source": "openagents:agent-alpha",
+        "depends_on": ["missing-dependency"],
     }, headers={"X-Workspace-Token": workspace["token"]})
     assert created.status_code == 200
     task = created.json()["data"]["task"]

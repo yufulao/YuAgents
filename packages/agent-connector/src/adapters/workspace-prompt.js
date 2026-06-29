@@ -81,9 +81,9 @@ function buildWorkspaceIdentity(agentName, workspaceId, channelName, mode = 'exe
 function buildCollaborationPrompt() {
   return (
     '\n## Multi-Agent Collaboration\n' +
-    'Channel visibility is context; @mentions/routing are attention. ' +
-    'Only @mention concrete handoffs. Ambient context is passive: unless named/routed, owner, or lead, do not claim/assign/coordinate. ' +
-    'Non-leads report evidence/blockers unless delegated.\n'
+    'Channel=context; @mentions/routing=attention. ' +
+    'Ambient is passive unless named/routed, owner, or lead. ' +
+    'Non-leads report evidence unless delegated.\n'
   );
 }
 
@@ -96,7 +96,8 @@ function buildRuntimeRulePackPrompt() {
     '- Preserve roles; route by role/description/status.\n' +
     '- Non-leads report evidence; do not direct the lead unless delegated.\n' +
     '- Scheduling is rolling-parallel: do not batch-barrier; freed agents take safe work.\n' +
-    '- scope-aware parallelism: set lane_type/write_scope/resource_locks/conflicts_with/commit_policy.\n' +
+    '- Ready scheduler: workspace_schedule_tasks assigns ready non-conflicting unowned tasks.\n' +
+    '- scope-aware: set lane_type/write_scope/resource_locks/conflicts_with/commit_policy.\n' +
     '- Repo writers need non-conflicting locks and path-scoped staging/commits.\n' +
     '- Shared tasks only when separate owners improve clarity/throughput.\n' +
     '- Claim before implementation; update result/evidence; keep personal todos private.\n' +
@@ -453,7 +454,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       'Use shared tasks when work should be assigned, claimed, reviewed, or split across agents. ' +
       'Scheduling derives needed work functions from the actual request and channel context, then matches them to agent role/description/skills/status. ' +
       'Use rolling parallelism, not batch barriers: when one independent lane finishes, re-check team status and immediately release non-overlapping follow-up work to freed agents while other lanes continue. ' +
-      'For parallel implementation, declare lane_type/write_scope/resource_locks/conflicts_with/commit_policy and keep commits path-scoped. ' +
+      'For parallel implementation, set scheduling fields and commit path-scoped. ' +
       'Examples: bug work may need analysis/fix/test; feature work may need reference research/design breakdown/implementation. ' +
       'Use only the functions the context actually needs.\n\n' +
       '**Create shared task:**\n' +
@@ -462,10 +463,13 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `"channel":"${channelName}","source":"openagents:${agentName}",` +
       `"title":"Task title","description":"Acceptance criteria",` +
       `"assignee":"agent-name","priority":"normal","lane_type":"write",` +
-      `"write_scope":["path:Src/Module"],"resource_locks":["path:Src/Module"],` +
-      `"commit_policy":{"stage_mode":"path_scoped","allowed_paths":["Src/Module"]}}'\`\n\n` +
+      `"write_scope":["path:Src/Module"],"resource_locks":["path:Src/Module"]}'\`\n\n` +
       '**List active shared tasks:**\n' +
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-tasks?network=${workspaceId}&channel=${channelName}&active=true"\`\n\n` +
+      '**Run scheduler:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/workspace-tasks/schedule -d '{"network":"${workspaceId}",` +
+      `"channel":"${channelName}","source":"openagents:${agentName}"}'\`\n\n` +
       '**Claim shared task:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-tasks/{task_id}/claim -d '{"network":"${workspaceId}",` +
@@ -655,7 +659,8 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
   }
   if (!disabled.has('todos')) {
     lines.push('- Shared tasks: GET /v1/workspace-tasks?network=...&channel=...&active=true');
-    lines.push('- Task scheduling fields: lane_type/write_scope/resource_locks/conflicts_with/commit_policy.');
+    lines.push('- Task fields: lane_type/write_scope/resource_locks/conflicts_with/commit_policy.');
+    lines.push('- Scheduler: POST /v1/workspace-tasks/schedule.');
     lines.push('- Workspace goals: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true (your self-maintained long-run state)');
     lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
@@ -675,7 +680,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     if (!disabled.has('files')) lines.push('- Upload file: POST /v1/files/base64 with filename, content_base64, content_type, network, source, channel_name.');
     if (!disabled.has('browser')) lines.push('- Browser actions: POST /v1/browser/tabs, /tabs/{id}/navigate, /click, /type; DELETE /tabs/{id}.');
     if (!disabled.has('todos')) {
-      lines.push('- Shared tasks: POST/GET /v1/workspace-tasks, POST /v1/workspace-tasks/{id}/claim, PATCH /v1/workspace-tasks/{id}.');
+      lines.push('- Shared tasks: POST/GET /v1/workspace-tasks; POST /schedule; POST /{id}/claim; PATCH /{id}.');
       lines.push('- Parallel writers: set scheduling fields and commit only declared paths.');
       lines.push('- Workspace goals: POST/GET /v1/workspace-goals; PATCH /v1/workspace-goals/{id} to maintain your own long-running objective, checkpoint, and status.');
       lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
@@ -724,6 +729,7 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_get_history to read previous messages.\n' +
     'Use workspace_get_agents to see other agents.\n' +
     'Use workspace_create_task/list/claim/update for shared multi-agent work ownership.\n' +
+    'Use workspace_schedule_tasks for ready work.\n' +
     'Use workspace_put_todos to track your private execution plan. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
     'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
     'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +

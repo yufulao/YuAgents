@@ -793,6 +793,17 @@ class WorkspaceClient {
     return data.data || data;
   }
 
+  async scheduleWorkspaceTasks(workspaceId, channelName, token, { source, limit } = {}) {
+    const body = {
+      network: workspaceId,
+      channel: channelName,
+    };
+    if (source) body.source = source;
+    if (limit) body.limit = limit;
+    const data = await this._post('/v1/workspace-tasks/schedule', body, this._wsHeaders(token));
+    return data.data || data;
+  }
+
   async claimWorkspaceTask(workspaceId, agentName, token, taskId, sessionId) {
     const body = {
       network: workspaceId,

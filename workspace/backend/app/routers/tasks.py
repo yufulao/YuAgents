@@ -70,6 +70,13 @@ class UpdateWorkspaceTaskRequest(BaseModel):
     accepted_by: Optional[str] = None
 
 
+class ScheduleWorkspaceTasksRequest(BaseModel):
+    network: str
+    channel: Optional[str] = None
+    source: str = "openagents:system"
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -264,7 +271,7 @@ async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: 
     channel = task.channel_name or "default"
     assignee = _normalize_agent_name(task.assignee)
     _ensure_assignee_channel_participant(db, str(workspace.id), channel, assignee)
-    mention = f"@{assignee} " if assignee and action in {"created", "updated"} else ""
+    mention = f"@{assignee} " if assignee and action in {"created", "updated", "scheduled"} else ""
     status = task.status or "todo"
     content = f"{mention}Workspace task {action}: [{status}] {task.title}"
     if task.result and action in {"updated", "completed"}:
@@ -280,10 +287,141 @@ async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: 
         },
         metadata={
             "workspace_task_id": task.id,
-            "target_agents": [assignee] if assignee and action in {"created", "updated"} else [],
+            "target_agents": [assignee] if assignee and action in {"created", "updated", "scheduled"} else [],
         },
     )
     await _emit_event(event, workspace, db, token=token)
+
+
+def _task_dependencies_done(task: WorkspaceTask, task_by_id: dict[str, WorkspaceTask]) -> bool:
+    for dep_id in _normalize_string_list(task.depends_on or []):
+        dep = task_by_id.get(dep_id)
+        if not dep or dep.status != "done":
+            return False
+    return True
+
+
+def _task_conflicts_with_any(task: WorkspaceTask, active_tasks: List[WorkspaceTask]) -> bool:
+    return bool(_task_conflict_summary(task, active_tasks).get("conflicts"))
+
+
+def _free_channel_agents(db: Session, workspace_id: str, channel_name: str) -> List[str]:
+    channel = db.execute(
+        select(Channel).where(
+            Channel.workspace_id == workspace_id,
+            Channel.name == channel_name,
+            Channel.status == "active",
+        )
+    ).scalar_one_or_none()
+    if not channel:
+        return []
+    channel_agents = [
+        row[0]
+        for row in db.execute(
+            select(ChannelMember.agent_name).where(ChannelMember.channel_id == channel.id)
+        ).all()
+    ]
+    if not channel_agents:
+        return []
+    members = db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.agent_name.in_(channel_agents),
+            WorkspaceMember.status == "online",
+        )
+    ).scalars().all()
+    busy_rows = db.execute(
+        select(WorkspaceTask).where(
+            WorkspaceTask.workspace_id == workspace_id,
+            WorkspaceTask.channel_name == channel_name,
+            WorkspaceTask.status.in_(["todo", "in_progress", "in_review"]),
+            or_(WorkspaceTask.assignee.is_not(None), WorkspaceTask.claimed_by.is_not(None)),
+        )
+    ).scalars().all()
+    busy_agents = {
+        agent
+        for task in busy_rows
+        for agent in (task.assignee, task.claimed_by)
+        if agent
+    }
+    free = [m.agent_name for m in members if m.agent_name not in busy_agents]
+    master = channel.master_agent
+    if master and len(free) > 1:
+        non_master = [agent for agent in free if agent != master]
+        if non_master:
+            free = non_master + [master]
+    return free
+
+
+def _priority_rank(task: WorkspaceTask) -> tuple[int, datetime, str]:
+    priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+    return (
+        priority_order.get(task.priority or "normal", 2),
+        task.created_at or _utcnow(),
+        task.id,
+    )
+
+
+async def _schedule_ready_tasks(
+    db: Session,
+    workspace,
+    channel_name: Optional[str],
+    source: str,
+    token: Optional[str],
+    *,
+    limit: int = 10,
+) -> List[WorkspaceTask]:
+    """Assign ready unowned tasks to free channel agents and emit wake events."""
+    if not channel_name:
+        return []
+    workspace_id = str(workspace.id)
+    free_agents = _free_channel_agents(db, workspace_id, channel_name)
+    if not free_agents:
+        return []
+
+    tasks = db.execute(
+        select(WorkspaceTask).where(
+            WorkspaceTask.workspace_id == workspace_id,
+            WorkspaceTask.channel_name == channel_name,
+            WorkspaceTask.status.in_(["todo", "in_progress", "in_review", "done"]),
+        )
+    ).scalars().all()
+    task_by_id = {task.id: task for task in tasks}
+    active_running = [
+        task
+        for task in tasks
+        if task.status in {"in_progress", "in_review"}
+    ]
+    candidates = sorted(
+        [
+            task
+            for task in tasks
+            if task.status == "todo"
+            and not task.assignee
+            and not task.claimed_by
+            and _task_dependencies_done(task, task_by_id)
+        ],
+        key=_priority_rank,
+    )
+
+    scheduled: List[WorkspaceTask] = []
+    selected_active = list(active_running)
+    now = _utcnow()
+    for task in candidates:
+        if len(scheduled) >= limit or not free_agents:
+            break
+        if _task_conflicts_with_any(task, selected_active):
+            continue
+        assignee = free_agents.pop(0)
+        task.assignee = assignee
+        task.updated_at = now
+        scheduled.append(task)
+        selected_active.append(task)
+
+    for task in scheduled:
+        db.flush()
+        await _emit_task_event(db, workspace, task, "scheduled", source, token)
+    return scheduled
 
 
 @router.post("/workspace-tasks")
@@ -338,6 +476,7 @@ async def create_workspace_task(
     db.add(task)
     db.flush()
     await _emit_task_event(db, workspace, task, "created", created_by, x_workspace_token)
+    await _schedule_ready_tasks(db, workspace, channel_name, created_by, x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})
 
@@ -388,6 +527,35 @@ def list_workspace_tasks(
         item["scheduling"] = _task_conflict_summary(task, active_tasks)
         serialized.append(item)
     return success_response({"tasks": serialized})
+
+
+@router.post("/workspace-tasks/schedule")
+async def schedule_workspace_tasks(
+    body: ScheduleWorkspaceTasksRequest,
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    workspace = _resolve_workspace(db, body.network)
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Network not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+    if _is_unknown_source(body.source):
+        return json_response(ResponseCode.BAD_REQUEST, "source is required")
+    channel_name = _resolve_active_channel_name(db, str(workspace.id), body.channel)
+    if not channel_name:
+        return json_response(ResponseCode.BAD_REQUEST, "channel is required and must reference an active channel")
+    scheduled = await _schedule_ready_tasks(
+        db,
+        workspace,
+        channel_name,
+        body.source.strip(),
+        x_workspace_token,
+        limit=body.limit,
+    )
+    db.commit()
+    return success_response({"scheduled": [_serialize_task(task) for task in scheduled]})
 
 
 @router.post("/workspace-tasks/{task_id}/claim")
@@ -499,5 +667,6 @@ async def update_workspace_task(
     action = "completed" if task.status == "done" else "updated"
     db.flush()
     await _emit_task_event(db, workspace, task, action, event_source, x_workspace_token)
+    await _schedule_ready_tasks(db, workspace, task.channel_name, event_source, x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})
