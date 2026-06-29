@@ -42,6 +42,10 @@ _PROCESS_CONTEXT_MESSAGE_TYPES = {"status", "thinking", "todos"}
 _DURABLE_CONTEXT_CONTENT_LIMIT = 500
 _PROCESS_CONTEXT_CONTENT_LIMIT = 160
 _HUMAN_MESSAGE_DEDUPE_WINDOW_MS = 120_000
+_IMPLEMENTATION_LANE_TYPES = {"write", "implementation"}
+_REVIEW_LANE_TYPES = {"verification", "vq", "review"}
+_NON_WRITE_LANE_TYPES = {"read", "read_only", "test", "docs", "release", "coordination", "handoff"} | _REVIEW_LANE_TYPES
+_NON_WRITER_ROLES = {"qa", "reviewer"}
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +245,99 @@ def _task_context_with_scheduling(task: WorkspaceTask, active_tasks: list[Worksp
         "conflicts": conflicts,
     }
     return payload
+
+
+def _task_dependencies_done(task: WorkspaceTask, task_by_id: dict[str, WorkspaceTask]) -> bool:
+    for dep_id in (task.depends_on or []):
+        dep = task_by_id.get(str(dep_id).strip())
+        if not dep or dep.status != "done":
+            return False
+    return True
+
+
+def _task_has_conflict(task: WorkspaceTask, active_tasks: list[WorkspaceTask]) -> bool:
+    return bool(_task_context_with_scheduling(task, active_tasks)["scheduling"]["conflicts"])
+
+
+def _scheduling_pressure_context(
+    *,
+    agents: list[dict],
+    task_rows: list[WorkspaceTask],
+    channel_row: Optional[Channel],
+) -> dict:
+    if not channel_row:
+        return {
+            "reason": None,
+            "action": "No channel context; scheduling pressure is unavailable.",
+        }
+
+    busy_agents = {
+        agent
+        for task in task_rows
+        if task.status in {"todo", "in_progress", "in_review"}
+        for agent in (task.assignee, task.claimed_by)
+        if agent
+    }
+    free_writer_agents = [
+        agent["agent_name"]
+        for agent in agents
+        if agent.get("in_channel") is True
+        and agent.get("status") == "online"
+        and agent.get("agent_name") not in busy_agents
+        and (agent.get("role") or "member").lower() not in _NON_WRITER_ROLES
+    ]
+
+    task_by_id = {task.id: task for task in task_rows}
+    active_running = [task for task in task_rows if task.status == "in_progress"]
+    active_write_lanes = [
+        task for task in task_rows
+        if task.status == "in_progress"
+        and (task.lane_type or "unspecified").lower() in _IMPLEMENTATION_LANE_TYPES
+    ]
+    in_review_write_lanes = [
+        task for task in task_rows
+        if task.status == "in_review"
+        and (task.lane_type or "unspecified").lower() in _IMPLEMENTATION_LANE_TYPES
+    ]
+    ready_write_lanes = [
+        task for task in task_rows
+        if task.status == "todo"
+        and not task.assignee
+        and not task.claimed_by
+        and (task.lane_type or "unspecified").lower() in _IMPLEMENTATION_LANE_TYPES
+        and _task_dependencies_done(task, task_by_id)
+        and not _task_has_conflict(task, active_running)
+    ]
+    active_non_write_lanes = [
+        task for task in task_rows
+        if task.status in {"todo", "in_progress", "in_review"}
+        and (task.assignee or task.claimed_by)
+        and (task.lane_type or "unspecified").lower() in _NON_WRITE_LANE_TYPES
+    ]
+
+    reason = None
+    action = "No scheduling pressure detected."
+    if (
+        free_writer_agents
+        and not active_write_lanes
+        and not ready_write_lanes
+        and active_non_write_lanes
+    ):
+        reason = "UNDERUTILIZED_WRITERS"
+        action = (
+            "Create scoped write/implementation tasks for safe frontier work, "
+            "or record NO_SAFE_WRITE_FRONTIER_REASON with the concrete dependency/lock blocker."
+        )
+
+    return {
+        "reason": reason,
+        "free_writer_agents": free_writer_agents,
+        "active_write_lanes": len(active_write_lanes),
+        "write_lanes_in_review": len(in_review_write_lanes),
+        "ready_unassigned_write_lanes": len(ready_write_lanes),
+        "active_non_write_lanes": len(active_non_write_lanes),
+        "action": action,
+    }
 
 
 def _goal_context_payload(goal: WorkspaceGoal) -> dict:
@@ -710,6 +807,11 @@ def get_agent_context(
     goal_rows = db.execute(
         goal_query.order_by(WorkspaceGoal.created_at.asc(), WorkspaceGoal.id.asc()).limit(10)
     ).scalars().all()
+    scheduling_pressure = _scheduling_pressure_context(
+        agents=agents,
+        task_rows=task_rows,
+        channel_row=channel_row,
+    )
 
     return success_response({
         "workspace": {
@@ -736,12 +838,16 @@ def get_agent_context(
         "ambient_messages": ambient_messages,
         "active_tasks": [_task_context_with_scheduling(t, task_rows) for t in task_rows],
         "active_goals": [_goal_context_payload(g) for g in goal_rows],
+        "scheduling_pressure": scheduling_pressure,
         "runtime_rules": [
             "Channel messages are visible context for channel members; @mentions and routing are attention, not visibility.",
             "Ambient delivery is passive context only: do not create/claim tasks, @mention others, assign work, or send visible coordination unless explicitly addressed, already owning the referenced task, or acting as channel lead on a required coordination decision.",
             "Do not flatten roles. Use each agent's role and description when deciding delegation.",
             "Non-lead implementers and QA agents report evidence/blockers; they do not assign or direct the channel lead unless explicitly delegated.",
             "Scheduling is context-driven and rolling-parallel, not a fixed org chart or batch barrier: derive work functions from the current request and route safe non-overlapping follow-up work to freed agents while other lanes continue.",
+            "Write frontier comes first: do not count QA, VQ, review, or scout work as sufficient parallelism when implementation-capable agents are idle.",
+            "VQ/review gates the same scope close or merge only; it must not block unrelated safe implementation frontier.",
+            "If scheduling_pressure.reason is UNDERUTILIZED_WRITERS, create scoped write/implementation tasks or record NO_SAFE_WRITE_FRONTIER_REASON with concrete dependency/lock evidence.",
             "For parallel implementation, use scope-aware task contracts: set lane_type, write_scope, resource_locks, conflicts_with, and commit_policy; do not rely on natural-language promises when multiple writers may run.",
             "Multiple writers may work in one repository only when their declared scopes and resource locks do not conflict; use path-scoped edits/staging/commits and never include another agent's dirty files.",
             "For a bug, useful functions may be analysis, fix, and test; for a feature, they may be reference research, design breakdown, and implementation. Use the functions the context actually needs.",

@@ -90,18 +90,20 @@ function buildCollaborationPrompt() {
 function buildRuntimeRulePackPrompt() {
   return (
     '\n## OpenAgents Runtime Rule Pack (mandatory)\n' +
-    '- `docs/*.md` are references, not automatic memory; follow injected runtime context.\n' +
-    '- Channel messages=context; @mentions/routing=attention/delegation.\n' +
-    '- Ambient is passive: unless named/routed, owner, or lead, do not claim, assign, or coordinate.\n' +
-    '- Preserve roles; route by role/description/status.\n' +
+    '- `docs/*.md` are refs, not memory; follow runtime context.\n' +
+    '- Channel messages=context; @mentions=attention/delegation.\n' +
+    '- Ambient is passive: unless named/routed, owner, or lead, no claim/assign/coordination.\n' +
+    '- Preserve roles; route by role/status.\n' +
     '- Non-leads report evidence; do not direct the lead unless delegated.\n' +
     '- Scheduling is rolling-parallel: do not batch-barrier; freed agents take safe work.\n' +
-    '- Ready scheduler: workspace_schedule_tasks assigns ready non-conflicting unowned tasks.\n' +
+    '- Write frontier first; QA/VQ/review/scout do not fill idle writers.\n' +
+    '- VQ/review gates same-scope close only; unrelated write lanes may continue.\n' +
+    '- Ready scheduler: workspace_schedule_tasks assigns safe ready tasks.\n' +
     '- scope-aware: set lane_type/write_scope/resource_locks/conflicts_with/commit_policy.\n' +
-    '- Repo writers need non-conflicting locks and path-scoped staging/commits.\n' +
-    '- Shared tasks only when separate owners improve clarity/throughput.\n' +
-    '- Claim before implementation; update result/evidence; keep personal todos private.\n' +
-    '- Plans: root/stage -> short/tasks -> evidence returns to planning.\n' +
+    '- Repo writers need scoped non-conflicting commits.\n' +
+    '- Shared tasks only when owners improve throughput.\n' +
+    '- Claim before implementation; record evidence; keep todos private.\n' +
+    '- Plans: root/stage -> short/tasks -> evidence -> planning.\n' +
     '- Never close root/stage while refs/children/tasks remain.\n'
   );
 }
@@ -166,6 +168,9 @@ function buildRuntimeContextPrompt(context, options = {}) {
   const ambient = Array.isArray(context.ambient_messages) ? context.ambient_messages : [];
   const tasks = Array.isArray(context.active_tasks) ? context.active_tasks : [];
   const goals = Array.isArray(context.active_goals) ? context.active_goals : [];
+  const pressure = context.scheduling_pressure && typeof context.scheduling_pressure === 'object'
+    ? context.scheduling_pressure
+    : null;
   const rules = Array.isArray(context.runtime_rules) ? context.runtime_rules : [];
 
   const parts = [];
@@ -207,6 +212,17 @@ function buildRuntimeContextPrompt(context, options = {}) {
       parts.push(`- ${goal.id}: [${goal.status || 'active'}/${level}] ${_truncate(goal.objective, 120)} | stop=${_truncate(goal.stop_condition, 100)}${parent}${refs}${checkpoint}`);
     }
     if (goals.length > shownGoals.length) parts.push(`- … ${goals.length - shownGoals.length} goals omitted; use workspace_goals/list APIs for full state.`);
+  }
+
+  if (pressure && pressure.reason) {
+    const freeWriters = Array.isArray(pressure.free_writer_agents)
+      ? pressure.free_writer_agents.join(',')
+      : '';
+    parts.push('\n### Scheduling Pressure');
+    parts.push(
+      `- ${pressure.reason}: free_writers=${freeWriters || 'none'} | active_write=${pressure.active_write_lanes || 0} | ready_write=${pressure.ready_unassigned_write_lanes || 0} | non_write=${pressure.active_non_write_lanes || 0}`
+    );
+    if (pressure.action) parts.push(`- action=${_truncate(pressure.action, 180)}`);
   }
 
   if (agents.length) {

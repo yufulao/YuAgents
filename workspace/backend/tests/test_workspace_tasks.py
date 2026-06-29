@@ -301,6 +301,71 @@ def test_ready_queue_scheduler_waits_for_dependencies_then_assigns(client, works
     assert active[dependent["id"]]["assignee"] == "agent-beta"
 
 
+def test_ready_queue_scheduler_prioritizes_write_lane_over_verification(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    for agent in ("agent-beta", "agent-gamma"):
+        joined = client.post("/v1/join", json={
+            "agent_name": agent,
+            "token": workspace["token"],
+            "network": workspace["id"],
+        })
+        assert joined.status_code == 200
+        joined_channel = client.post("/v1/events", json={
+            "type": "network.channel.join",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {"channel": channel_name, "agent_name": agent},
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+        assert joined_channel.status_code == 200
+
+    dep = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Frontier dependency",
+        "assignee": "agent-alpha",
+        "source": "openagents:lead",
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+
+    verification = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Verify previous scoped lane",
+        "source": "openagents:lead",
+        "lane_type": "vq",
+        "depends_on": [dep["id"]],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+    writer = client.post("/v1/workspace-tasks", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "title": "Implement next scoped lane",
+        "source": "openagents:lead",
+        "lane_type": "write",
+        "depends_on": [dep["id"]],
+    }, headers={"X-Workspace-Token": workspace["token"]}).json()["data"]["task"]
+
+    assert verification["assignee"] is None
+    assert writer["assignee"] is None
+
+    completed = client.patch(f"/v1/workspace-tasks/{dep['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-alpha",
+        "status": "done",
+        "result": "frontier opened",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert completed.status_code == 200
+
+    listed = client.get("/v1/workspace-tasks", params={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "active": True,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert listed.status_code == 200
+    active = {task["id"]: task for task in listed.json()["data"]["tasks"]}
+    assert active[writer["id"]]["assignee"] == "agent-beta"
+    assert active[verification["id"]]["assignee"] == "agent-gamma"
+
+
 def test_create_workspace_task_requires_source(client, workspace):
     channel_name = workspace["channel"]["name"]
     missing = client.post("/v1/workspace-tasks", json={

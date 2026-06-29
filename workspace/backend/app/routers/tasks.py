@@ -26,7 +26,24 @@ router = APIRouter(prefix="/v1", tags=["Workspace Tasks"])
 
 TASK_STATUSES = {"todo", "in_progress", "in_review", "done", "cancelled"}
 TASK_PRIORITIES = {"low", "normal", "high", "urgent"}
-TASK_LANE_TYPES = {"unspecified", "coordination", "read_only", "write", "verification", "handoff"}
+TASK_LANE_TYPES = {
+    "unspecified",
+    "coordination",
+    "read",
+    "read_only",
+    "write",
+    "implementation",
+    "verification",
+    "vq",
+    "review",
+    "test",
+    "docs",
+    "release",
+    "handoff",
+}
+IMPLEMENTATION_LANE_TYPES = {"write", "implementation"}
+SUPPORT_LANE_TYPES = {"read", "read_only", "test", "docs", "release"}
+REVIEW_LANE_TYPES = {"verification", "vq", "review"}
 
 
 class CreateWorkspaceTaskRequest(BaseModel):
@@ -353,10 +370,24 @@ def _free_channel_agents(db: Session, workspace_id: str, channel_name: str) -> L
     return free
 
 
-def _priority_rank(task: WorkspaceTask) -> tuple[int, datetime, str]:
+def _lane_rank(task: WorkspaceTask) -> int:
+    lane = (task.lane_type or "unspecified").lower()
+    if lane in IMPLEMENTATION_LANE_TYPES:
+        return 0
+    if lane in SUPPORT_LANE_TYPES:
+        return 1
+    if lane in REVIEW_LANE_TYPES:
+        return 2
+    if lane in {"coordination", "handoff"}:
+        return 3
+    return 4
+
+
+def _priority_rank(task: WorkspaceTask) -> tuple[int, int, datetime, str]:
     priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
     return (
         priority_order.get(task.priority or "normal", 2),
+        _lane_rank(task),
         task.created_at or _utcnow(),
         task.id,
     )
