@@ -60,11 +60,12 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('resource_locks'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
-    assert.ok(prompt.includes('self-maintained agent run loops'));
+    assert.ok(prompt.includes('Plans: root/stage'));
+    assert.ok(prompt.includes('Never close root/stage'));
     assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));
-    assert.ok(skill.includes('self-maintained goals'));
+    assert.ok(skill.includes('active plans'));
     assert.ok(skill.includes('rolling-parallel'));
   });
 
@@ -141,8 +142,8 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('lane=write'));
     assert.ok(prompt.includes('locks=path:Src/UI'));
     assert.ok(prompt.includes('scheduling=CONFLICT'));
-    assert.ok(prompt.includes('Active Self-Maintained Goals'));
-    assert.ok(prompt.includes('goal-1: [active] 持续统筹 L1 批次'));
+    assert.ok(prompt.includes('Active Workspace Plans'));
+    assert.ok(prompt.includes('goal-1: [active/root_plan] 持续统筹 L1 批次'));
     assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });

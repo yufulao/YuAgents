@@ -248,6 +248,11 @@ def _goal_context_payload(goal: WorkspaceGoal) -> dict:
         "id": goal.id,
         "channel_name": goal.channel_name,
         "coordinator": goal.coordinator,
+        "parent_goal_id": goal.parent_goal_id,
+        "root_goal_id": goal.root_goal_id,
+        "plan_level": goal.plan_level or "root_plan",
+        "continuation_policy": goal.continuation_policy or "long_horizon",
+        "plan_refs": goal.plan_refs or [],
         "objective": goal.objective,
         "stop_condition": goal.stop_condition,
         "status": goal.status,
@@ -744,7 +749,8 @@ def get_agent_context(
             "Agents assigned to verification should reproduce and report evidence; agents assigned to implementation should own code changes.",
             "If another agent must act, @mention that agent explicitly and include a concrete handoff.",
             "Use shared workspace tasks for multi-agent work ownership; use personal todos only for your own execution plan.",
-            "Workspace goals are self-maintained agent run loops: create or update your own durable objective when continuity is required; the platform only wakes active goals and does not define the next checkpoint for you.",
+            "Workspace plans are hierarchical: root/stage plans own long-horizon state, create short plans and execution tasks, and must return to planning after short-plan evidence instead of stopping at a flat checkpoint.",
+            "Only close a root/stage plan when its plan references are exhausted and there are no active child plans or channel tasks; otherwise update the checkpoint or create the next short plan.",
         ],
     })
 

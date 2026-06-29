@@ -686,6 +686,11 @@ describe('Daemon', () => {
         coordinator: 'agent-a',
         objective: 'Coordinate relay validation',
         stop_condition: 'All lanes pass with evidence',
+        plan_level: 'stage_plan',
+        root_goal_id: 'goal-root',
+        parent_goal_id: 'goal-parent',
+        continuation_policy: 'return_to_parent',
+        plan_refs: ['docs/plan.md'],
         checkpoint: 'Waiting for QA',
         progress_log: 'A/B done',
         run_count: 3,
@@ -703,9 +708,13 @@ describe('Daemon', () => {
     assert.equal(msg.messageId, 'goal:goal-1:3');
     assert.equal(msg.sessionId, 'workroom');
     assert.equal(msg._deliveryKind, 'goal');
+    assert.ok(msg.content.includes('Workspace plan checkpoint tick'));
+    assert.ok(msg.content.includes('Plan level: stage_plan'));
+    assert.ok(msg.content.includes('Parent plan: goal-parent'));
+    assert.ok(msg.content.includes('Plan refs: docs/plan.md'));
     assert.ok(msg.content.includes('Objective: Coordinate relay validation'));
     assert.ok(msg.content.includes('Stop condition: All lanes pass with evidence'));
-    assert.ok(prompt.includes('self-maintained durable run loop'));
+    assert.ok(prompt.includes('workspace plan checkpoint'));
     assert.ok(prompt.includes('rolling parallelism'));
     assert.ok(prompt.includes('safe non-overlapping follow-up work'));
     assert.ok(prompt.includes('PATCH /v1/workspace-goals/{id}'));

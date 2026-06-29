@@ -101,7 +101,8 @@ function buildRuntimeRulePackPrompt() {
     '- Repo writers need non-conflicting locks and path-scoped staging/commits.\n' +
     '- Shared tasks only when separate owners improve clarity/throughput.\n' +
     '- Claim before implementation; update result/evidence; keep personal todos private.\n' +
-    '- Long-running goals are self-maintained agent run loops: checkpoint yourself; do not rely on platform continuity.\n'
+    '- Plans: root/stage -> short/tasks -> evidence returns to planning.\n' +
+    '- Never close root/stage while refs/children/tasks remain.\n'
   );
 }
 
@@ -118,7 +119,7 @@ function buildRuntimeRuleSkillMd() {
       .replace(/^\n?## OpenAgents Runtime Rule Pack \(mandatory\)\n/, '')
       .replace(/^- /gm, '- ') +
     '\n## Operational Notes\n\n' +
-    '- Runtime context from `/v1/agent-context` is authoritative for current role, channel, roster, recent messages, ambient context, active shared tasks, and your active self-maintained goals.\n' +
+    '- `/v1/agent-context` is authoritative for role, channel, roster, messages, tasks, and active plans.\n' +
     '- Backend delivery, lease/ack, and shared task APIs are enforcement mechanisms; use them instead of relying on chat memory alone.\n'
   );
 }
@@ -196,11 +197,14 @@ function buildRuntimeContextPrompt(context, options = {}) {
 
   if (goals.length) {
     const shownGoals = goals.slice(0, 5);
-    parts.push(`\n### Active Self-Maintained Goals (${shownGoals.length}/${goals.length})`);
-    parts.push('These are your own durable run loops, not platform-assigned work. Keep driving checkpoints until the stop condition is met. If broader work remains, update checkpoint/progress and keep the goal active; only pause/block/done/cancel with evidence.');
+    parts.push(`\n### Active Workspace Plans (${shownGoals.length}/${goals.length})`);
+    parts.push('Hierarchical checkpoints. Root/stage plans return to planning after short-plan evidence; close only when refs, children, and tasks are exhausted.');
     for (const goal of shownGoals) {
       const checkpoint = goal.checkpoint ? ` | checkpoint=${_truncate(goal.checkpoint, 80)}` : '';
-      parts.push(`- ${goal.id}: [${goal.status || 'active'}] ${_truncate(goal.objective, 120)} | stop=${_truncate(goal.stop_condition, 100)}${checkpoint}`);
+      const level = goal.plan_level || 'root_plan';
+      const parent = goal.parent_goal_id ? ` | parent=${goal.parent_goal_id}` : '';
+      const refs = Array.isArray(goal.plan_refs) && goal.plan_refs.length ? ` | refs=${_truncate(goal.plan_refs.join(','), 90)}` : '';
+      parts.push(`- ${goal.id}: [${goal.status || 'active'}/${level}] ${_truncate(goal.objective, 120)} | stop=${_truncate(goal.stop_condition, 100)}${parent}${refs}${checkpoint}`);
     }
     if (goals.length > shownGoals.length) parts.push(`- … ${goals.length - shownGoals.length} goals omitted; use workspace_goals/list APIs for full state.`);
   }
@@ -478,20 +482,26 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-tasks/{task_id} -d '{"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}","status":"in_review","result":"Evidence or blocker"}'\`\n\n` +
-      '\n### Workspace Goals (Self-Maintained Long Run)\n\n' +
-      'Use a workspace goal only for your own long-running objective when you decide the work must continue across turns. ' +
-      'The platform does not assign business goals to agents; it only wakes the agent that owns an active goal. ' +
-      'A goal has one objective, one verifiable stop condition, checkpoint/progress evidence, and explicit active/paused/blocked/done/cancelled state. ' +
-      'Before marking a goal done, confirm no broader objective remains; if work remains, keep it active and write the next checkpoint.\n\n' +
-      '**Create workspace goal:**\n' +
+      '\n### Workspace Plans (Hierarchical Checkpoints)\n\n' +
+      'Use workspace goals as plan checkpoints. root_plan/stage_plan owns long-horizon state and plan_refs; it creates short_plan children and shared tasks. ' +
+      'A done/blocked/cancelled short_plan wakes its active parent. Do not close root/stage until refs, children, and channel tasks are exhausted.\n\n' +
+      '**Create root/stage workspace plan:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-goals -d '{"network":"${workspaceId}",` +
       `"channel":"${channelName}","source":"openagents:${agentName}",` +
       `"coordinator":"${agentName}","objective":"Objective",` +
-      `"stop_condition":"Verifiable done state","cadence_seconds":300}'\`\n\n` +
-      '**List active workspace goals:**\n' +
+      `"stop_condition":"Whole plan exhausted with evidence","plan_level":"root_plan",` +
+      `"continuation_policy":"long_horizon","plan_refs":["docs/PLAN.md"],"cadence_seconds":300}'\`\n\n` +
+      '**Create short child plan:**\n' +
+      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
+      `${baseUrl}/v1/workspace-goals -d '{"network":"${workspaceId}",` +
+      `"channel":"${channelName}","source":"openagents:${agentName}",` +
+      `"coordinator":"${agentName}","parent_goal_id":"PARENT_GOAL_ID",` +
+      `"plan_level":"short_plan","objective":"Next short plan",` +
+      `"stop_condition":"Short plan evidence accepted","cadence_seconds":300}'\`\n\n` +
+      '**List active workspace plans:**\n' +
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-goals?network=${workspaceId}&channel=${channelName}&coordinator=${agentName}&active=true"\`\n\n` +
-      '**Update workspace goal:**\n' +
+      '**Update workspace plan:**\n' +
       `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-goals/{goal_id} -d '{"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}","status":"active",` +
@@ -520,9 +530,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   if (!isPlan && !disabled.has('timers')) {
     sections.push(
       '\n### Timers\n\n' +
-      'Set a timer that will send you a message after a delay, waking you up ' +
-      'to continue work. Use this instead of `sleep` — timers let you release ' +
-      'the session and get called back later.\n\n' +
+      'Set a timer that will post a reminder message after a delay. Timers are reminders, not the planning engine; use workspace plans for long-horizon continuity.\n\n' +
       'Use cases: check back on a deploy, retry after a rate limit, remind ' +
       'yourself to follow up.\n\n' +
       '**Create a timer:**\n' +
@@ -661,7 +669,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     lines.push('- Shared tasks: GET /v1/workspace-tasks?network=...&channel=...&active=true');
     lines.push('- Task fields: lane_type/write_scope/resource_locks/conflicts_with/commit_policy.');
     lines.push('- Scheduler: POST /v1/workspace-tasks/schedule.');
-    lines.push('- Workspace goals: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true (your self-maintained long-run state)');
+    lines.push('- Workspace plans: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true');
     lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
   if (!disabled.has('timers')) {
@@ -682,10 +690,10 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     if (!disabled.has('todos')) {
       lines.push('- Shared tasks: POST/GET /v1/workspace-tasks; POST /schedule; POST /{id}/claim; PATCH /{id}.');
       lines.push('- Parallel writers: set scheduling fields and commit only declared paths.');
-      lines.push('- Workspace goals: POST/GET /v1/workspace-goals; PATCH /v1/workspace-goals/{id} to maintain your own long-running objective, checkpoint, and status.');
+      lines.push('- Workspace plans: POST/GET/PATCH /v1/workspace-goals with plan_level, parent_goal_id, plan_refs, checkpoint, status.');
       lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
     }
-    if (!disabled.has('timers')) lines.push('- Create/cancel timer: POST /v1/timers; DELETE /v1/timers/{id}.');
+    if (!disabled.has('timers')) lines.push('- Create/cancel reminder timer: POST /v1/timers; DELETE /v1/timers/{id}.');
     if (!disabled.has('routines')) lines.push('- Create/cancel routine: POST /v1/routines; DELETE /v1/routines/{id}.');
   }
 
@@ -711,8 +719,8 @@ function buildGuardrails() {
     'Use separate tasks only when separate owners improve clarity or throughput. After you own a task, use your personal to-do list for your ' +
     'private execution plan.\n' +
     '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
-    'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +
-    'ALWAYS use the workspace REST API (curl commands in your skill instructions). ' +
+    'CronList, ScheduleWakeup). For reminder timers, routines, and recurring tasks, ' +
+    'use the workspace REST API (curl commands in your skill instructions). Use workspace plans, not timers, for long-horizon project continuity. ' +
     'Built-in scheduling is local-only and won\'t appear in the workspace.\n'
   );
 }
@@ -730,10 +738,10 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_get_agents to see other agents.\n' +
     'Use workspace_create_task/list/claim/update for shared multi-agent work ownership.\n' +
     'Use workspace_schedule_tasks for ready work.\n' +
-    'Use workspace_put_todos to track your private execution plan. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
-    'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
-    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +
-    'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n' +
+    'Use workspace_put_todos for private execution plans.\n' +
+    'Use workspace_create_timer only for reminders; plans carry long-horizon continuity.\n' +
+    'Use workspace_create_routine for recurring tasks.\n' +
+    'Use workspace_send_notification for important completion/blocker notices.\n' +
     'Use workspace_write_knowledge to create or update shared knowledge base entries that persist across conversations.\n' +
     'Use workspace_read_knowledge to read knowledge entries by ID or slug (from @knowledge:slug mentions).\n'
   );

@@ -774,6 +774,13 @@ class BaseAdapter {
     const channel = goal.channel_name || this.channelName || 'general';
     const checkpoint = goal.checkpoint ? `\nCurrent checkpoint: ${goal.checkpoint}` : '';
     const progress = goal.progress_log ? `\nProgress log: ${goal.progress_log}` : '';
+    const level = goal.plan_level || 'root_plan';
+    const parent = goal.parent_goal_id ? `\nParent plan: ${goal.parent_goal_id}` : '';
+    const root = goal.root_goal_id ? `\nRoot plan: ${goal.root_goal_id}` : '';
+    const policy = goal.continuation_policy ? `\nContinuation policy: ${goal.continuation_policy}` : '';
+    const refs = Array.isArray(goal.plan_refs) && goal.plan_refs.length
+      ? `\nPlan refs: ${goal.plan_refs.join(', ')}`
+      : '';
     return {
       id: `goal:${goal.id}:${goal.run_count || Date.now()}`,
       messageId: `goal:${goal.id}:${goal.run_count || Date.now()}`,
@@ -782,13 +789,18 @@ class BaseAdapter {
       senderName: 'workspace-goal',
       messageType: 'goal',
       content: [
-        `Workspace goal checkpoint tick (${goal.id}).`,
+        `Workspace plan checkpoint tick (${goal.id}).`,
+        `Plan level: ${level}`,
+        parent,
+        root,
+        policy,
+        refs,
         `Objective: ${goal.objective}`,
         `Stop condition: ${goal.stop_condition}`,
         checkpoint,
         progress,
         '',
-        'Continue coordinating this goal now. Inspect current workspace state, advance or delegate the next checkpoint, update the goal progress/checkpoint, and set status to done/blocked/paused/cancelled only when that state is true.',
+        'Continue coordinating this plan now. If this is a root/stage plan, inspect referenced plans and active child plans/tasks, then create the next short plan or update checkpoint/progress. If this is a short/execution plan, produce evidence and return control to the parent by updating status only when true.',
       ].join('\n'),
       metadata: { workspace_goal_id: goal.id },
       _deliveryKind: 'goal',
@@ -1399,11 +1411,12 @@ class BaseAdapter {
     }
     if (kind === 'goal') {
       return [
-        'Delivery kind: workspace goal checkpoint. This is your self-maintained durable run loop, not a human chat message or platform-assigned objective.',
-        'Drive exactly the referenced objective toward its stop condition. Reconcile current tasks, messages, repo state, and prior checkpoint before acting.',
+        'Delivery kind: workspace plan checkpoint. This is hierarchical planning state, not a human chat message.',
+        'Drive exactly the referenced plan level toward its stop condition. Reconcile plan refs, active child plans, tasks, messages, repo state, and prior checkpoint before acting.',
         'Use rolling parallelism: do not wait for every active lane to finish before assigning safe non-overlapping follow-up work to agents freed by a completed lane.',
-        'If work remains, you must choose the next checkpoint and PATCH /v1/workspace-goals/{id} with checkpoint/progress_log and active status.',
-        'Only mark the goal done, blocked, paused, or cancelled when that state is true, no broader objective remains, and you include evidence.',
+        'If this is a root/stage plan and a short plan just finished, return to planning: create the next short plan/tasks or update checkpoint/progress_log.',
+        'Only mark a root/stage plan done when referenced plans are exhausted, no active child plans or channel tasks remain, and you include evidence.',
+        'PATCH /v1/workspace-goals/{id} with checkpoint/progress_log, plan fields, and status.',
       ].join('\n');
     }
     return '';

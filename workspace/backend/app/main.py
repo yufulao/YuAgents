@@ -31,7 +31,7 @@ TIMER_LOOP_INTERVAL_SECONDS = 10
 MAINTENANCE_EVERY_N_CYCLES = 30  # ~5 minutes
 
 
-def _ensure_sqlite_workspace_task_scope_columns(engine):
+def _ensure_sqlite_workspace_planning_columns(engine):
     """Patch existing SQLite dev DBs after create_all.
 
     SQLite create_all creates missing tables but does not add columns to an
@@ -39,23 +39,36 @@ def _ensure_sqlite_workspace_task_scope_columns(engine):
     usable after model additions.
     """
     inspector = inspect(engine)
-    if "workspace_tasks" not in inspector.get_table_names():
-        return
-    columns = {col["name"] for col in inspector.get_columns("workspace_tasks")}
-    additions = {
-        "lane_type": "TEXT NOT NULL DEFAULT 'unspecified'",
-        "write_scope": "JSON DEFAULT '[]'",
-        "resource_locks": "JSON DEFAULT '[]'",
-        "conflicts_with": "JSON DEFAULT '[]'",
-        "commit_policy": "JSON DEFAULT '{}'",
-    }
-    missing = [(name, ddl) for name, ddl in additions.items() if name not in columns]
-    if not missing:
-        return
     with engine.begin() as conn:
-        for name, ddl in missing:
-            conn.execute(text(f"ALTER TABLE workspace_tasks ADD COLUMN {name} {ddl}"))
-    logger.info("SQLite: added workspace_tasks columns: %s", ", ".join(name for name, _ in missing))
+        if "workspace_tasks" in inspector.get_table_names():
+            task_columns = {col["name"] for col in inspector.get_columns("workspace_tasks")}
+            task_additions = {
+                "lane_type": "TEXT NOT NULL DEFAULT 'unspecified'",
+                "write_scope": "JSON DEFAULT '[]'",
+                "resource_locks": "JSON DEFAULT '[]'",
+                "conflicts_with": "JSON DEFAULT '[]'",
+                "commit_policy": "JSON DEFAULT '{}'",
+            }
+            missing_tasks = [(name, ddl) for name, ddl in task_additions.items() if name not in task_columns]
+            for name, ddl in missing_tasks:
+                conn.execute(text(f"ALTER TABLE workspace_tasks ADD COLUMN {name} {ddl}"))
+            if missing_tasks:
+                logger.info("SQLite: added workspace_tasks columns: %s", ", ".join(name for name, _ in missing_tasks))
+
+        if "workspace_goals" in inspector.get_table_names():
+            goal_columns = {col["name"] for col in inspector.get_columns("workspace_goals")}
+            goal_additions = {
+                "parent_goal_id": "TEXT",
+                "root_goal_id": "TEXT",
+                "plan_level": "TEXT NOT NULL DEFAULT 'root_plan'",
+                "continuation_policy": "TEXT NOT NULL DEFAULT 'long_horizon'",
+                "plan_refs": "JSON DEFAULT '[]'",
+            }
+            missing_goals = [(name, ddl) for name, ddl in goal_additions.items() if name not in goal_columns]
+            for name, ddl in missing_goals:
+                conn.execute(text(f"ALTER TABLE workspace_goals ADD COLUMN {name} {ddl}"))
+            if missing_goals:
+                logger.info("SQLite: added workspace_goals columns: %s", ", ".join(name for name, _ in missing_goals))
 
 
 def _run_maintenance():
@@ -293,7 +306,7 @@ async def lifespan(app: FastAPI):
         if _is_sqlite:
             from app import models  # noqa: F401 — ensure all models are registered
             Base.metadata.create_all(bind=engine)
-            _ensure_sqlite_workspace_task_scope_columns(engine)
+            _ensure_sqlite_workspace_planning_columns(engine)
             logger.info("SQLite: auto-created tables")
     except Exception as e:
         logger.error("LIFESPAN: database import failed: %s", e)

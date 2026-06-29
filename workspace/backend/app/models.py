@@ -527,11 +527,11 @@ class WorkspaceTask(Base):
 
 
 class WorkspaceGoal(Base):
-    """Durable coordinator goal/run loop for long-running multi-agent work.
+    """Durable coordinator plan checkpoint for long-running multi-agent work.
 
-    Workspace tasks describe delegated units of work. A workspace goal is the
-    coordinator's persistent contract: objective, stopping condition,
-    checkpoint cadence, and the next time the coordinator should re-enter.
+    Workspace tasks describe delegated units of work. A workspace goal is now
+    a hierarchical plan checkpoint: root/stage plans create short plans and
+    execution work, then child completion returns control to the parent plan.
     """
     __tablename__ = "workspace_goals"
 
@@ -539,6 +539,11 @@ class WorkspaceGoal(Base):
     workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     channel_name = Column(Text, nullable=False)
     coordinator = Column(Text, nullable=False)
+    parent_goal_id = Column(Text, ForeignKey("workspace_goals.id", ondelete="SET NULL"), nullable=True)
+    root_goal_id = Column(Text, nullable=True)
+    plan_level = Column(Text, nullable=False, default="root_plan")
+    continuation_policy = Column(Text, nullable=False, default="long_horizon")
+    plan_refs = Column(JSONB, default=[])
     objective = Column(Text, nullable=False)
     stop_condition = Column(Text, nullable=False)
     status = Column(Text, nullable=False, default="active")  # active | paused | blocked | done | cancelled
@@ -559,6 +564,8 @@ class WorkspaceGoal(Base):
         Index("idx_workspace_goals_workspace_status_next", "workspace_id", "status", "next_run_at"),
         Index("idx_workspace_goals_workspace_coordinator_status", "workspace_id", "coordinator", "status"),
         Index("idx_workspace_goals_workspace_channel_status", "workspace_id", "channel_name", "status"),
+        Index("idx_workspace_goals_parent_status", "parent_goal_id", "status"),
+        Index("idx_workspace_goals_root_status", "root_goal_id", "status"),
     )
 
 
