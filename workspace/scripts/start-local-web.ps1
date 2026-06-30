@@ -174,15 +174,49 @@ function Ensure-FrontendDependencies {
 
 function Stop-ListeningPort([int]$Port) {
   Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique |
     ForEach-Object {
-      Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+      Stop-ProcessTree ([int]$_)
     }
 }
 
 function Stop-ChildProcess($Process) {
-  if ($Process -and -not $Process.HasExited) {
-    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+  if ($Process) {
+    Stop-ProcessTree ([int]$Process.Id)
   }
+}
+
+function Stop-ProcessTree([int]$ProcessId) {
+  if ($ProcessId -le 0) {
+    return
+  }
+  $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" -ErrorAction SilentlyContinue
+  foreach ($child in $children) {
+    Stop-ProcessTree ([int]$child.ProcessId)
+  }
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+function Stop-LocalWebProcesses {
+  $backendMatch = $BackendDir.ToLowerInvariant()
+  $frontendMatch = $FrontendDir.ToLowerInvariant()
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+      $cmd = [string]$_.CommandLine
+      $lower = $cmd.ToLowerInvariant()
+      (
+        $lower.Contains($backendMatch) -and
+        $lower.Contains("uvicorn") -and
+        $lower.Contains("app.main:app")
+      ) -or (
+        $lower.Contains($frontendMatch) -and
+        ($lower.Contains("npm run dev") -or $lower.Contains("next dev") -or $lower.Contains("next\dist\bin\next"))
+      )
+    } |
+    Select-Object -ExpandProperty ProcessId -Unique |
+    ForEach-Object {
+      Stop-ProcessTree ([int]$_)
+    }
 }
 
 Write-Host "OpenAgents local Web startup"
@@ -210,6 +244,7 @@ try {
   Ensure-FrontendDependencies
 
   Write-Host "Stopping existing local Web processes on ports $LocalBackendPort and $LocalFrontendPort..."
+  Stop-LocalWebProcesses
   Stop-ListeningPort $LocalBackendPort
   Stop-ListeningPort $LocalFrontendPort
   Start-Sleep -Seconds 1
@@ -242,7 +277,7 @@ try {
   $Backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", "call `"$BackendCmd`"" -WindowStyle Hidden -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErr -PassThru
 
   Write-Host "Waiting for backend API..."
-  Wait-Url "$LocalBackendUrl/v1/workspaces" 90 "backend API" $Backend @($BackendErr, $BackendLog)
+  Wait-Url "$LocalBackendUrl/v1/agent-catalog" 90 "backend API" $Backend @($BackendErr, $BackendLog)
 
   @(
     "@echo off",
@@ -282,6 +317,7 @@ try {
 } finally {
   Stop-ChildProcess $Backend
   Stop-ChildProcess $Frontend
+  Stop-LocalWebProcesses
   Stop-ListeningPort $LocalBackendPort
   Stop-ListeningPort $LocalFrontendPort
   Remove-Item -LiteralPath $BackendCmd, $FrontendCmd -Force -ErrorAction SilentlyContinue
