@@ -15,6 +15,7 @@ import { BrowserView } from '@/components/browser/browser-view';
 import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
 import { QueueDetailPanel } from '@/components/chat/queue-detail-panel';
+import { StatusDetailPanel } from '@/components/chat/status-detail-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { TasksView } from '@/components/tasks/tasks-view';
 import { RoutineList } from '@/components/routines/routine-list';
@@ -85,6 +86,7 @@ export function Wrapper() {
     viewMode,
     isAgentPanelOpen,
     isQueuePanelOpen,
+    isStatusPanelOpen,
     isSidebarOpen,
     isDetailExpanded,
     mobilePane,
@@ -200,6 +202,7 @@ export function Wrapper() {
               {viewMode === 'browser' && <BrowserView />}
               {isAgentPanelOpen && <AgentProfilePanel />}
               {isQueuePanelOpen && <QueueDetailPanel />}
+              {isStatusPanelOpen && <StatusDetailPanel />}
             </div>
           )}
         </div>
@@ -237,6 +240,7 @@ export function Wrapper() {
               <MonitorGrid />
               {isAgentPanelOpen && <AgentProfilePanel />}
               {isQueuePanelOpen && <QueueDetailPanel />}
+              {isStatusPanelOpen && <StatusDetailPanel />}
             </div>
           ) : (
             <>
@@ -295,6 +299,7 @@ export function Wrapper() {
                     </main>
                     {isAgentPanelOpen && <AgentProfilePanel />}
                     {isQueuePanelOpen && <QueueDetailPanel />}
+                    {isStatusPanelOpen && <StatusDetailPanel />}
                   </div>
                   <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
                     <BrowserView />
@@ -317,6 +322,7 @@ export function Wrapper() {
                   {/* Agent profile slide-over */}
                   {isAgentPanelOpen && <AgentProfilePanel />}
                   {isQueuePanelOpen && <QueueDetailPanel />}
+                  {isStatusPanelOpen && <StatusDetailPanel />}
                 </div>
               )}
             </>

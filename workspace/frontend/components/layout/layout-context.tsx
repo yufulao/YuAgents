@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { TimerItem, TodoItem } from '@/lib/types';
 
 export type ViewMode = 'threads' | 'files' | 'knowledge' | 'browser' | 'tasks' | 'routines' | 'inbox' | 'connect';
 
@@ -21,6 +22,10 @@ export interface SelectedQueueItem {
   queueId: string;
   content: string;
 }
+
+export type SelectedStatusItem =
+  | { kind: 'timer'; channelName: string; timer: TimerItem }
+  | { kind: 'todo'; channelName: string; todo: TodoItem };
 
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 200;
@@ -60,8 +65,11 @@ interface LayoutState {
   setSelectedAgentName: (name: string | null) => void;
   selectedQueueItem: SelectedQueueItem | null;
   setSelectedQueueItem: (item: SelectedQueueItem | null) => void;
+  selectedStatusItem: SelectedStatusItem | null;
+  setSelectedStatusItem: (item: SelectedStatusItem | null) => void;
   isAgentPanelOpen: boolean;
   isQueuePanelOpen: boolean;
+  isStatusPanelOpen: boolean;
   /** Which pane is visible on mobile (ignored on desktop) */
   mobilePane: MobilePane;
   /** Navigate to detail pane on mobile */
@@ -91,6 +99,7 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
   const [viewMode, setViewMode] = useState<ViewMode>('threads');
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
   const [selectedQueueItem, setSelectedQueueItem] = useState<SelectedQueueItem | null>(null);
+  const [selectedStatusItem, setSelectedStatusItem] = useState<SelectedStatusItem | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>('list');
   const [isDetailExpanded, setIsDetailExpanded] = useState(false);
   const [splitBrowser, setSplitBrowser] = useState(() => {
@@ -114,14 +123,28 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
 
   const handleSetSelectedAgentName = (name: string | null) => {
     setSelectedAgentName(name);
-    if (name) setSelectedQueueItem(null);
+    if (name) {
+      setSelectedQueueItem(null);
+      setSelectedStatusItem(null);
+    }
   };
   const handleSetSelectedQueueItem = (item: SelectedQueueItem | null) => {
     setSelectedQueueItem(item);
-    if (item) setSelectedAgentName(null);
+    if (item) {
+      setSelectedAgentName(null);
+      setSelectedStatusItem(null);
+    }
+  };
+  const handleSetSelectedStatusItem = (item: SelectedStatusItem | null) => {
+    setSelectedStatusItem(item);
+    if (item) {
+      setSelectedAgentName(null);
+      setSelectedQueueItem(null);
+    }
   };
   const isAgentPanelOpen = selectedAgentName !== null;
   const isQueuePanelOpen = selectedQueueItem !== null;
+  const isStatusPanelOpen = selectedStatusItem !== null;
   const openMobileDetail = () => setMobilePane('detail');
   const openMobileList = () => setMobilePane('list');
   const toggleDetailExpanded = () => setIsDetailExpanded((v) => !v);
@@ -198,8 +221,11 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       setSelectedAgentName: handleSetSelectedAgentName,
       selectedQueueItem,
       setSelectedQueueItem: handleSetSelectedQueueItem,
+      selectedStatusItem,
+      setSelectedStatusItem: handleSetSelectedStatusItem,
       isAgentPanelOpen,
       isQueuePanelOpen,
+      isStatusPanelOpen,
       mobilePane,
       openMobileDetail,
       openMobileList,

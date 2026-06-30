@@ -62,7 +62,7 @@ export function ThreadStatusBar({
   refreshKey?: number;
 }) {
   const { todos, refreshTodos } = useWorkspace();
-  const { selectedQueueItem, setSelectedQueueItem } = useLayout();
+  const { selectedQueueItem, setSelectedQueueItem, selectedStatusItem, setSelectedStatusItem } = useLayout();
   const [timers, setTimers] = useState<TimerItem[]>([]);
   const [cancelledTodoIds, setCancelledTodoIds] = useState<Set<string>>(new Set());
   const [cancelledQueueIds, setCancelledQueueIds] = useState<Set<string>>(new Set());
@@ -124,6 +124,25 @@ export function ThreadStatusBar({
     return () => {
       document.removeEventListener('queue-item-cancelled', handleCancelled);
       document.removeEventListener('queue-item-updated', handleUpdated);
+    };
+  }, [channelName]);
+
+  useEffect(() => {
+    const handleTimerCancelled = (event: Event) => {
+      const detail = (event as CustomEvent<{ channelName?: string; timerId?: string }>).detail;
+      if (detail?.channelName !== channelName || !detail.timerId) return;
+      setTimers((prev) => prev.filter((timer) => timer.id !== detail.timerId));
+    };
+    const handleTodoCancelled = (event: Event) => {
+      const detail = (event as CustomEvent<{ channelName?: string; todoId?: string }>).detail;
+      if (detail?.channelName !== channelName || !detail.todoId) return;
+      setCancelledTodoIds((prev) => new Set(prev).add(detail.todoId as string));
+    };
+    document.addEventListener('timer-item-cancelled', handleTimerCancelled);
+    document.addEventListener('todo-item-cancelled', handleTodoCancelled);
+    return () => {
+      document.removeEventListener('timer-item-cancelled', handleTimerCancelled);
+      document.removeEventListener('todo-item-cancelled', handleTodoCancelled);
     };
   }, [channelName]);
 
@@ -226,6 +245,14 @@ export function ThreadStatusBar({
     setSelectedQueueItem({ channelName, queueId: queue.queueId, content: queue.content });
   }, [channelName, setSelectedQueueItem]);
 
+  const handleOpenTimer = useCallback((timer: TimerItem) => {
+    setSelectedStatusItem({ kind: 'timer', channelName, timer });
+  }, [channelName, setSelectedStatusItem]);
+
+  const handleOpenTodo = useCallback((todo: TodoItem) => {
+    setSelectedStatusItem({ kind: 'todo', channelName, todo });
+  }, [channelName, setSelectedStatusItem]);
+
   const hasContent = pendingCount > 0 || inProgressCount > 0 || activeTimers.length > 0 || queuedMessages.length > 0;
   if (!hasContent) {
     if (!emptyLabel) return null;
@@ -256,15 +283,31 @@ export function ThreadStatusBar({
           {items.map((todo) => (
             <div
               key={todo.id}
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-md px-1.5 py-1 text-[11px] leading-snug text-foreground/90 transition-colors hover:bg-muted/60"
-              title={todo.content}
+              role="button"
+              aria-pressed={selectedStatusItem?.kind === 'todo' && selectedStatusItem.todo.id === todo.id}
+              tabIndex={0}
+              onClick={() => handleOpenTodo(todo)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleOpenTodo(todo);
+                }
+              }}
+              className={cn(
+                'grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-md border border-transparent px-1.5 py-1 text-[11px] leading-snug text-foreground/90 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selectedStatusItem?.kind === 'todo' && selectedStatusItem.todo.id === todo.id && 'border-blue-500/50 bg-blue-500/10',
+              )}
+              title="查看任务详情"
             >
               <div className="min-w-0">
                 <div className="line-clamp-2 break-words [overflow-wrap:anywhere]">{truncateTodo(todo.content)}</div>
                 <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{todoOwnerLabel(todo)}</div>
               </div>
               <button
-                onClick={() => handleCancelTodo(todo)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleCancelTodo(todo);
+                }}
                 className={cancelButtonClass}
                 title="取消此任务"
                 aria-label="取消此任务"
@@ -319,17 +362,33 @@ export function ThreadStatusBar({
             ) : (
               <span className="flex min-w-0 items-center gap-1">
                 {inProgressCount > 0 && (
-                  <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTodo(inProgressTodos[0])}
+                    className={cn(
+                      'inline-flex min-w-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      selectedStatusItem?.kind === 'todo' && selectedStatusItem.todo.id === inProgressTodos[0]?.id && 'border-blue-500/50 bg-blue-500/10',
+                    )}
+                    title="查看进行中任务"
+                  >
                     <Loader2 className="size-3 text-blue-500 animate-spin" />
                     <span>{inProgressCount} in progress</span>
-                  </>
+                  </button>
                 )}
                 {inProgressCount > 0 && pendingCount > 0 && <span className="text-muted-foreground/30">·</span>}
                 {pendingCount > 0 && (
-                  <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTodo(pendingTodos[0])}
+                    className={cn(
+                      'inline-flex min-w-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      selectedStatusItem?.kind === 'todo' && selectedStatusItem.todo.id === pendingTodos[0]?.id && 'border-blue-500/50 bg-blue-500/10',
+                    )}
+                    title="查看等待中任务"
+                  >
                     <Circle className="size-3" />
                     <span>{pendingCount} pending</span>
-                  </>
+                  </button>
                 )}
                 <button
                   onClick={handleCancelTodos}
@@ -343,12 +402,24 @@ export function ThreadStatusBar({
             )
           )}
           {activeTimers.map((t) => (
-            <span
+            <div
               key={t.id}
+              role="button"
+              aria-pressed={selectedStatusItem?.kind === 'timer' && selectedStatusItem.timer.id === t.id}
+              tabIndex={0}
+              onClick={() => handleOpenTimer(t)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleOpenTimer(t);
+                }
+              }}
               className={cn(
-                'grid max-w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1 rounded-md border border-amber-500/20 bg-amber-500/5 px-1.5 py-1',
+                'grid max-w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1 rounded-md border border-amber-500/20 bg-amber-500/5 px-1.5 py-1 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 isSidebar ? 'w-full' : 'min-w-0 flex-1 basis-72',
+                selectedStatusItem?.kind === 'timer' && selectedStatusItem.timer.id === t.id && 'border-amber-500/70 bg-amber-500/15 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.25)]',
               )}
+              title="查看 timer 详情"
             >
               <Timer className="mt-0.5 size-3 shrink-0 text-amber-500" />
               <span className="min-w-0 break-words leading-snug [overflow-wrap:anywhere]">
@@ -361,7 +432,10 @@ export function ThreadStatusBar({
                   <span className="text-[10px] text-amber-500/80">/{intervalLabel(t.repeatIntervalSeconds)}</span>
                 )}
                 <button
-                  onClick={() => handleCancelTimer(t.id)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleCancelTimer(t.id);
+                  }}
                   className={cancelButtonClass}
                   title="删除 timer"
                   aria-label="删除 timer"
@@ -369,7 +443,7 @@ export function ThreadStatusBar({
                   <X className="size-3" />
                 </button>
               </span>
-            </span>
+            </div>
           ))}
         </div>
       )}
