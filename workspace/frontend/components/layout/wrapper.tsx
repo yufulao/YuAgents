@@ -14,6 +14,7 @@ import { BrowserTabList } from '@/components/browser/browser-tab-list';
 import { BrowserView } from '@/components/browser/browser-view';
 import { ConnectAgentView } from '@/components/connect/connect-agent-view';
 import { AgentProfilePanel } from '@/components/agents/agent-profile-panel';
+import { QueueDetailPanel } from '@/components/chat/queue-detail-panel';
 import { MonitorGrid } from '@/components/monitor/monitor-grid';
 import { TasksView } from '@/components/tasks/tasks-view';
 import { RoutineList } from '@/components/routines/routine-list';
@@ -83,6 +84,7 @@ export function Wrapper() {
     isMobile,
     viewMode,
     isAgentPanelOpen,
+    isQueuePanelOpen,
     isSidebarOpen,
     isDetailExpanded,
     mobilePane,
@@ -197,6 +199,7 @@ export function Wrapper() {
               {viewMode === 'files' && <FilePreview />}
               {viewMode === 'browser' && <BrowserView />}
               {isAgentPanelOpen && <AgentProfilePanel />}
+              {isQueuePanelOpen && <QueueDetailPanel />}
             </div>
           )}
         </div>
@@ -290,6 +293,7 @@ export function Wrapper() {
                       <ChatView />
                     </main>
                     {isAgentPanelOpen && <AgentProfilePanel />}
+                    {isQueuePanelOpen && <QueueDetailPanel />}
                   </div>
                   <div className="relative flex-1 min-w-0 bg-background overflow-hidden border border-input rounded-xl shadow-xs">
                     <BrowserView />
@@ -311,6 +315,7 @@ export function Wrapper() {
 
                   {/* Agent profile slide-over */}
                   {isAgentPanelOpen && <AgentProfilePanel />}
+                  {isQueuePanelOpen && <QueueDetailPanel />}
                 </div>
               )}
             </>

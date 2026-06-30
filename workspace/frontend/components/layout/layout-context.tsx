@@ -16,6 +16,12 @@ export type ViewMode = 'threads' | 'files' | 'knowledge' | 'browser' | 'tasks' |
 /** On mobile, which pane is showing: the list or the detail */
 export type MobilePane = 'list' | 'detail';
 
+export interface SelectedQueueItem {
+  channelName: string;
+  queueId: string;
+  content: string;
+}
+
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -52,7 +58,10 @@ interface LayoutState {
   setViewMode: (mode: ViewMode) => void;
   selectedAgentName: string | null;
   setSelectedAgentName: (name: string | null) => void;
+  selectedQueueItem: SelectedQueueItem | null;
+  setSelectedQueueItem: (item: SelectedQueueItem | null) => void;
   isAgentPanelOpen: boolean;
+  isQueuePanelOpen: boolean;
   /** Which pane is visible on mobile (ignored on desktop) */
   mobilePane: MobilePane;
   /** Navigate to detail pane on mobile */
@@ -81,6 +90,7 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
   const [agentPanelWidth, setAgentPanelWidthState] = useState(DEFAULT_AGENT_PANEL_WIDTH);
   const [viewMode, setViewMode] = useState<ViewMode>('threads');
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
+  const [selectedQueueItem, setSelectedQueueItem] = useState<SelectedQueueItem | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>('list');
   const [isDetailExpanded, setIsDetailExpanded] = useState(false);
   const [splitBrowser, setSplitBrowser] = useState(() => {
@@ -102,7 +112,16 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     setAgentPanelWidthState(readStoredWidth('x-agent-panel-width', DEFAULT_AGENT_PANEL_WIDTH, MIN_AGENT_PANEL_WIDTH, MAX_AGENT_PANEL_WIDTH));
   }, []);
 
+  const handleSetSelectedAgentName = (name: string | null) => {
+    setSelectedAgentName(name);
+    if (name) setSelectedQueueItem(null);
+  };
+  const handleSetSelectedQueueItem = (item: SelectedQueueItem | null) => {
+    setSelectedQueueItem(item);
+    if (item) setSelectedAgentName(null);
+  };
   const isAgentPanelOpen = selectedAgentName !== null;
+  const isQueuePanelOpen = selectedQueueItem !== null;
   const openMobileDetail = () => setMobilePane('detail');
   const openMobileList = () => setMobilePane('list');
   const toggleDetailExpanded = () => setIsDetailExpanded((v) => !v);
@@ -176,8 +195,11 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
       viewMode,
       setViewMode,
       selectedAgentName,
-      setSelectedAgentName,
+      setSelectedAgentName: handleSetSelectedAgentName,
+      selectedQueueItem,
+      setSelectedQueueItem: handleSetSelectedQueueItem,
       isAgentPanelOpen,
+      isQueuePanelOpen,
       mobilePane,
       openMobileDetail,
       openMobileList,
