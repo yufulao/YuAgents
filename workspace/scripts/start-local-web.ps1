@@ -25,6 +25,79 @@ $FrontendLog = Join-Path $LogDir "local-frontend.log"
 $FrontendErr = Join-Path $LogDir "local-frontend.err.log"
 $Backend = $null
 $Frontend = $null
+$LocalWebJobHandle = [IntPtr]::Zero
+
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class OpenAgentsJobObject {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IO_COUNTERS {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public long Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetInformationJobObject(IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    public static IntPtr CreateKillOnCloseJob(string name) {
+        IntPtr job = CreateJobObject(IntPtr.Zero, name);
+        if (job == IntPtr.Zero) {
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        info.BasicLimitInformation.LimitFlags = 0x00002000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        IntPtr ptr = Marshal.AllocHGlobal(length);
+        try {
+            Marshal.StructureToPtr(info, ptr, false);
+            if (!SetInformationJobObject(job, 9, ptr, (uint)length)) {
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }
+        } finally {
+            Marshal.FreeHGlobal(ptr);
+        }
+        return job;
+    }
+}
+"@
 
 function Read-EnvConfig([string]$Path) {
   $config = @{}
@@ -180,6 +253,30 @@ function Stop-ChildProcess($Process) {
   }
 }
 
+function Ensure-LocalWebJob {
+  if ($script:LocalWebJobHandle -eq [IntPtr]::Zero) {
+    $script:LocalWebJobHandle = [OpenAgentsJobObject]::CreateKillOnCloseJob("OpenAgentsLocalWeb-$PID")
+  }
+}
+
+function Add-ProcessToLocalWebJob($Process, [string]$Label) {
+  if (-not $Process) {
+    return
+  }
+  Ensure-LocalWebJob
+  if (-not [OpenAgentsJobObject]::AssignProcessToJobObject($script:LocalWebJobHandle, $Process.Handle)) {
+    $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    throw "Failed to attach $Label process $($Process.Id) to local Web job object (Win32 error $code)."
+  }
+}
+
+function Close-LocalWebJob {
+  if ($script:LocalWebJobHandle -ne [IntPtr]::Zero) {
+    [OpenAgentsJobObject]::CloseHandle($script:LocalWebJobHandle) | Out-Null
+    $script:LocalWebJobHandle = [IntPtr]::Zero
+  }
+}
+
 function Stop-ProcessTree([int]$ProcessId) {
   if ($ProcessId -le 0) {
     return
@@ -269,6 +366,7 @@ try {
   Write-Host "  stdout: $BackendLog"
   Write-Host "  stderr: $BackendErr"
   $Backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", "call `"$BackendCmd`"" -WindowStyle Hidden -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErr -PassThru
+  Add-ProcessToLocalWebJob $Backend "backend"
 
   Write-Host "Waiting for backend API..."
   Wait-Url "$LocalBackendUrl/v1/agent-catalog" 90 "backend API" $Backend @($BackendErr, $BackendLog)
@@ -286,6 +384,7 @@ try {
   Write-Host "  stdout: $FrontendLog"
   Write-Host "  stderr: $FrontendErr"
   $Frontend = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", "call `"$FrontendCmd`"" -WindowStyle Hidden -RedirectStandardOutput $FrontendLog -RedirectStandardError $FrontendErr -PassThru
+  Add-ProcessToLocalWebJob $Frontend "frontend"
 
   Write-Host "Waiting for frontend Web page..."
   Wait-Url $LocalFrontendUrl 120 "frontend Web page" $Frontend @($FrontendErr, $FrontendLog)
@@ -319,5 +418,6 @@ try {
   Stop-LocalWebProcesses
   Stop-ListeningPort $LocalBackendPort
   Stop-ListeningPort $LocalFrontendPort
+  Close-LocalWebJob
   Remove-Item -LiteralPath $BackendCmd, $FrontendCmd -Force -ErrorAction SilentlyContinue
 }
