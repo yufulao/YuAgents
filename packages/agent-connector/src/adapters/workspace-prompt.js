@@ -462,7 +462,8 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       'to continue work. Use this instead of `sleep` — timers let you release ' +
       'the session and get called back later.\n\n' +
       'Use cases: check back on a deploy, retry after a rate limit, remind ' +
-      'yourself to follow up.\n\n' +
+      'yourself to follow up. User-created timers are owned by the user; ' +
+      'agents must not cancel them.\n\n' +
       '**Create a timer:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/timers -d '{"delay":300,"message":"Check the build",` +
@@ -471,7 +472,7 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       '**List active timers:**\n' +
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/timers?network=${workspaceId}&channel=${channelName}"\`\n\n` +
       '**Cancel a timer:**\n' +
-      `\`${curl} -s -X DELETE -H "${h}" ${baseUrl}/v1/timers/TIMER_ID\`\n`
+      `\`${curl} -s -X DELETE -H "${h}" "${baseUrl}/v1/timers/TIMER_ID?source=openagents:${agentName}"\`\n`
     );
   }
 
@@ -600,7 +601,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
   if (!disabled.has('timers')) {
-    lines.push('- Timers: GET /v1/timers?network=...&channel=...');
+    lines.push('- Timers: GET /v1/timers?network=...&channel=... (user-created timers are visible but agents must not cancel them).');
   }
   if (!disabled.has('routines')) {
     lines.push('- Routines: GET /v1/routines?network=...');
@@ -618,7 +619,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
       lines.push('- Shared tasks: POST/GET /v1/workspace-tasks, POST /v1/workspace-tasks/{id}/claim, PATCH /v1/workspace-tasks/{id}.');
       lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
     }
-    if (!disabled.has('timers')) lines.push('- Create/cancel timer: POST /v1/timers; DELETE /v1/timers/{id}.');
+    if (!disabled.has('timers')) lines.push('- Create/cancel own timer: POST /v1/timers; DELETE /v1/timers/{id}?source=openagents:<you>. User-created timers cannot be cancelled by agents.');
     if (!disabled.has('routines')) lines.push('- Create/cancel routine: POST /v1/routines; DELETE /v1/routines/{id}.');
   }
 

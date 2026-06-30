@@ -343,7 +343,7 @@ CREATE INDEX IF NOT EXISTS idx_workspace_tasks_workspace_assignee_status ON work
 CREATE INDEX IF NOT EXISTS idx_workspace_tasks_workspace_status          ON workspace_tasks (workspace_id, status);
 
 -- ===========================================================================
--- Timers (one-shot scheduled messages)
+-- Timers (scheduled prompt messages)
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS timers (
     id             text        PRIMARY KEY,
@@ -351,8 +351,12 @@ CREATE TABLE IF NOT EXISTS timers (
     channel_name   text        NOT NULL,
     thread_id      text,
     created_by     text        NOT NULL,
+    creator_type   text        NOT NULL DEFAULT 'agent',
+    target_agent   text,
     message        text        NOT NULL,
     delay_seconds  integer     NOT NULL,
+    repeat_interval_seconds integer,
+    fire_count     integer     NOT NULL DEFAULT 0,
     fires_at       timestamptz NOT NULL,
     status         text        NOT NULL DEFAULT 'active',
     created_at     timestamptz NOT NULL DEFAULT now()

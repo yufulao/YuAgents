@@ -530,8 +530,12 @@ class TimerRecord(Base):
     channel_name = Column(Text, nullable=False)
     thread_id = Column(Text, nullable=True)
     created_by = Column(Text, nullable=False)              # "openagents:agent-name"
+    creator_type = Column(Text, nullable=False, default="agent", server_default="agent")  # agent | human
+    target_agent = Column(Text, nullable=True)              # agent name without openagents: prefix
     message = Column(Text, nullable=False)
     delay_seconds = Column(Integer, nullable=False)
+    repeat_interval_seconds = Column(Integer, nullable=True)
+    fire_count = Column(Integer, nullable=False, default=0, server_default="0")
     fires_at = Column(DateTime(timezone=True), nullable=False)
     status = Column(Text, nullable=False, default="active")  # active | fired | cancelled
     created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))

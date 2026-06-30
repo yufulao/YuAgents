@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -128,26 +128,33 @@ async def _fire_due():
         ).scalars().all()
 
         for timer in due:
-            timer.status = "fired"
+            repeat_interval = getattr(timer, "repeat_interval_seconds", None)
+            if repeat_interval:
+                timer.fire_count = (getattr(timer, "fire_count", 0) or 0) + 1
+                timer.fires_at = now + timedelta(seconds=repeat_interval)
+            else:
+                timer.status = "fired"
             workspace = db.execute(
                 select(Workspace).where(Workspace.id == timer.workspace_id)
             ).scalar_one_or_none()
             if not workspace:
                 continue
-            agent_name = timer.created_by.replace("openagents:", "")
+            agent_name = (getattr(timer, "target_agent", None) or timer.created_by.replace("openagents:", "")).strip()
+            creator_name = timer.created_by.replace("openagents:", "").replace("human:", "")
+            repeat_note = f" Repeat interval: {repeat_interval}s." if repeat_interval else ""
             event = Event(
                 type="workspace.message.posted",
                 source="system:timer",
                 target=f"channel/{timer.channel_name}",
                 payload={
-                    "content": f"⏰ Timer fired (set by @{agent_name}): {timer.message}",
+                    "content": f"⏰ Timer fired (set by @{creator_name}): {timer.message}{repeat_note}",
                     "message_type": "chat",
                 },
                 metadata={"target_agents": [agent_name]},
             )
             ctx = PipelineContext(
                 network_id=str(workspace.id),
-                agent_address=timer.created_by,
+                agent_address=f"openagents:{agent_name}",
                 db=db,
                 workspace=workspace,
                 token=workspace.password_hash,

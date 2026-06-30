@@ -827,9 +827,12 @@ class WorkspaceClient {
     return data.data || data;
   }
 
-  async cancelTimer(workspaceId, token, timerId, network) {
-    const params = network ? `?network=${network}` : '';
-    const data = await this._delete(`/v1/timers/${timerId}`, this._wsHeaders(token));
+  async cancelTimer(workspaceId, token, timerId, { network, source } = {}) {
+    const params = new URLSearchParams();
+    if (network) params.set('network', network);
+    if (source) params.set('source', source);
+    const suffix = params.toString() ? `?${params}` : '';
+    const data = await this._delete(`/v1/timers/${timerId}${suffix}`, this._wsHeaders(token));
     return data.data || data;
   }
 

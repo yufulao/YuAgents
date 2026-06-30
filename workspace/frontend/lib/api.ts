@@ -870,14 +870,54 @@ class WorkspaceApi {
         firesAt: (t.fires_at || '') as string,
         status: (t.status || 'active') as string,
         createdBy: (t.created_by || '') as string,
+        creatorType: (t.creator_type || 'agent') as string,
+        targetAgent: (t.target_agent || null) as string | null,
+        repeatIntervalSeconds: (t.repeat_interval_seconds ?? null) as number | null,
+        fireCount: (t.fire_count || 0) as number,
         channelName: (t.channel_name || '') as string,
         createdAt: (t.created_at || null) as string | null,
       })),
     };
   }
 
+  async createTimer(input: {
+    channel: string;
+    message: string;
+    targetAgent?: string | null;
+    delaySeconds: number;
+    repeatIntervalSeconds?: number | null;
+  }): Promise<TimerItem> {
+    const raw = await this.request<Record<string, unknown>>('/v1/timers', {
+      method: 'POST',
+      body: JSON.stringify({
+        network: this.workspaceId,
+        channel: input.channel,
+        source: 'human:user',
+        creator_type: 'human',
+        target_agent: input.targetAgent || null,
+        delay: input.delaySeconds,
+        repeat_interval_seconds: input.repeatIntervalSeconds || null,
+        message: input.message,
+      }),
+    });
+    return {
+      id: raw.id as string,
+      message: raw.message as string,
+      delaySeconds: (raw.delay_seconds || 0) as number,
+      firesAt: (raw.fires_at || '') as string,
+      status: (raw.status || 'active') as string,
+      createdBy: (raw.created_by || '') as string,
+      creatorType: (raw.creator_type || 'human') as string,
+      targetAgent: (raw.target_agent || null) as string | null,
+      repeatIntervalSeconds: (raw.repeat_interval_seconds ?? null) as number | null,
+      fireCount: (raw.fire_count || 0) as number,
+      channelName: (raw.channel_name || '') as string,
+      createdAt: (raw.created_at || null) as string | null,
+    };
+  }
+
   async cancelTimer(timerId: string): Promise<void> {
-    await this.request<unknown>(`/v1/timers/${timerId}`, { method: 'DELETE' });
+    await this.request<unknown>(`/v1/timers/${timerId}?source=human%3Auser`, { method: 'DELETE' });
   }
 
   async cancelQueuedMessage(channelName: string, queueId: string): Promise<void> {

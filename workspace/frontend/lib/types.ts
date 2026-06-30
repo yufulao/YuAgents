@@ -255,6 +255,10 @@ export interface TimerItem {
   firesAt: string;
   status: string;
   createdBy: string;
+  creatorType: string;
+  targetAgent: string | null;
+  repeatIntervalSeconds: number | null;
+  fireCount: number;
   channelName: string;
   createdAt: string | null;
 }

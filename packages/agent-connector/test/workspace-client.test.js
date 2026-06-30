@@ -355,4 +355,19 @@ describe('WorkspaceClient', () => {
     assert.equal(Object.prototype.hasOwnProperty.call(calls[0][2], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(calls[1][2], 'source'), false);
   });
+
+  it('cancelTimer passes agent source as a query parameter', async () => {
+    const client = new WorkspaceClient('http://127.0.0.1:19999');
+    let capturedPath = null;
+    client._delete = async (path) => {
+      capturedPath = path;
+      return { data: { status: 'cancelled' } };
+    };
+
+    await client.cancelTimer('ws-1', 'tok', 'timer-1', {
+      source: 'openagents:bary-bot',
+    });
+
+    assert.equal(capturedPath, '/v1/timers/timer-1?source=openagents%3Abary-bot');
+  });
 });

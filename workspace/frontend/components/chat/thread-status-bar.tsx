@@ -17,6 +17,12 @@ function timeUntil(dateStr: string): string {
   return `${Math.floor(mins / 60)}h`;
 }
 
+function intervalLabel(seconds?: number | null): string {
+  if (!seconds) return '';
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds / 3600)}h`;
+}
+
 interface QueuedMessage {
   queueId: string;
   content: string;
@@ -42,12 +48,14 @@ export function ThreadStatusBar({
   variant = 'inline',
   emptyLabel,
   className,
+  refreshKey,
 }: {
   channelName: string;
   messages?: WorkspaceMessage[];
   variant?: 'inline' | 'sidebar';
   emptyLabel?: string;
   className?: string;
+  refreshKey?: number;
 }) {
   const { todos, refreshTodos } = useWorkspace();
   const [timers, setTimers] = useState<TimerItem[]>([]);
@@ -66,7 +74,7 @@ export function ThreadStatusBar({
       const result = await workspaceApi.listTimers(channelName);
       setTimers(result.timers);
     } catch {}
-  }, [channelName]);
+  }, [channelName, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,8 +285,14 @@ export function ThreadStatusBar({
           {activeTimers.map((t) => (
             <span key={t.id} className="flex min-w-0 items-center gap-1">
               <Timer className="size-3 text-amber-500" />
-              <span className="min-w-0 truncate">{t.message.length > 30 ? t.message.slice(0, 30) + '…' : t.message}</span>
+              <span className="min-w-0 truncate">
+                {t.targetAgent ? `@${t.targetAgent} ` : ''}
+                {t.message.length > 30 ? t.message.slice(0, 30) + '…' : t.message}
+              </span>
               <span className="text-amber-500 font-mono">{timeUntil(t.firesAt)}</span>
+              {t.repeatIntervalSeconds && (
+                <span className="text-[10px] text-amber-500/80">/{intervalLabel(t.repeatIntervalSeconds)}</span>
+              )}
               <button
                 onClick={() => handleCancelTimer(t.id)}
                 className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"

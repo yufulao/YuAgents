@@ -689,7 +689,7 @@ class WorkspaceApi {
   }
 
   async cancelTimer(timerId: string): Promise<void> {
-    await this.request<unknown>(`/v1/timers/${timerId}`, { method: 'DELETE' });
+    await this.request<unknown>(`/v1/timers/${timerId}?source=human%3Auser`, { method: 'DELETE' });
   }
 
   async cancelQueuedMessage(channelName: string, queueId: string): Promise<void> {

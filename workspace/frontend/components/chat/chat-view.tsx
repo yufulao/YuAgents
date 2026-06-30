@@ -23,6 +23,7 @@ import { useLayout } from '@/components/layout/layout-context';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { CreateRoutineDialog } from '@/components/routines/create-routine-dialog';
+import { CreateTimerDialog } from './create-timer-dialog';
 import { eventToMessage } from '@/lib/types';
 import type { WorkspaceMessage } from '@/lib/types';
 
@@ -87,6 +88,7 @@ async function refreshCachedSession(sessionId: string): Promise<void> {
 
 export function ChatView() {
   const { agents, currentUser, currentSessionId, sessions, updateLastMessage, setSessionActive, agentModes, updateAgentMode, toggleAgentMode, stopAllAgents, activeSessionIds, stoppingSessionIds, renameSession, addParticipant, removeParticipant, consumeSkipFocus, createRoutine, knowledge } = useWorkspace();
+  const [showCreateTimer, setShowCreateTimer] = useState(false);
   const [showCreateRoutine, setShowCreateRoutine] = useState(false);
   const {
     isMobile,
@@ -156,6 +158,7 @@ export function ChatView() {
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [statusPortalTarget, setStatusPortalTarget] = useState<HTMLElement | null>(null);
+  const [timerRefreshKey, setTimerRefreshKey] = useState(0);
 
   // Optimistic message state for instant feedback
   const [optimisticMessages, setOptimisticMessages] = useState<WorkspaceMessage[]>([]);
@@ -426,6 +429,7 @@ export function ChatView() {
           messages={displayMessages}
           variant="sidebar"
           emptyLabel="当前会话暂无队列"
+          refreshKey={timerRefreshKey}
         />,
         statusPortalTarget,
       )}
@@ -710,11 +714,20 @@ export function ChatView() {
               onDraftChange={handleDraftChange}
               onFocusChange={(focused) => focused ? notifyFocus() : notifyBlur()}
               focusKey={focusKey}
+              onCreateTimer={() => setShowCreateTimer(true)}
               onCreateRoutine={() => setShowCreateRoutine(true)}
               disabled={!currentUser.name.trim()}
             />
           </div>
         </div>
+
+        <CreateTimerDialog
+          open={showCreateTimer}
+          onOpenChange={setShowCreateTimer}
+          channelName={currentSessionId}
+          agents={agents}
+          onCreated={() => setTimerRefreshKey((key) => key + 1)}
+        />
 
         <CreateRoutineDialog
           open={showCreateRoutine}

@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["Timers"])
 
 MAX_DELAY = 86400  # 24 hours
+MAX_REPEAT_INTERVAL = 86400  # 24 hours
+MIN_REPEAT_INTERVAL = 60
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +41,9 @@ class CreateTimerRequest(BaseModel):
     source: str
     channel: Optional[str] = None
     thread_id: Optional[str] = None
+    target_agent: Optional[str] = None
+    repeat_interval_seconds: Optional[int] = None
+    creator_type: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +58,10 @@ def _serialize_timer(t: TimerRecord) -> dict:
         "fires_at": t.fires_at.isoformat() if t.fires_at else None,
         "status": t.status,
         "created_by": t.created_by,
+        "creator_type": getattr(t, "creator_type", "agent") or "agent",
+        "target_agent": getattr(t, "target_agent", None),
+        "repeat_interval_seconds": getattr(t, "repeat_interval_seconds", None),
+        "fire_count": getattr(t, "fire_count", 0) or 0,
         "channel_name": t.channel_name,
         "thread_id": t.thread_id,
         "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -82,6 +91,20 @@ def create_timer(
             ResponseCode.BAD_REQUEST,
             f"delay must be between 1 and {MAX_DELAY} seconds",
         )
+    if body.repeat_interval_seconds is not None:
+        if body.repeat_interval_seconds < MIN_REPEAT_INTERVAL or body.repeat_interval_seconds > MAX_REPEAT_INTERVAL:
+            return json_response(
+                ResponseCode.BAD_REQUEST,
+                f"repeat_interval_seconds must be between {MIN_REPEAT_INTERVAL} and {MAX_REPEAT_INTERVAL} seconds",
+            )
+    creator_type = (body.creator_type or ("agent" if body.source.startswith("openagents:") else "human")).strip().lower()
+    if creator_type not in {"agent", "human"}:
+        return json_response(ResponseCode.BAD_REQUEST, "creator_type must be agent or human")
+    target_agent = (body.target_agent or "").strip() or None
+    if target_agent and target_agent.startswith("openagents:"):
+        target_agent = target_agent.replace("openagents:", "", 1)
+    if creator_type == "human" and not target_agent:
+        return json_response(ResponseCode.BAD_REQUEST, "target_agent is required for human-created timers")
 
     now = datetime.now(timezone.utc)
     channel_name = body.channel or "default"
@@ -91,8 +114,11 @@ def create_timer(
         channel_name=channel_name,
         thread_id=body.thread_id,
         created_by=body.source,
+        creator_type=creator_type,
+        target_agent=target_agent,
         message=body.message,
         delay_seconds=body.delay,
+        repeat_interval_seconds=body.repeat_interval_seconds,
         fires_at=now + timedelta(seconds=body.delay),
     )
     db.add(timer)
@@ -141,6 +167,7 @@ def list_timers(
 def cancel_timer(
     timer_id: str = Path(...),
     network: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     x_workspace_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -162,6 +189,12 @@ def cancel_timer(
 
     if timer.status != "active":
         return json_response(ResponseCode.BAD_REQUEST, f"Timer is already {timer.status}")
+    creator_type = getattr(timer, "creator_type", "agent") or "agent"
+    if creator_type == "human" and (not source or source.startswith("openagents:")):
+        return json_response(
+            ResponseCode.FORBIDDEN,
+            "This timer was created by the user and cannot be cancelled by an agent",
+        )
 
     timer.status = "cancelled"
     db.commit()

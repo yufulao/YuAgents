@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon, Plus, CalendarClock } from 'lucide-react';
+import { SendHorizontal, Paperclip, X, FileIcon, ImageIcon, Plus, CalendarClock, Timer } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +33,7 @@ interface ChatInputProps {
   onFocusChange?: (focused: boolean) => void;
   /** Auto-focus the textarea when mounted or when this key changes. */
   focusKey?: number;
+  onCreateTimer?: () => void;
   onCreateRoutine?: () => void;
 }
 
@@ -52,7 +53,7 @@ function agentStatusDotClass(status?: string): string {
   return 'bg-amber-500';
 }
 
-export function ChatInput({ onSend, disabled, className, agents = [], knowledge = [], draft, onDraftChange, onFocusChange, focusKey, onCreateRoutine }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, className, agents = [], knowledge = [], draft, onDraftChange, onFocusChange, focusKey, onCreateTimer, onCreateRoutine }: ChatInputProps) {
   const [message, setMessage] = React.useState(draft ?? '');
   const [showMentions, setShowMentions] = React.useState(false);
   const [mentionFilter, setMentionFilter] = React.useState('');
@@ -518,6 +519,10 @@ export function ChatInput({ onSend, disabled, className, agents = [], knowledge 
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" className="min-w-[180px]">
+                <DropdownMenuItem onSelect={() => onCreateTimer?.()}>
+                  <Timer className="size-4 mr-2" />
+                  创建 Timer
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onCreateRoutine?.()}>
                   <CalendarClock className="size-4 mr-2" />
                   创建例行任务

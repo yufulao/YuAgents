@@ -13,6 +13,7 @@ get_db dependency), so we monkeypatch it onto a dedicated engine.
 
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -21,9 +22,10 @@ from sqlalchemy.pool import StaticPool
 
 import app.database as database
 import app.main as main
+import app.pipeline_factory as pipeline_factory
 import app.models  # noqa: F401 — register models on Base
 from app.database import Base
-from app.models import Channel, Workspace
+from app.models import Channel, TimerRecord, Workspace
 
 
 @pytest.fixture
@@ -86,3 +88,49 @@ def test_run_maintenance_archives_stale_thread(session_factory):
     s.close()
     assert stale.status == "archived"
     assert fresh.status == "active"
+
+
+def test_fire_due_repeating_user_timer_targets_selected_agent(session_factory, monkeypatch):
+    captured = {}
+
+    async def fake_process(event, ctx):
+        captured["event"] = event
+        captured["ctx"] = ctx
+
+    monkeypatch.setattr(pipeline_factory.pipeline, "process", fake_process)
+
+    s = session_factory()
+    ws = Workspace(name="timer workspace", slug="timer-ws", password_hash="workspace-token")
+    s.add(ws)
+    s.flush()
+    due_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    timer = TimerRecord(
+        workspace_id=ws.id,
+        channel_name="general",
+        created_by="human:user",
+        creator_type="human",
+        target_agent="agent-beta",
+        message="continue implementation",
+        delay_seconds=60,
+        repeat_interval_seconds=300,
+        fires_at=due_at,
+        status="active",
+    )
+    s.add(timer)
+    s.commit()
+    timer_id = timer.id
+    s.close()
+
+    asyncio.run(main._fire_due())
+
+    s = session_factory()
+    refreshed = s.query(TimerRecord).filter_by(id=timer_id).one()
+    s.close()
+
+    assert refreshed.status == "active"
+    assert refreshed.fire_count == 1
+    assert refreshed.fires_at.replace(tzinfo=timezone.utc) > due_at
+    assert captured["event"].metadata["target_agents"] == ["agent-beta"]
+    assert captured["event"].payload["message_type"] == "chat"
+    assert "continue implementation" in captured["event"].payload["content"]
+    assert captured["ctx"].agent_address == "openagents:agent-beta"

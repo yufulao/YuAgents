@@ -350,7 +350,7 @@ function buildToolDefs(disabledModules) {
       },
       {
         name: 'workspace_cancel_timer',
-        description: 'Cancel an active timer by its ID.',
+        description: 'Cancel an active timer by its ID. Agents cannot cancel timers created by the user.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -961,7 +961,9 @@ class McpServer {
       }
 
       case 'workspace_cancel_timer': {
-        await this.ws.cancelTimer(this.workspaceId, this.token, args.timer_id);
+        await this.ws.cancelTimer(this.workspaceId, this.token, args.timer_id, {
+          source: `openagents:${this.agentName}`,
+        });
         return text(`Timer cancelled: ${args.timer_id}`);
       }
 
