@@ -62,6 +62,7 @@ export function ThreadStatusBar({
 }) {
   const { todos, refreshTodos } = useWorkspace();
   const [timers, setTimers] = useState<TimerItem[]>([]);
+  const [cancelledTodoIds, setCancelledTodoIds] = useState<Set<string>>(new Set());
   const [cancelledQueueIds, setCancelledQueueIds] = useState<Set<string>>(new Set());
 
   const todoRefreshSignal = useMemo(() => {
@@ -112,8 +113,12 @@ export function ThreadStatusBar({
   }, [timers.length]);
 
   const channelTodos = useMemo(() =>
-    todos.filter((t) => t.channelName === channelName && (t.status === 'pending' || t.status === 'in_progress')),
-    [todos, channelName]
+    todos.filter((t) =>
+      t.channelName === channelName &&
+      (t.status === 'pending' || t.status === 'in_progress') &&
+      !cancelledTodoIds.has(t.id)
+    ),
+    [todos, channelName, cancelledTodoIds]
   );
 
   // Extract queued messages from status messages with queue metadata
@@ -173,6 +178,14 @@ export function ThreadStatusBar({
     refreshTodos();
   }, [channelTodos, channelName, refreshTodos]);
 
+  const handleCancelTodo = useCallback(async (todo: TodoItem) => {
+    setCancelledTodoIds((prev) => new Set(prev).add(todo.id));
+    try {
+      await workspaceApi.cancelTodo(todo);
+    } catch {}
+    refreshTodos();
+  }, [refreshTodos]);
+
   const handleCancelQueued = useCallback(async (queueId: string) => {
     setCancelledQueueIds((prev) => new Set(prev).add(queueId));
     try {
@@ -211,11 +224,21 @@ export function ThreadStatusBar({
           {items.map((todo) => (
             <div
               key={todo.id}
-              className="rounded-md px-1.5 py-1 text-[11px] leading-snug text-foreground/90 transition-colors hover:bg-muted/60"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-md px-1.5 py-1 text-[11px] leading-snug text-foreground/90 transition-colors hover:bg-muted/60"
               title={todo.content}
             >
-              <div className="line-clamp-2 break-words">{truncateTodo(todo.content)}</div>
-              <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{todoOwnerLabel(todo)}</div>
+              <div className="min-w-0">
+                <div className="line-clamp-2 break-words [overflow-wrap:anywhere]">{truncateTodo(todo.content)}</div>
+                <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{todoOwnerLabel(todo)}</div>
+              </div>
+              <button
+                onClick={() => handleCancelTodo(todo)}
+                className={cancelButtonClass}
+                title="取消此任务"
+                aria-label="取消此任务"
+              >
+                <X className="size-3" />
+              </button>
             </div>
           ))}
         </div>

@@ -1058,6 +1058,36 @@ class WorkspaceApi {
       }),
     });
   }
+
+  async cancelTodo(todo: TodoItem): Promise<void> {
+    const params = new URLSearchParams({
+      network: this.workspaceId,
+      channel: todo.channelName,
+      source: todo.createdBy,
+    });
+    if (todo.threadId) params.set('thread_id', todo.threadId);
+
+    const raw = await this.request<{ todos: Record<string, unknown>[] }>(`/v1/todos?${params}`);
+    const todos = raw.todos || [];
+    const hasTodo = todos.some((t) => t.id === todo.id);
+    if (!hasTodo) return;
+
+    const updated = todos.map((t) => ({
+      content: t.content as string,
+      status: t.id === todo.id ? 'cancelled' : t.status as string,
+      assignee: t.assignee as string,
+    }));
+    await this.request<unknown>('/v1/todos', {
+      method: 'PUT',
+      body: JSON.stringify({
+        todos: updated,
+        network: this.workspaceId,
+        channel: todo.channelName,
+        source: todo.createdBy,
+        ...(todo.threadId ? { thread_id: todo.threadId } : {}),
+      }),
+    });
+  }
 }
 
 export const workspaceApi = new WorkspaceApi();
