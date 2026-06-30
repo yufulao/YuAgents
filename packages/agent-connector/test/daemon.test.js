@@ -709,14 +709,15 @@ describe('Daemon', () => {
     assert.equal(msg.sessionId, 'workroom');
     assert.equal(msg._deliveryKind, 'goal');
     assert.ok(msg.content.includes('Workspace plan checkpoint tick'));
-    assert.ok(msg.content.includes('Plan level: stage_plan'));
-    assert.ok(msg.content.includes('Parent plan: goal-parent'));
-    assert.ok(msg.content.includes('Plan refs: docs/plan.md'));
-    assert.ok(msg.content.includes('Objective: Coordinate relay validation'));
-    assert.ok(msg.content.includes('Stop condition: All lanes pass with evidence'));
+    assert.ok(msg.content.includes('Level: stage_plan; policy: return_to_parent; parent: goal-parent; root: goal-root.'));
+    assert.ok(msg.content.includes('Checkpoint: Waiting for QA'));
+    assert.ok(!msg.content.includes('Objective: Coordinate relay validation'));
+    assert.ok(!msg.content.includes('Stop condition: All lanes pass with evidence'));
+    assert.ok(!msg.content.includes('Plan refs: docs/plan.md'));
     assert.ok(prompt.includes('workspace plan checkpoint'));
-    assert.ok(prompt.includes('rolling parallelism'));
-    assert.ok(prompt.includes('safe non-overlapping follow-up work'));
+    assert.ok(prompt.includes('compact'));
+    assert.ok(prompt.includes('Do not narrate old ticks'));
+    assert.ok(prompt.includes('implementation lane width has collapsed'));
     assert.ok(prompt.includes('PATCH /v1/workspace-goals/{id}'));
   });
 

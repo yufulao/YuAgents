@@ -196,22 +196,17 @@ def _ensure_coordinator_channel_participant(
 
 
 async def _emit_goal_event(db: Session, workspace, goal: WorkspaceGoal, action: str, source: str, token: Optional[str]):
-    level = goal.plan_level or "root_plan"
-    content = f"@{goal.coordinator} Workspace plan {action}: [{goal.status}/{level}] {goal.objective}"
-    if goal.checkpoint and action in {"updated", "claimed"}:
-        content += f"\nCheckpoint: {goal.checkpoint[:500]}"
+    event_type_action = "closed" if action == "completed" else action
     event = Event(
-        type="workspace.message.posted",
+        type=f"workspace.goal.{event_type_action}",
         source=source,
         target=f"channel/{goal.channel_name}",
         payload={
-            "content": content,
-            "message_type": "goal",
+            "action": action,
             "goal": _serialize_goal(goal),
         },
         metadata={
             "workspace_goal_id": goal.id,
-            "target_agents": [goal.coordinator],
         },
     )
     await _emit_event(event, workspace, db, token=token)

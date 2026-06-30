@@ -68,6 +68,58 @@ def test_create_context_and_claim_due_workspace_goal(client, workspace):
     assert second_claim.json()["data"]["goal"] is None
 
 
+def test_workspace_goal_events_stay_out_of_agent_chat_delivery(client, workspace, db):
+    from app.models import AgentDelivery, EventRecord
+
+    channel_name = workspace["channel"]["name"]
+    join = client.post("/v1/join", json={
+        "agent_name": "agent-alpha",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert join.status_code == 200
+
+    created = client.post("/v1/workspace-goals", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "coordinator": "agent-alpha",
+        "source": "openagents:agent-alpha",
+        "objective": "Keep the long plan alive without chat spam.",
+        "stop_condition": "Project is globally exhausted.",
+        "checkpoint": "ROOT_OPENED",
+        "cadence_seconds": 60,
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert created.status_code == 200
+    goal_id = created.json()["data"]["goal"]["id"]
+
+    patched = client.patch(f"/v1/workspace-goals/{goal_id}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-alpha",
+        "checkpoint": "ROOT_PROGRESS",
+        "progress_log": "One compact checkpoint.",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert patched.status_code == 200
+
+    goal_events = db.query(EventRecord).filter(
+        EventRecord.network_id == workspace["id"],
+        EventRecord.type.in_(["workspace.goal.created", "workspace.goal.updated"]),
+    ).all()
+    assert {event.type for event in goal_events} == {"workspace.goal.created", "workspace.goal.updated"}
+    assert all((event.payload or {}).get("goal", {}).get("id") == goal_id for event in goal_events)
+
+    message_events = db.query(EventRecord).filter_by(
+        network_id=workspace["id"],
+        type="workspace.message.posted",
+    ).all()
+    assert not [
+        event for event in message_events
+        if (event.payload or {}).get("message_type") == "goal"
+    ]
+    assert db.query(AgentDelivery).filter(
+        AgentDelivery.event_id.in_([event.id for event in goal_events])
+    ).count() == 0
+
+
 def test_paused_workspace_goal_does_not_claim_due(client, workspace, db):
     from app.models import WorkspaceGoal
 
