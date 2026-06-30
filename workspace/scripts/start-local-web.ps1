@@ -102,12 +102,6 @@ function Wait-Url([string]$Url, [int]$Seconds, [string]$Label, $Process = $null,
     if (Test-Url $Url 2) {
       return
     }
-    if ($Process -and $Process.HasExited) {
-      foreach ($path in $LogPaths) {
-        Show-LogTail $path
-      }
-      throw "$Label exited before becoming ready with code $($Process.ExitCode)."
-    }
     Start-Sleep -Seconds 1
   }
   foreach ($path in $LogPaths) {
@@ -304,15 +298,20 @@ try {
   Write-Host "Press Ctrl+C to stop backend and frontend."
   Start-Process $LocalFrontendUrl
 
-  while (($Backend -and -not $Backend.HasExited) -and ($Frontend -and -not $Frontend.HasExited)) {
+  while ($true) {
+    $backendHealthy = Test-Url "$LocalBackendUrl/v1/agent-catalog" 3
+    $frontendHealthy = Test-Url $LocalFrontendUrl 3
+    if (-not $backendHealthy) {
+      Show-LogTail $BackendErr
+      Show-LogTail $BackendLog
+      throw "Backend API stopped responding. Check $BackendLog and $BackendErr."
+    }
+    if (-not $frontendHealthy) {
+      Show-LogTail $FrontendErr
+      Show-LogTail $FrontendLog
+      throw "Frontend Web page stopped responding. Check $FrontendLog and $FrontendErr."
+    }
     Start-Sleep -Seconds 5
-  }
-
-  if ($Backend -and $Backend.HasExited) {
-    throw "Backend exited with code $($Backend.ExitCode). Check $BackendLog and $BackendErr."
-  }
-  if ($Frontend -and $Frontend.HasExited) {
-    throw "Frontend exited with code $($Frontend.ExitCode). Check $FrontendLog and $FrontendErr."
   }
 } finally {
   Stop-ChildProcess $Backend
