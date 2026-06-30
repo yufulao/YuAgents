@@ -233,7 +233,7 @@ export function ThreadStatusBar({
     >
       {/* Todos and timers row */}
       {(inProgressCount > 0 || pendingCount > 0 || activeTimers.length > 0) && (
-        <div className={cn('flex gap-2.5', isSidebar ? 'flex-col items-stretch' : 'items-center')}>
+        <div className={cn('flex gap-2.5', isSidebar ? 'flex-col items-stretch' : 'flex-wrap items-center')}>
           {(inProgressCount > 0 || pendingCount > 0) && (
             isSidebar ? (
               <div className="space-y-2">
@@ -291,27 +291,29 @@ export function ThreadStatusBar({
             <span
               key={t.id}
               className={cn(
-                'flex min-w-0 items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/5 px-1.5 py-1',
-                isSidebar ? 'w-full' : 'max-w-full',
+                'grid max-w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1 rounded-md border border-amber-500/20 bg-amber-500/5 px-1.5 py-1',
+                isSidebar ? 'w-full' : 'min-w-0 flex-1 basis-72',
               )}
             >
-              <Timer className="size-3 text-amber-500" />
-              <span className="min-w-0 truncate">
+              <Timer className="mt-0.5 size-3 shrink-0 text-amber-500" />
+              <span className="min-w-0 break-words leading-snug [overflow-wrap:anywhere]">
                 {t.targetAgent ? `@${t.targetAgent} ` : ''}
                 {t.message.length > 30 ? t.message.slice(0, 30) + '…' : t.message}
               </span>
-              <span className="text-amber-500 font-mono">{timeUntil(t.firesAt)}</span>
-              {t.repeatIntervalSeconds && (
-                <span className="text-[10px] text-amber-500/80">/{intervalLabel(t.repeatIntervalSeconds)}</span>
-              )}
-              <button
-                onClick={() => handleCancelTimer(t.id)}
-                className={cancelButtonClass}
-                title="删除 timer"
-                aria-label="删除 timer"
-              >
-                <X className="size-3" />
-              </button>
+              <span className="flex shrink-0 items-center gap-1">
+                <span className="font-mono text-amber-500">{timeUntil(t.firesAt)}</span>
+                {t.repeatIntervalSeconds && (
+                  <span className="text-[10px] text-amber-500/80">/{intervalLabel(t.repeatIntervalSeconds)}</span>
+                )}
+                <button
+                  onClick={() => handleCancelTimer(t.id)}
+                  className={cancelButtonClass}
+                  title="删除 timer"
+                  aria-label="删除 timer"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
             </span>
           ))}
         </div>
@@ -322,12 +324,12 @@ export function ThreadStatusBar({
         <div
           key={q.queueId}
           className={cn(
-            'flex min-w-0 items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-blue-500 dark:text-blue-400',
+            'grid w-full max-w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-blue-500 dark:text-blue-400',
             isSidebar && 'transition-colors hover:bg-blue-500/10',
           )}
         >
-          <MessageSquareMore className="size-3 shrink-0" />
-          <span className={cn('min-w-0 flex-1', isSidebar ? 'line-clamp-2 break-words leading-snug' : 'truncate')}>
+          <MessageSquareMore className="mt-0.5 size-3 shrink-0" />
+          <span className="min-w-0 break-words leading-snug [overflow-wrap:anywhere]">
             Queued: {q.content.length > 60 ? q.content.slice(0, 60) + '…' : q.content}
           </span>
           <button
