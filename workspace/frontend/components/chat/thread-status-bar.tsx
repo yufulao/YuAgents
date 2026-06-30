@@ -133,15 +133,24 @@ export function ThreadStatusBar({
       if (detail?.channelName !== channelName || !detail.timerId) return;
       setTimers((prev) => prev.filter((timer) => timer.id !== detail.timerId));
     };
+    const handleTimerUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ channelName?: string; timer?: TimerItem }>).detail;
+      if (detail?.channelName !== channelName || !detail.timer) return;
+      setTimers((prev) => prev.map((timer) => (
+        timer.id === detail.timer?.id ? detail.timer : timer
+      )));
+    };
     const handleTodoCancelled = (event: Event) => {
       const detail = (event as CustomEvent<{ channelName?: string; todoId?: string }>).detail;
       if (detail?.channelName !== channelName || !detail.todoId) return;
       setCancelledTodoIds((prev) => new Set(prev).add(detail.todoId as string));
     };
     document.addEventListener('timer-item-cancelled', handleTimerCancelled);
+    document.addEventListener('timer-item-updated', handleTimerUpdated);
     document.addEventListener('todo-item-cancelled', handleTodoCancelled);
     return () => {
       document.removeEventListener('timer-item-cancelled', handleTimerCancelled);
+      document.removeEventListener('timer-item-updated', handleTimerUpdated);
       document.removeEventListener('todo-item-cancelled', handleTodoCancelled);
     };
   }, [channelName]);

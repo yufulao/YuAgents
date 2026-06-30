@@ -916,6 +916,37 @@ class WorkspaceApi {
     };
   }
 
+  async updateTimer(timerId: string, input: {
+    message?: string;
+    delaySeconds?: number;
+    targetAgent?: string | null;
+    repeatIntervalSeconds?: number | null;
+  }): Promise<TimerItem> {
+    const body: Record<string, unknown> = { source: 'human:user' };
+    if (input.message !== undefined) body.message = input.message;
+    if (input.delaySeconds !== undefined) body.delay = input.delaySeconds;
+    if (input.targetAgent !== undefined) body.target_agent = input.targetAgent || null;
+    if (input.repeatIntervalSeconds !== undefined) body.repeat_interval_seconds = input.repeatIntervalSeconds;
+    const raw = await this.request<Record<string, unknown>>(`/v1/timers/${timerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    return {
+      id: raw.id as string,
+      message: raw.message as string,
+      delaySeconds: (raw.delay_seconds || 0) as number,
+      firesAt: (raw.fires_at || '') as string,
+      status: (raw.status || 'active') as string,
+      createdBy: (raw.created_by || '') as string,
+      creatorType: (raw.creator_type || 'human') as string,
+      targetAgent: (raw.target_agent || null) as string | null,
+      repeatIntervalSeconds: (raw.repeat_interval_seconds ?? null) as number | null,
+      fireCount: (raw.fire_count || 0) as number,
+      channelName: (raw.channel_name || '') as string,
+      createdAt: (raw.created_at || null) as string | null,
+    };
+  }
+
   async cancelTimer(timerId: string): Promise<void> {
     await this.request<unknown>(`/v1/timers/${timerId}?source=human%3Auser`, { method: 'DELETE' });
   }
@@ -1105,6 +1136,29 @@ class WorkspaceApi {
         ...(todo.threadId ? { thread_id: todo.threadId } : {}),
       }),
     });
+  }
+
+  async updateTodo(todoId: string, input: {
+    content?: string;
+    status?: TodoItem['status'];
+    assignee?: string;
+  }): Promise<TodoItem> {
+    const raw = await this.request<Record<string, unknown>>(`/v1/todos/${todoId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+    return {
+      id: raw.id as string,
+      content: raw.content as string,
+      status: raw.status as TodoItem['status'],
+      assignee: raw.assignee as string,
+      createdBy: (raw.created_by || '') as string,
+      channelName: (raw.channel_name || '') as string,
+      threadId: (raw.thread_id || null) as string | null,
+      position: (raw.position || 0) as number,
+      createdAt: (raw.created_at || null) as string | null,
+      updatedAt: (raw.updated_at || null) as string | null,
+    };
   }
 }
 

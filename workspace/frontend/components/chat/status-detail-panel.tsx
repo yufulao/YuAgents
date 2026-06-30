@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronLeft, Circle, Loader2, Timer, Trash2, X } from 'lucide-react';
+import { ChevronLeft, Circle, Loader2, Save, Timer, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLayout } from '@/components/layout/layout-context';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
@@ -42,6 +43,12 @@ function statusLabel(status: string) {
   return status || '未知';
 }
 
+function minutesUntil(value: string) {
+  const diff = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(diff) || diff <= 0) return '1';
+  return String(Math.max(1, Math.ceil(diff / 60000)));
+}
+
 export function StatusDetailPanel() {
   const {
     selectedStatusItem,
@@ -54,6 +61,26 @@ export function StatusDetailPanel() {
   const { refreshTodos } = useWorkspace();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [saving, setSaving] = useState(false);
+  const [content, setContent] = useState('');
+  const [delayMinutes, setDelayMinutes] = useState('1');
+  const [repeatMinutes, setRepeatMinutes] = useState('');
+  const [targetAgent, setTargetAgent] = useState('');
+
+  useEffect(() => {
+    if (!selectedStatusItem) return;
+    if (selectedStatusItem.kind === 'timer') {
+      const timer = selectedStatusItem.timer;
+      setContent(timer.message);
+      setDelayMinutes(minutesUntil(timer.firesAt));
+      setRepeatMinutes(timer.repeatIntervalSeconds ? String(Math.max(1, Math.round(timer.repeatIntervalSeconds / 60))) : '');
+      setTargetAgent(timer.targetAgent || '');
+      return;
+    }
+    setContent(selectedStatusItem.todo.content);
+    setDelayMinutes('1');
+    setRepeatMinutes('');
+    setTargetAgent('');
+  }, [selectedStatusItem]);
 
   const handleClose = useCallback(() => {
     setSelectedStatusItem(null);
@@ -85,6 +112,54 @@ export function StatusDetailPanel() {
       setSaving(false);
     }
   }, [refreshTodos, selectedStatusItem, setSelectedStatusItem]);
+
+  const handleSave = useCallback(async () => {
+    if (!selectedStatusItem) return;
+    const nextContent = content.trim();
+    if (!nextContent) {
+      toast.error('内容不能为空');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (selectedStatusItem.kind === 'timer') {
+        const nextDelay = Math.max(1, Math.round(Number(delayMinutes) || 1)) * 60;
+        const repeatValue = repeatMinutes.trim() ? Math.max(1, Math.round(Number(repeatMinutes) || 0)) * 60 : null;
+        const updated = await workspaceApi.updateTimer(selectedStatusItem.timer.id, {
+          message: nextContent,
+          delaySeconds: nextDelay,
+          targetAgent: targetAgent.trim() || null,
+          repeatIntervalSeconds: repeatValue,
+        });
+        document.dispatchEvent(new CustomEvent('timer-item-updated', {
+          detail: { channelName: selectedStatusItem.channelName, timer: updated },
+        }));
+        setSelectedStatusItem({ kind: 'timer', channelName: selectedStatusItem.channelName, timer: updated });
+        toast.success('Timer 已保存');
+      } else {
+        const updated = await workspaceApi.updateTodo(selectedStatusItem.todo.id, { content: nextContent });
+        document.dispatchEvent(new CustomEvent('todo-item-updated', {
+          detail: { channelName: selectedStatusItem.channelName, todo: updated },
+        }));
+        setSelectedStatusItem({ kind: 'todo', channelName: selectedStatusItem.channelName, todo: updated });
+        refreshTodos();
+        toast.success('任务已保存');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    content,
+    delayMinutes,
+    refreshTodos,
+    repeatMinutes,
+    selectedStatusItem,
+    setSelectedStatusItem,
+    targetAgent,
+  ]);
 
   const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (isMobile) return;
@@ -138,7 +213,6 @@ export function StatusDetailPanel() {
         icon: <Timer className="size-5" />,
         title: 'Timer',
         id: timer.id,
-        content: timer.message,
         toneClass: 'bg-amber-500/10 text-amber-500',
         deleteLabel: '删除 Timer',
         fields: [
@@ -158,7 +232,6 @@ export function StatusDetailPanel() {
       icon: todo.status === 'in_progress' ? <Loader2 className="size-5 animate-spin" /> : <Circle className="size-5" />,
       title: todo.status === 'in_progress' ? 'In progress' : 'Pending',
       id: todo.id,
-      content: todo.content,
       toneClass: todo.status === 'in_progress' ? 'bg-blue-500/10 text-blue-500' : 'bg-muted text-muted-foreground',
       deleteLabel: '取消任务',
       fields: [
@@ -251,13 +324,52 @@ export function StatusDetailPanel() {
             </div>
             <div className="space-y-3 p-3">
               <Textarea
-                value={detail.content}
-                readOnly
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
                 className="min-h-[220px] resize-y text-sm"
                 aria-label="状态内容"
               />
             </div>
           </div>
+
+          {selectedStatusItem.kind === 'timer' && (
+            <div className="overflow-hidden rounded-lg border">
+              <div className="border-b px-3.5 py-2.5">
+                <span className="text-xs font-medium">Timer 设置</span>
+              </div>
+              <div className="grid gap-3 p-3">
+                <label className="grid gap-1.5 text-xs">
+                  <span className="text-muted-foreground">首次触发（分钟，从保存后重新计算）</span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={delayMinutes}
+                    onChange={(event) => setDelayMinutes(event.target.value)}
+                    className="h-9"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-xs">
+                  <span className="text-muted-foreground">重复间隔（分钟，留空为不重复）</span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={repeatMinutes}
+                    onChange={(event) => setRepeatMinutes(event.target.value)}
+                    className="h-9"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-xs">
+                  <span className="text-muted-foreground">目标 Agent</span>
+                  <Input
+                    value={targetAgent}
+                    onChange={(event) => setTargetAgent(event.target.value)}
+                    className="h-9"
+                    placeholder="Agent 名"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-lg border">
             <div className="border-b px-3.5 py-2.5">
@@ -275,6 +387,14 @@ export function StatusDetailPanel() {
         </div>
 
         <div className="shrink-0 border-t px-3.5 py-3">
+          <Button
+            className="mb-2 w-full"
+            onClick={handleSave}
+            disabled={saving || !content.trim()}
+          >
+            <Save className="size-4" />
+            {saving ? '保存中...' : '保存修改'}
+          </Button>
           <Button
             variant="destructive"
             className="w-full"

@@ -2,14 +2,16 @@
 """
 To-do list endpoints — agent planning support.
 
-PUT  /v1/todos   Replace the calling agent's entire to-do list in a channel
-GET  /v1/todos   Query to-dos for a channel (own or all agents)
+PUT   /v1/todos       Replace the calling agent's entire to-do list in a channel
+GET   /v1/todos       Query to-dos for a channel (own or all agents)
+PATCH /v1/todos/{id}  Edit a single to-do item
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -47,9 +49,21 @@ class PutTodosRequest(BaseModel):
     thread_id: Optional[str] = None
 
 
+class UpdateTodoRequest(BaseModel):
+    content: Optional[str] = None
+    status: Optional[str] = None
+    assignee: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
+
+
+def _model_fields_set(model: BaseModel) -> set[str]:
+    return set(getattr(model, "model_fields_set", getattr(model, "__fields_set__", set())))
 
 def _agent_name_from_source(source: str) -> str:
     if source.startswith("openagents:"):
@@ -186,3 +200,53 @@ def get_todos(
     rows = db.execute(query).scalars().all()
 
     return success_response({"todos": [_serialize_todo(r) for r in rows]})
+
+
+# ---------------------------------------------------------------------------
+# PATCH /v1/todos/{todo_id}
+# ---------------------------------------------------------------------------
+
+@router.patch("/todos/{todo_id}")
+def update_todo(
+    body: UpdateTodoRequest,
+    todo_id: str = Path(...),
+    db: Session = Depends(get_db),
+    x_workspace_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Edit one to-do item without replacing the owner's whole list."""
+    todo = db.execute(
+        select(TodoRecord).where(TodoRecord.id == todo_id)
+    ).scalar_one_or_none()
+    if not todo:
+        return json_response(ResponseCode.NOT_FOUND, "Todo not found")
+
+    workspace = db.execute(
+        select(Workspace).where(Workspace.id == todo.workspace_id)
+    ).scalar_one_or_none()
+    if not workspace:
+        return json_response(ResponseCode.NOT_FOUND, "Workspace not found")
+    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
+        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
+
+    changed_fields = _model_fields_set(body)
+    if "content" in changed_fields:
+        content = (body.content or "").strip()
+        if not content:
+            return json_response(ResponseCode.BAD_REQUEST, "content is required")
+        todo.content = content
+    if "status" in changed_fields:
+        status = (body.status or "").strip()
+        if status not in TODO_STATUSES:
+            return json_response(ResponseCode.BAD_REQUEST, "invalid todo status")
+        todo.status = status
+    if "assignee" in changed_fields:
+        assignee = (body.assignee or "").strip()
+        if not assignee:
+            return json_response(ResponseCode.BAD_REQUEST, "assignee is required")
+        todo.assignee = assignee
+
+    todo.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(todo)
+    return success_response(_serialize_todo(todo))

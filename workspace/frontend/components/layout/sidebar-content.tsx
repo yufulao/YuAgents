@@ -142,7 +142,7 @@ type SidebarSectionKey = 'agents' | 'queue' | 'features';
 const SIDEBAR_SECTION_HEIGHTS_KEY = 'x-sidebar-section-heights';
 const SIDEBAR_SECTION_HEIGHTS: Record<SidebarSectionKey, { default: number; min: number; max: number }> = {
   agents: { default: 192, min: 80, max: 420 },
-  queue: { default: 120, min: 56, max: 360 },
+  queue: { default: 220, min: 56, max: 480 },
   features: { default: 248, min: 136, max: 420 },
 };
 
