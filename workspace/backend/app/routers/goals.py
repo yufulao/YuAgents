@@ -29,6 +29,7 @@ ACTIVE_GOAL_STATUSES = {"active", "paused", "blocked"}
 PLAN_LEVELS = {"root_plan", "stage_plan", "short_plan", "execution"}
 CONTINUATION_POLICIES = {"long_horizon", "return_to_parent", "standalone"}
 PARENT_RESUME_STATUSES = {"done", "cancelled", "blocked"}
+GLOBAL_EXHAUSTION_MARKERS = {"GLOBAL_WORK_EXHAUSTED", "PROJECT_WORK_EXHAUSTED"}
 
 
 class CreateWorkspaceGoalRequest(BaseModel):
@@ -238,6 +239,34 @@ def _active_channel_task_count(db: Session, goal: WorkspaceGoal) -> int:
     return len(rows)
 
 
+def _other_active_channel_root_plan_count(db: Session, goal: WorkspaceGoal) -> int:
+    rows = db.execute(
+        select(WorkspaceGoal).where(
+            WorkspaceGoal.workspace_id == goal.workspace_id,
+            WorkspaceGoal.channel_name == goal.channel_name,
+            WorkspaceGoal.status.in_(list(ACTIVE_GOAL_STATUSES)),
+            WorkspaceGoal.parent_goal_id.is_(None),
+            WorkspaceGoal.plan_level == "root_plan",
+            WorkspaceGoal.continuation_policy == "long_horizon",
+            WorkspaceGoal.id != goal.id,
+        )
+    ).scalars().all()
+    return len(rows)
+
+
+def _has_global_exhaustion_evidence(goal: WorkspaceGoal, body: UpdateWorkspaceGoalRequest) -> bool:
+    parts = [
+        body.checkpoint,
+        body.progress_log,
+        body.stop_condition,
+        goal.checkpoint,
+        goal.progress_log,
+        goal.stop_condition,
+    ]
+    text = "\n".join(str(part or "") for part in parts).upper()
+    return any(marker in text for marker in GLOBAL_EXHAUSTION_MARKERS)
+
+
 @router.post("/workspace-goals")
 async def create_workspace_goal(
     body: CreateWorkspaceGoalRequest,
@@ -394,6 +423,18 @@ async def update_workspace_goal(
             active_tasks = _active_channel_task_count(db, goal)
             if active_tasks:
                 return json_response(ResponseCode.CONFLICT, "Cannot close long-horizon plan while channel tasks are active")
+            if (
+                body.status == "done"
+                and (goal.plan_level or "root_plan") == "root_plan"
+                and not goal.parent_goal_id
+                and (goal.continuation_policy or "long_horizon") == "long_horizon"
+                and not _other_active_channel_root_plan_count(db, goal)
+                and not _has_global_exhaustion_evidence(goal, body)
+            ):
+                return json_response(
+                    ResponseCode.CONFLICT,
+                    "Cannot close the last active root plan without a successor active plan or GLOBAL_WORK_EXHAUSTED evidence",
+                )
         goal.status = body.status
         if body.status in {"done", "cancelled"}:
             goal.completed_at = now

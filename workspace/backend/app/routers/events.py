@@ -890,6 +890,7 @@ def get_agent_context(
             "Use shared workspace tasks for multi-agent work ownership; use personal todos only for your own execution plan.",
             "Workspace plans are hierarchical: root/stage plans own long-horizon state, create short plans and execution tasks, and must return to planning after short-plan evidence instead of stopping at a flat checkpoint.",
             "Only close a root/stage plan when its plan references are exhausted and there are no active child plans or channel tasks; otherwise update the checkpoint or create the next short plan.",
+            "Do not close the last active root plan unless a successor active plan already exists, or GLOBAL_WORK_EXHAUSTED evidence proves the whole channel objective is exhausted.",
         ],
     })
 

@@ -64,7 +64,8 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
     assert.ok(prompt.includes('Plans: root/stage'));
-    assert.ok(prompt.includes('Never close root/stage'));
+    assert.ok(prompt.includes('Never close last root'));
+    assert.ok(prompt.includes('GLOBAL_WORK_EXHAUSTED'));
     assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));
@@ -157,6 +158,7 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Active Workspace Plans'));
     assert.ok(prompt.includes('goal-1: [active/root_plan] 持续统筹 L1 批次'));
     assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
+    assert.ok(prompt.includes('last root needs successor'));
     assert.ok(prompt.includes('Scheduling Pressure'));
     assert.ok(prompt.includes('UNDERUTILIZED_WRITERS'));
     assert.ok(prompt.includes('commit_gates=repo:main'));

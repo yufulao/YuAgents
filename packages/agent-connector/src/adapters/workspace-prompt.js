@@ -104,7 +104,7 @@ function buildRuntimeRulePackPrompt() {
     '- Shared tasks only when owners improve throughput.\n' +
     '- Claim before implementation; record evidence; keep todos private.\n' +
     '- Plans: root/stage -> short/tasks -> evidence -> planning.\n' +
-    '- Never close root/stage while refs/children/tasks remain.\n'
+    '- Never close last root w/o successor/GLOBAL_WORK_EXHAUSTED\n'
   );
 }
 
@@ -203,7 +203,7 @@ function buildRuntimeContextPrompt(context, options = {}) {
   if (goals.length) {
     const shownGoals = goals.slice(0, 5);
     parts.push(`\n### Active Workspace Plans (${shownGoals.length}/${goals.length})`);
-    parts.push('Hierarchical checkpoints. Root/stage plans return to planning after short-plan evidence; close only when refs, children, and tasks are exhausted.');
+    parts.push('Hierarchical checkpoints. Root/stage plans return to planning after short evidence; last root needs successor or GLOBAL_WORK_EXHAUSTED.');
     for (const goal of shownGoals) {
       const checkpoint = goal.checkpoint ? ` | checkpoint=${_truncate(goal.checkpoint, 80)}` : '';
       const level = goal.plan_level || 'root_plan';

@@ -262,3 +262,91 @@ def test_long_horizon_plan_cannot_close_with_active_child_plan(client, workspace
     }, headers={"X-Workspace-Token": workspace["token"]})
     assert closed.status_code == 409
     assert "child plans are active" in closed.json()["message"]
+
+
+def test_last_root_plan_requires_successor_or_global_exhaustion(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    join = client.post("/v1/join", json={
+        "agent_name": "agent-alpha",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert join.status_code == 200
+
+    root = client.post("/v1/workspace-goals", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "coordinator": "agent-alpha",
+        "source": "openagents:agent-alpha",
+        "objective": "Finish the current spine.",
+        "stop_condition": "Current spine refs exhausted.",
+        "plan_level": "root_plan",
+        "continuation_policy": "long_horizon",
+        "plan_refs": ["RTSPINE-A"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert root.status_code == 200
+    root_goal = root.json()["data"]["goal"]
+
+    closed_without_successor = client.patch(f"/v1/workspace-goals/{root_goal['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-alpha",
+        "status": "done",
+        "progress_log": "LONG_PLAN_EXHAUSTED for this narrow spine.",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert closed_without_successor.status_code == 409
+    assert "successor active plan or GLOBAL_WORK_EXHAUSTED" in closed_without_successor.json()["message"]
+
+    successor = client.post("/v1/workspace-goals", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "coordinator": "agent-alpha",
+        "source": "openagents:agent-alpha",
+        "objective": "Continue the next spine.",
+        "stop_condition": "Next spine refs exhausted.",
+        "plan_level": "root_plan",
+        "continuation_policy": "long_horizon",
+        "plan_refs": ["RTSPINE-B"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert successor.status_code == 200
+
+    closed_with_successor = client.patch(f"/v1/workspace-goals/{root_goal['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-alpha",
+        "status": "done",
+        "progress_log": "Current spine exhausted; successor root is active.",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert closed_with_successor.status_code == 200
+    assert closed_with_successor.json()["data"]["goal"]["status"] == "done"
+
+
+def test_last_root_plan_can_close_with_global_exhaustion(client, workspace):
+    channel_name = workspace["channel"]["name"]
+    join = client.post("/v1/join", json={
+        "agent_name": "agent-alpha",
+        "token": workspace["token"],
+        "network": workspace["id"],
+    })
+    assert join.status_code == 200
+
+    root = client.post("/v1/workspace-goals", json={
+        "network": workspace["id"],
+        "channel": channel_name,
+        "coordinator": "agent-alpha",
+        "source": "openagents:agent-alpha",
+        "objective": "Finish the whole project plan.",
+        "stop_condition": "Whole channel objective exhausted.",
+        "plan_level": "root_plan",
+        "continuation_policy": "long_horizon",
+        "plan_refs": ["docs/LONG_PLAN.md"],
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert root.status_code == 200
+    root_goal = root.json()["data"]["goal"]
+
+    closed = client.patch(f"/v1/workspace-goals/{root_goal['id']}", json={
+        "network": workspace["id"],
+        "source": "openagents:agent-alpha",
+        "status": "done",
+        "progress_log": "GLOBAL_WORK_EXHAUSTED: every long-plan frontier is complete with evidence.",
+    }, headers={"X-Workspace-Token": workspace["token"]})
+    assert closed.status_code == 200
+    assert closed.json()["data"]["goal"]["status"] == "done"
