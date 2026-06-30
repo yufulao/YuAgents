@@ -239,29 +239,6 @@ describe('Daemon', () => {
     assert.equal(adapter.stopReason, 'session_revoked');
   });
 
-  it('BaseAdapter installs the built-in runtime rule skill in the agent workdir', () => {
-    const workDir = path.join(tmpDir, 'agent-work');
-    const adapter = new BaseAdapter({
-      workspaceId: 'ws',
-      channelName: 'general',
-      token: 'token',
-      agentName: 'agent-a',
-      agentType: 'codex',
-      workingDir: workDir,
-      endpoint: 'http://127.0.0.1:1',
-    });
-    adapter._log = () => {};
-
-    adapter._ensureRuntimeRuleSkill();
-
-    const skillPath = path.join(workDir, '.codex', 'skills', 'openagents-runtime', 'SKILL.md');
-    assert.equal(adapter._runtimeRuleSkillPath, skillPath);
-    assert.ok(fs.existsSync(skillPath));
-    const content = fs.readFileSync(skillPath, 'utf-8');
-    assert.ok(content.includes('OpenAgents Runtime Rules'));
-    assert.ok(content.includes('docs/*.md'));
-  });
-
   it('BaseAdapter reports locally installed skills back to the workspace', async () => {
     const workDir = path.join(tmpDir, 'agent-work');
     const unitySkillDir = path.join(workDir, '.codex', 'skills', 'unity-mcp');
@@ -287,11 +264,9 @@ describe('Daemon', () => {
       return { ok: true };
     };
 
-    adapter._ensureRuntimeRuleSkill();
     await adapter._reportInstalledLocalSkills();
 
     const ids = new Set(reported.map((item) => item.skillId));
-    assert.ok(ids.has('openagents-runtime'));
     assert.ok(ids.has('unity-mcp'));
     assert.ok(reported.every((item) => item.state === 'installed'));
   });
@@ -664,70 +639,6 @@ describe('Daemon', () => {
     assert.equal(adapter._processedIds.has('event-ambient-idle'), true);
     assert.equal(adapter._isInFlightMessage({ messageId: 'event-ambient-idle' }), false);
     assert.deepEqual(adapter._channelQueues.general || [], []);
-  });
-
-  it('BaseAdapter claims due workspace goals across workspace channels as coordinator checkpoint turns', async () => {
-    const adapter = new BaseAdapter({
-      workspaceId: 'ws',
-      channelName: 'general',
-      token: 'token',
-      agentName: 'agent-a',
-      endpoint: 'http://127.0.0.1:1',
-      agentEnv: { OPENAGENTS_GOAL_POLL_MS: '1' },
-    });
-    adapter._log = () => {};
-    adapter._sessionId = 'sess-1';
-    const calls = [];
-    adapter.client.claimDueWorkspaceGoal = async (workspaceId, agentName, token, opts) => {
-      calls.push({ workspaceId, agentName, token, opts });
-      return {
-        id: 'goal-1',
-        channel_name: 'workroom',
-        coordinator: 'agent-a',
-        objective: 'Coordinate relay validation',
-        stop_condition: 'All lanes pass with evidence',
-        checkpoint: 'Waiting for QA',
-        progress_log: 'A/B done',
-        run_count: 3,
-      };
-    };
-
-    const msg = await adapter._claimDueWorkspaceGoal();
-    const prompt = adapter._buildDeliveryPrompt(msg);
-
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].workspaceId, 'ws');
-    assert.equal(calls[0].agentName, 'agent-a');
-    assert.equal(calls[0].opts.sessionId, 'sess-1');
-    assert.equal(Object.prototype.hasOwnProperty.call(calls[0].opts, 'channelName'), false);
-    assert.equal(msg.messageId, 'goal:goal-1:3');
-    assert.equal(msg.sessionId, 'workroom');
-    assert.equal(msg._deliveryKind, 'goal');
-    assert.ok(msg.content.includes('Objective: Coordinate relay validation'));
-    assert.ok(msg.content.includes('Stop condition: All lanes pass with evidence'));
-    assert.ok(prompt.includes('workspace goal checkpoint'));
-    assert.ok(prompt.includes('PATCH /v1/workspace-goals/{id}'));
-  });
-
-  it('BaseAdapter throttles workspace goal polling', async () => {
-    const adapter = new BaseAdapter({
-      workspaceId: 'ws',
-      channelName: 'general',
-      token: 'token',
-      agentName: 'agent-a',
-      endpoint: 'http://127.0.0.1:1',
-      agentEnv: { OPENAGENTS_GOAL_POLL_MS: '60000' },
-    });
-    adapter._sessionId = 'sess-1';
-    let calls = 0;
-    adapter.client.claimDueWorkspaceGoal = async () => {
-      calls += 1;
-      return null;
-    };
-
-    assert.equal(await adapter._claimDueWorkspaceGoal(), null);
-    assert.equal(await adapter._claimDueWorkspaceGoal(), null);
-    assert.equal(calls, 1);
   });
 
   it('BaseAdapter does not emit visible queue status for agent deliveries', async () => {

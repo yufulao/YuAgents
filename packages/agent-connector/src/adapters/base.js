@@ -17,12 +17,10 @@
 
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 const { WorkspaceClient, SessionRevokedError } = require('../workspace-client');
 const { generateSessionTitle, SESSION_DEFAULT_RE } = require('./utils');
 const { defaultAgentWorkdir } = require('../paths');
-const { skillsDirForAgentType } = require('../skill-installer');
 
 const DEFAULT_ENDPOINT = 'https://workspace-endpoint.openagents.org';
 const DELIVERY_LEASE_SECONDS = 6 * 60 * 60;
@@ -30,8 +28,6 @@ const STALE_AGENT_QUEUE_MS = 30 * 1000;
 const STATUS_DEDUPE_MS = 30 * 1000;
 const GENERIC_STATUS_DEDUPE_MS = 2 * 60 * 1000;
 const HUMAN_INTERRUPT_AFTER_MS = 90 * 1000;
-const GOAL_POLL_MS = 60 * 1000;
-const GOAL_LEASE_SECONDS = 15 * 60;
 
 class BaseAdapter {
   /**
@@ -67,8 +63,6 @@ class BaseAdapter {
     this._deliveryLeaseSeconds = DELIVERY_LEASE_SECONDS;
     this._agentQueueTtlMs = Number.parseInt(this.agentEnv.OPENAGENTS_AGENT_QUEUE_TTL_MS || '', 10) || STALE_AGENT_QUEUE_MS;
     this._statusDedupeMs = Number.parseInt(this.agentEnv.OPENAGENTS_STATUS_DEDUPE_MS || '', 10) || STATUS_DEDUPE_MS;
-    this._goalPollMs = Number.parseInt(this.agentEnv.OPENAGENTS_GOAL_POLL_MS || '', 10) || GOAL_POLL_MS;
-    this._lastGoalPollAt = 0;
     this._recentStatusPosts = new Map();
     this._pendingProcessDetails = new Map();
     this._latestProcessDetails = new Map();
@@ -129,7 +123,6 @@ class BaseAdapter {
       this._log(`Warning: skill sync failed (non-fatal): ${e.message}`);
     }
 
-    this._ensureRuntimeRuleSkill();
     await this._reportInstalledLocalSkills();
 
     // Fast-path operations (control-event cursor + heartbeat + control poll)
@@ -372,27 +365,6 @@ class BaseAdapter {
    * (e.g. rebuild prompt context). Default: no-op.
    */
   async _onSkillsChanged() {}
-
-  _ensureRuntimeRuleSkill() {
-    try {
-      const workDir = this.workingDir || defaultAgentWorkdir(this.agentName);
-      const skillsDir = skillsDirForAgentType(this.agentType || 'agent', workDir);
-      const runtimeDir = path.join(skillsDir, 'openagents-runtime');
-      fs.mkdirSync(runtimeDir, { recursive: true });
-      const { buildRuntimeRuleSkillMd } = require('./workspace-prompt');
-      const skillPath = path.join(runtimeDir, 'SKILL.md');
-      const content = buildRuntimeRuleSkillMd();
-      let existing = null;
-      try { existing = fs.readFileSync(skillPath, 'utf-8'); } catch {}
-      if (existing !== content) {
-        fs.writeFileSync(skillPath, content, 'utf-8');
-      }
-      this._runtimeRuleSkillPath = skillPath;
-      this._log(`Ensured runtime rule skill: ${skillPath}`);
-    } catch (e) {
-      this._log(`Warning: runtime rule skill unavailable: ${e && e.message ? e.message : e}`);
-    }
-  }
 
   async _reportInstalledLocalSkills() {
     let skills = [];
@@ -689,14 +661,6 @@ class BaseAdapter {
         idleCount++;
       }
 
-      if (incoming.length === 0) {
-        const goalMsg = await this._claimDueWorkspaceGoal();
-        if (goalMsg) {
-          idleCount = 0;
-          await this._dispatchMessage(goalMsg);
-        }
-      }
-
       // Sidecar poll: A2UI tool_result events. These are the user's response
       // to a UI spec this agent (or any agent in the network) emitted. We
       // surface each one as a synthetic user message so the LLM sees it as
@@ -744,55 +708,6 @@ class BaseAdapter {
       }
       await this._sleep(delay);
     }
-  }
-
-  async _claimDueWorkspaceGoal() {
-    if (!this._sessionId) return null;
-    const now = Date.now();
-    if (now - this._lastGoalPollAt < this._goalPollMs) return null;
-    this._lastGoalPollAt = now;
-    let goal = null;
-    try {
-      goal = await this.client.claimDueWorkspaceGoal(
-        this.workspaceId,
-        this.agentName,
-        this.token,
-        {
-          sessionId: this._sessionId,
-          leaseSeconds: GOAL_LEASE_SECONDS,
-        },
-      );
-    } catch (e) {
-      if (e instanceof SessionRevokedError) {
-        this._onSessionRevoked();
-        return null;
-      }
-      if (this._running) this._log(`Goal poll failed: ${e && e.message ? e.message : e}`);
-      return null;
-    }
-    if (!goal) return null;
-    const channel = goal.channel_name || this.channelName || 'general';
-    const checkpoint = goal.checkpoint ? `\nCurrent checkpoint: ${goal.checkpoint}` : '';
-    const progress = goal.progress_log ? `\nProgress log: ${goal.progress_log}` : '';
-    return {
-      id: `goal:${goal.id}:${goal.run_count || Date.now()}`,
-      messageId: `goal:${goal.id}:${goal.run_count || Date.now()}`,
-      sessionId: channel,
-      senderType: 'system',
-      senderName: 'workspace-goal',
-      messageType: 'goal',
-      content: [
-        `Workspace goal checkpoint tick (${goal.id}).`,
-        `Objective: ${goal.objective}`,
-        `Stop condition: ${goal.stop_condition}`,
-        checkpoint,
-        progress,
-        '',
-        'Continue coordinating this goal now. Inspect current workspace state, advance or delegate the next checkpoint, update the goal progress/checkpoint, and set status to done/blocked/paused/cancelled only when that state is true.',
-      ].join('\n'),
-      metadata: { workspace_goal_id: goal.id },
-      _deliveryKind: 'goal',
-    };
   }
 
   // ------------------------------------------------------------------
@@ -1395,14 +1310,6 @@ class BaseAdapter {
         'Treat routed/mentioned messages as at-least-once delivery: they may be delayed, retried, or already reflected in current task state.',
         'Before creating, claiming, updating, or completing work, reconcile against the current task board, todos, recent messages, and repository state.',
         'If the message is stale or already handled, acknowledge the current state concisely or return exactly: __no_response__; do not duplicate side effects.',
-      ].join('\n');
-    }
-    if (kind === 'goal') {
-      return [
-        'Delivery kind: workspace goal checkpoint. This is a durable coordinator run loop, not a human chat message.',
-        'Drive exactly the referenced objective toward its stop condition. Reconcile current tasks, messages, repo state, and prior checkpoint before acting.',
-        'If work remains, advance/delegate the next checkpoint and PATCH /v1/workspace-goals/{id} with checkpoint/progress_log and active status.',
-        'Only mark the goal done, blocked, paused, or cancelled when that state is true and you include evidence.',
       ].join('\n');
     }
     return '';

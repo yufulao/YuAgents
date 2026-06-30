@@ -521,42 +521,6 @@ class WorkspaceTask(Base):
     )
 
 
-class WorkspaceGoal(Base):
-    """Durable coordinator goal/run loop for long-running multi-agent work.
-
-    Workspace tasks describe delegated units of work. A workspace goal is the
-    coordinator's persistent contract: objective, stopping condition,
-    checkpoint cadence, and the next time the coordinator should re-enter.
-    """
-    __tablename__ = "workspace_goals"
-
-    id = Column(Text, primary_key=True, default=_uuid)
-    workspace_id = Column(UUID(as_uuid=False), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    channel_name = Column(Text, nullable=False)
-    coordinator = Column(Text, nullable=False)
-    objective = Column(Text, nullable=False)
-    stop_condition = Column(Text, nullable=False)
-    status = Column(Text, nullable=False, default="active")  # active | paused | blocked | done | cancelled
-    checkpoint = Column(Text, nullable=True)
-    progress_log = Column(Text, nullable=True)
-    created_by = Column(Text, nullable=False)
-    cadence_seconds = Column(Integer, nullable=False, default=300)
-    run_count = Column(Integer, nullable=False, default=0)
-    last_run_at = Column(DateTime(timezone=True), nullable=True)
-    next_run_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
-    lease_owner_session_id = Column(Text, nullable=True)
-    lease_until = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
-    updated_at = Column(DateTime(timezone=True), default=_now, server_default=text("NOW()"))
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-
-    __table_args__ = (
-        Index("idx_workspace_goals_workspace_status_next", "workspace_id", "status", "next_run_at"),
-        Index("idx_workspace_goals_workspace_coordinator_status", "workspace_id", "coordinator", "status"),
-        Index("idx_workspace_goals_workspace_channel_status", "workspace_id", "channel_name", "status"),
-    )
-
-
 class TimerRecord(Base):
     """A scheduled timer that posts a message when it fires."""
     __tablename__ = "timers"

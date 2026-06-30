@@ -355,29 +355,4 @@ describe('WorkspaceClient', () => {
     assert.equal(Object.prototype.hasOwnProperty.call(calls[0][2], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(calls[1][2], 'source'), false);
   });
-
-  it('claims due workspace goals with current session proof', async () => {
-    const client = new WorkspaceClient('http://127.0.0.1:19999');
-    let capturedPath = null;
-    let capturedBody = null;
-    client._post = async (path, body) => {
-      capturedPath = path;
-      capturedBody = body;
-      return { data: { goal: { id: 'goal-1', objective: 'Ship slice' } } };
-    };
-
-    const goal = await client.claimDueWorkspaceGoal('ws-1', '八云紫', 'tok', {
-      channelName: '总控室',
-      sessionId: 'sess-goal',
-      leaseSeconds: 600,
-    });
-
-    assert.equal(capturedPath, '/v1/workspace-goals/claim-due');
-    assert.equal(capturedBody.network, 'ws-1');
-    assert.equal(capturedBody.coordinator, '八云紫');
-    assert.equal(capturedBody.session_id, 'sess-goal');
-    assert.equal(capturedBody.channel, '总控室');
-    assert.equal(capturedBody.lease_seconds, 600);
-    assert.equal(goal.id, 'goal-1');
-  });
 });

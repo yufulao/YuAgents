@@ -102,24 +102,6 @@ function buildRuntimeRulePackPrompt() {
   );
 }
 
-function buildRuntimeRuleSkillMd() {
-  return (
-    '---\n' +
-    'name: OpenAgents Runtime Rules\n' +
-    'description: Mandatory collaboration, attention, task ownership, and context rules for OpenAgents workspace agents.\n' +
-    '---\n\n' +
-    '# OpenAgents Runtime Rules\n\n' +
-    'This skill is installed by the local agent connector. It turns the stable runtime contract into a discoverable agent skill so agents do not depend on remembering arbitrary `docs/*.md` files.\n\n' +
-    '## Rules\n\n' +
-    buildRuntimeRulePackPrompt()
-      .replace(/^\n?## OpenAgents Runtime Rule Pack \(mandatory\)\n/, '')
-      .replace(/^- /gm, '- ') +
-    '\n## Operational Notes\n\n' +
-    '- Runtime context from `/v1/agent-context` is authoritative for current role, channel, roster, recent messages, ambient context, and active shared tasks.\n' +
-    '- Backend delivery, lease/ack, and shared task APIs are enforcement mechanisms; use them instead of relying on chat memory alone.\n'
-  );
-}
-
 function _truncate(text, max) {
   const value = String(text || '').replace(/\s+/g, ' ').trim();
   if (!value) return '';
@@ -161,7 +143,6 @@ function buildRuntimeContextPrompt(context, options = {}) {
   const recent = Array.isArray(context.recent_messages) ? context.recent_messages : [];
   const ambient = Array.isArray(context.ambient_messages) ? context.ambient_messages : [];
   const tasks = Array.isArray(context.active_tasks) ? context.active_tasks : [];
-  const goals = Array.isArray(context.active_goals) ? context.active_goals : [];
   const rules = Array.isArray(context.runtime_rules) ? context.runtime_rules : [];
 
   const parts = [];
@@ -185,17 +166,6 @@ function buildRuntimeContextPrompt(context, options = {}) {
       parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${desc}`);
     }
     if (tasks.length > shownTasks.length) parts.push(`- … ${tasks.length - shownTasks.length} tasks omitted; use workspace_list_tasks for full board.`);
-  }
-
-  if (goals.length) {
-    const shownGoals = goals.slice(0, 5);
-    parts.push(`\n### Active Coordinator Goals (${shownGoals.length}/${goals.length})`);
-    parts.push('Workspace goals are durable coordinator loops: keep driving checkpoints until the stop condition is met, or update the goal to paused/blocked/done/cancelled with evidence.');
-    for (const goal of shownGoals) {
-      const checkpoint = goal.checkpoint ? ` | checkpoint=${_truncate(goal.checkpoint, 80)}` : '';
-      parts.push(`- ${goal.id}: [${goal.status || 'active'}] ${_truncate(goal.objective, 120)} | stop=${_truncate(goal.stop_condition, 100)}${checkpoint}`);
-    }
-    if (goals.length > shownGoals.length) parts.push(`- … ${goals.length - shownGoals.length} goals omitted; use workspace_goals/list APIs for full state.`);
   }
 
   if (agents.length) {
@@ -234,7 +204,7 @@ function buildRuntimeContextPrompt(context, options = {}) {
     const shownRules = rules.slice(0, 6);
     parts.push(`\n### Runtime Rules (${shownRules.length}/${rules.length})`);
     for (const rule of shownRules) parts.push(`- ${_truncate(rule, 160)}`);
-    if (rules.length > shownRules.length) parts.push('- … additional rules available in the generated OpenAgents Runtime Rule Pack skill.');
+    if (rules.length > shownRules.length) parts.push('- … additional runtime rules omitted; use current workspace context and task APIs as the source of truth.');
   }
 
   return _fitBudget(parts.join('\n'), maxChars);
@@ -464,22 +434,6 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-tasks/{task_id} -d '{"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}","status":"in_review","result":"Evidence or blocker"}'\`\n\n` +
-      '\n### Workspace Goals (Coordinator Run Loop)\n\n' +
-      'Use a workspace goal when the channel lead/coordinator must keep driving a long-running objective across turns. ' +
-      'A goal has one objective, one verifiable stop condition, checkpoint/progress evidence, and explicit active/paused/blocked/done/cancelled state.\n\n' +
-      '**Create workspace goal:**\n' +
-      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
-      `${baseUrl}/v1/workspace-goals -d '{"network":"${workspaceId}",` +
-      `"channel":"${channelName}","source":"openagents:${agentName}",` +
-      `"coordinator":"${agentName}","objective":"Objective",` +
-      `"stop_condition":"Verifiable done state","cadence_seconds":300}'\`\n\n` +
-      '**List active workspace goals:**\n' +
-      `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-goals?network=${workspaceId}&channel=${channelName}&coordinator=${agentName}&active=true"\`\n\n` +
-      '**Update workspace goal:**\n' +
-      `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
-      `${baseUrl}/v1/workspace-goals/{goal_id} -d '{"network":"${workspaceId}",` +
-      `"source":"openagents:${agentName}","status":"active",` +
-      `"checkpoint":"Current checkpoint and evidence","progress_log":"Short progress log"}'\`\n\n` +
       '\n### Personal To-Do List (Private Execution Plan)\n\n' +
       'Create or update your to-do list to track progress. The entire list ' +
       'is replaced each time (send the full list with current statuses).\n\n' +
@@ -643,7 +597,6 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
   }
   if (!disabled.has('todos')) {
     lines.push('- Shared tasks: GET /v1/workspace-tasks?network=...&channel=...&active=true');
-    lines.push('- Workspace goals: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true');
     lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
   if (!disabled.has('timers')) {
@@ -663,7 +616,6 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     if (!disabled.has('browser')) lines.push('- Browser actions: POST /v1/browser/tabs, /tabs/{id}/navigate, /click, /type; DELETE /tabs/{id}.');
     if (!disabled.has('todos')) {
       lines.push('- Shared tasks: POST/GET /v1/workspace-tasks, POST /v1/workspace-tasks/{id}/claim, PATCH /v1/workspace-tasks/{id}.');
-      lines.push('- Workspace goals: POST/GET /v1/workspace-goals; PATCH /v1/workspace-goals/{id} to pause/resume/block/complete or update checkpoint/progress.');
       lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
     }
     if (!disabled.has('timers')) lines.push('- Create/cancel timer: POST /v1/timers; DELETE /v1/timers/{id}.');
@@ -984,7 +936,6 @@ module.exports = {
   buildBrowserDirective,
   buildCollaborationPrompt,
   buildRuntimeRulePackPrompt,
-  buildRuntimeRuleSkillMd,
   buildRuntimeContextPrompt,
   buildModePrompt,
   buildGuardrails,

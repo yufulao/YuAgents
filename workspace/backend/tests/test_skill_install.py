@@ -205,9 +205,9 @@ class TestSkillStatusCallback:
         resp = client.post(
             f"/v1/workspaces/{workspace['id']}/members/codex/skills/status",
             json={
-                "skill_id": "openagents-runtime",
+                "skill_id": "project-helper",
                 "state": "installed",
-                "path": "/work/.codex/skills/openagents-runtime",
+                "path": "/work/.codex/skills/project-helper",
             },
             headers={"X-Workspace-Token": workspace["token"]},
         )
@@ -215,7 +215,7 @@ class TestSkillStatusCallback:
 
         cfg_skills = _agent_config_skills(db, workspace, "codex")
         assert cfg_skills["browser"] is False
-        assert "openagents-runtime" in cfg_skills["installed"]
+        assert "project-helper" in cfg_skills["installed"]
 
         disc = client.get(
             "/v1/discover",
@@ -226,8 +226,8 @@ class TestSkillStatusCallback:
         agents = {a["address"]: a for a in disc.json()["data"]["agents"]}
         skills = agents["openagents:codex"]["enabled_skills"]
         assert skills["browser"] is False
-        assert "openagents-runtime" in skills["installed"]
-        assert skills["skill_status"]["openagents-runtime"]["state"] == "installed"
+        assert "project-helper" in skills["installed"]
+        assert skills["skill_status"]["project-helper"]["state"] == "installed"
 
 
 class TestPerAgentIsolation:

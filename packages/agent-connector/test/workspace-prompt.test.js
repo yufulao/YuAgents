@@ -10,7 +10,6 @@ const {
   buildCursorSkillMd,
   buildOpenclawSystemPrompt,
   buildRuntimeRulePackPrompt,
-  buildRuntimeRuleSkillMd,
   buildRuntimeContextPrompt,
 } = require('../src/adapters/workspace-prompt');
 
@@ -48,17 +47,13 @@ describe('workspace prompt budget', () => {
     assert.equal(prompt.includes('Exact prop names'), false);
   });
 
-  it('builds mandatory runtime rule pack and skill markdown', () => {
+  it('builds mandatory runtime rule pack', () => {
     const prompt = buildRuntimeRulePackPrompt();
-    const skill = buildRuntimeRuleSkillMd();
 
     assert.ok(prompt.includes('docs/*.md'));
     assert.ok(prompt.includes('Scheduling is context-driven'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
-    assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
-    assert.ok(skill.includes('/v1/agent-context'));
-    assert.ok(skill.includes('shared task APIs'));
   });
 
   it('injects runtime rules into generated workspace skills', () => {
@@ -111,13 +106,6 @@ describe('workspace prompt budget', () => {
         claimed_by: '博丽灵梦',
         description: 'QA verify mobile layout.',
       }],
-      active_goals: [{
-        id: 'goal-1',
-        objective: '持续统筹 L1 批次',
-        stop_condition: '所有子任务 done 或明确 blocked',
-        status: 'active',
-        checkpoint: '等待 QA 证据',
-      }],
       runtime_rules: ['Do not flatten roles.'],
     });
 
@@ -127,9 +115,6 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Passive Ambient Messages'));
     assert.ok(prompt.includes('Active Shared Tasks'));
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
-    assert.ok(prompt.includes('Active Coordinator Goals'));
-    assert.ok(prompt.includes('goal-1: [active] 持续统筹 L1 批次'));
-    assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });
 

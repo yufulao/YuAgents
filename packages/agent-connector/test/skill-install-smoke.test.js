@@ -136,11 +136,11 @@ describe('skill install smoke (real WorkspaceClient + stub backend)', () => {
   it('lists workspace and user-level skills but skips system skills', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oa-skills-home-'));
     try {
-      const runtimeDir = path.join(workDir, '.codex', 'skills', 'openagents-runtime');
-      fs.mkdirSync(runtimeDir, { recursive: true });
+      const projectSkillDir = path.join(workDir, '.codex', 'skills', 'project-helper');
+      fs.mkdirSync(projectSkillDir, { recursive: true });
       fs.writeFileSync(
-        path.join(runtimeDir, 'SKILL.md'),
-        '---\nname: Runtime Rules\ndescription: Runtime contract\n---\n# Runtime Rules\n',
+        path.join(projectSkillDir, 'SKILL.md'),
+        '---\nname: Project Helper\ndescription: Project-local helper skill\n---\n# Project Helper\n',
         'utf-8',
       );
       const unityDir = path.join(homeDir, '.codex', 'skills', 'unity-mcp-skill');
@@ -161,7 +161,7 @@ describe('skill install smoke (real WorkspaceClient + stub backend)', () => {
       });
 
       assert.deepEqual(skills.map((skill) => skill.id).sort(), [
-        'openagents-runtime',
+        'project-helper',
         'unity-mcp-skill',
       ]);
     } finally {
