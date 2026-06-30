@@ -81,30 +81,24 @@ function buildWorkspaceIdentity(agentName, workspaceId, channelName, mode = 'exe
 function buildCollaborationPrompt() {
   return (
     '\n## Multi-Agent Collaboration\n' +
-    'Channel=context; @mentions/routing=attention. ' +
-    'Ambient is passive unless named/routed, owner, or lead. ' +
-    'Non-leads report evidence unless delegated.\n'
+    'Channel visibility is context; @mentions/routing are attention. ' +
+    'Only @mention when handing concrete work to that agent, never for thanks/ack. ' +
+    'Ambient context is passive: unless named, routed, task owner, or channel lead, do not create/claim tasks, assign, @mention, or visibly coordinate; return no response. ' +
+    'Non-leads report evidence/blockers and do not direct the lead unless delegated.\n'
   );
 }
 
 function buildRuntimeRulePackPrompt() {
   return (
     '\n## OpenAgents Runtime Rule Pack (mandatory)\n' +
-    '- `docs/*.md` are refs, not memory; follow runtime context.\n' +
-    '- Channel messages=context; @mentions=attention/delegation.\n' +
-    '- Ambient is passive: unless named/routed, owner, or lead, no claim/assign/coordination.\n' +
-    '- Preserve roles; route by role/status.\n' +
-    '- Non-leads report evidence; do not direct the lead unless delegated.\n' +
-    '- Scheduling is rolling-parallel: do not batch-barrier; freed agents take safe work.\n' +
-    '- Write frontier first; QA/VQ/review/scout do not fill idle writers.\n' +
-    '- VQ/review gates same-scope close only; unrelated write lanes may continue.\n' +
-    '- Ready scheduler: workspace_schedule_tasks assigns safe ready tasks.\n' +
-    '- scope-aware: set lane_type/write_scope/resource_locks/conflicts_with/commit_policy.\n' +
-    '- repo:* is commit gate only, not implementation lock.\n' +
-    '- Shared tasks only when owners improve throughput.\n' +
-    '- Claim before implementation; record evidence; keep todos private.\n' +
-    '- Plans: root/stage -> short/tasks -> evidence -> planning.\n' +
-    '- Never close last root w/o successor/GLOBAL_WORK_EXHAUSTED\n'
+    '- `docs/*.md` are design references, not automatic memory; follow injected runtime rules and context packs.\n' +
+    '- Channel messages are context for channel members; @mentions are explicit attention/delegation.\n' +
+    '- Ambient is passive: unless named/routed, task owner, or lead, do not create/claim tasks, @mention, assign, or coordinate.\n' +
+    '- Preserve role boundaries and use agent role/description/status when routing work.\n' +
+    '- Non-leads report evidence/blockers; do not direct the lead unless delegated.\n' +
+    '- Scheduling is context-driven: derive needed work functions; do not force a fixed planner/implementer/QA template.\n' +
+    '- Create shared tasks only when separate owners improve clarity/throughput; otherwise keep work single-owner.\n' +
+    '- Claim shared tasks before implementation, update result/evidence, and keep personal todos private.\n'
   );
 }
 
@@ -121,7 +115,7 @@ function buildRuntimeRuleSkillMd() {
       .replace(/^\n?## OpenAgents Runtime Rule Pack \(mandatory\)\n/, '')
       .replace(/^- /gm, '- ') +
     '\n## Operational Notes\n\n' +
-    '- `/v1/agent-context` is authoritative for role, channel, roster, messages, tasks, and active plans.\n' +
+    '- Runtime context from `/v1/agent-context` is authoritative for current role, channel, roster, recent messages, ambient context, and active shared tasks.\n' +
     '- Backend delivery, lease/ack, and shared task APIs are enforcement mechanisms; use them instead of relying on chat memory alone.\n'
   );
 }
@@ -168,9 +162,6 @@ function buildRuntimeContextPrompt(context, options = {}) {
   const ambient = Array.isArray(context.ambient_messages) ? context.ambient_messages : [];
   const tasks = Array.isArray(context.active_tasks) ? context.active_tasks : [];
   const goals = Array.isArray(context.active_goals) ? context.active_goals : [];
-  const pressure = context.scheduling_pressure && typeof context.scheduling_pressure === 'object'
-    ? context.scheduling_pressure
-    : null;
   const rules = Array.isArray(context.runtime_rules) ? context.runtime_rules : [];
 
   const parts = [];
@@ -191,41 +182,20 @@ function buildRuntimeContextPrompt(context, options = {}) {
     for (const task of shownTasks) {
       const owner = task.claimed_by || task.assignee || 'unassigned';
       const desc = task.description ? ` — ${_truncate(task.description, 90)}` : '';
-      const lane = task.lane_type && task.lane_type !== 'unspecified' ? ` | lane=${task.lane_type}` : '';
-      const locks = Array.isArray(task.resource_locks) && task.resource_locks.length ? ` | locks=${task.resource_locks.join(',')}` : '';
-      const scope = Array.isArray(task.write_scope) && task.write_scope.length ? ` | scope=${_truncate(task.write_scope.join(','), 90)}` : '';
-      const sched = task.scheduling && task.scheduling.parallel_safe === false ? ' | scheduling=CONFLICT' : '';
-      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${lane}${locks}${scope}${sched}${desc}`);
+      parts.push(`- ${task.id}: [${task.status || 'todo'}] ${task.title || ''} | owner=${owner} | priority=${task.priority || 'normal'}${desc}`);
     }
     if (tasks.length > shownTasks.length) parts.push(`- … ${tasks.length - shownTasks.length} tasks omitted; use workspace_list_tasks for full board.`);
   }
 
   if (goals.length) {
     const shownGoals = goals.slice(0, 5);
-    parts.push(`\n### Active Workspace Plans (${shownGoals.length}/${goals.length})`);
-    parts.push('Hierarchical checkpoints. Root/stage plans return to planning after short evidence; last root needs successor or GLOBAL_WORK_EXHAUSTED.');
+    parts.push(`\n### Active Coordinator Goals (${shownGoals.length}/${goals.length})`);
+    parts.push('Workspace goals are durable coordinator loops: keep driving checkpoints until the stop condition is met, or update the goal to paused/blocked/done/cancelled with evidence.');
     for (const goal of shownGoals) {
       const checkpoint = goal.checkpoint ? ` | checkpoint=${_truncate(goal.checkpoint, 80)}` : '';
-      const level = goal.plan_level || 'root_plan';
-      const parent = goal.parent_goal_id ? ` | parent=${goal.parent_goal_id}` : '';
-      const refs = Array.isArray(goal.plan_refs) && goal.plan_refs.length ? ` | refs=${_truncate(goal.plan_refs.join(','), 90)}` : '';
-      parts.push(`- ${goal.id}: [${goal.status || 'active'}/${level}] ${_truncate(goal.objective, 120)} | stop=${_truncate(goal.stop_condition, 100)}${parent}${refs}${checkpoint}`);
+      parts.push(`- ${goal.id}: [${goal.status || 'active'}] ${_truncate(goal.objective, 120)} | stop=${_truncate(goal.stop_condition, 100)}${checkpoint}`);
     }
     if (goals.length > shownGoals.length) parts.push(`- … ${goals.length - shownGoals.length} goals omitted; use workspace_goals/list APIs for full state.`);
-  }
-
-  if (pressure && pressure.reason) {
-    const freeWriters = Array.isArray(pressure.free_writer_agents)
-      ? pressure.free_writer_agents.join(',')
-      : '';
-    parts.push('\n### Scheduling Pressure');
-    const commitGates = Array.isArray(pressure.commit_gate_locks) && pressure.commit_gate_locks.length
-      ? ` | commit_gates=${pressure.commit_gate_locks.join(',')}`
-      : '';
-    parts.push(
-      `- ${pressure.reason}: free_writers=${freeWriters || 'none'} | active_write=${pressure.active_write_lanes || 0} | ready_write=${pressure.ready_unassigned_write_lanes || 0} | non_write=${pressure.active_non_write_lanes || 0}${commitGates}`
-    );
-    if (pressure.action) parts.push(`- action=${_truncate(pressure.action, 180)}`);
   }
 
   if (agents.length) {
@@ -476,8 +446,6 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       '\n### Shared Workspace Tasks (Team Ownership)\n\n' +
       'Use shared tasks when work should be assigned, claimed, reviewed, or split across agents. ' +
       'Scheduling derives needed work functions from the actual request and channel context, then matches them to agent role/description/skills/status. ' +
-      'Use rolling parallelism, not batch barriers: when one independent lane finishes, re-check team status and immediately release non-overlapping follow-up work to freed agents while other lanes continue. ' +
-      'For parallel implementation, set scheduling fields and commit path-scoped. ' +
       'Examples: bug work may need analysis/fix/test; feature work may need reference research/design breakdown/implementation. ' +
       'Use only the functions the context actually needs.\n\n' +
       '**Create shared task:**\n' +
@@ -485,14 +453,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `${baseUrl}/v1/workspace-tasks -d '{"network":"${workspaceId}",` +
       `"channel":"${channelName}","source":"openagents:${agentName}",` +
       `"title":"Task title","description":"Acceptance criteria",` +
-      `"assignee":"agent-name","priority":"normal","lane_type":"write",` +
-      `"write_scope":["path:Src/Module"],"resource_locks":["path:Src/Module"]}'\`\n\n` +
+      `"assignee":"agent-name","priority":"normal"}'\`\n\n` +
       '**List active shared tasks:**\n' +
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-tasks?network=${workspaceId}&channel=${channelName}&active=true"\`\n\n` +
-      '**Run scheduler:**\n' +
-      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
-      `${baseUrl}/v1/workspace-tasks/schedule -d '{"network":"${workspaceId}",` +
-      `"channel":"${channelName}","source":"openagents:${agentName}"}'\`\n\n` +
       '**Claim shared task:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-tasks/{task_id}/claim -d '{"network":"${workspaceId}",` +
@@ -501,26 +464,18 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
       `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-tasks/{task_id} -d '{"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}","status":"in_review","result":"Evidence or blocker"}'\`\n\n` +
-      '\n### Workspace Plans (Hierarchical Checkpoints)\n\n' +
-      'Use workspace goals as plan checkpoints. root_plan/stage_plan owns long-horizon state and plan_refs; it creates short_plan children and shared tasks. ' +
-      'A done/blocked/cancelled short_plan wakes its active parent. Do not close root/stage until refs, children, and channel tasks are exhausted.\n\n' +
-      '**Create root/stage workspace plan:**\n' +
+      '\n### Workspace Goals (Coordinator Run Loop)\n\n' +
+      'Use a workspace goal when the channel lead/coordinator must keep driving a long-running objective across turns. ' +
+      'A goal has one objective, one verifiable stop condition, checkpoint/progress evidence, and explicit active/paused/blocked/done/cancelled state.\n\n' +
+      '**Create workspace goal:**\n' +
       `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-goals -d '{"network":"${workspaceId}",` +
       `"channel":"${channelName}","source":"openagents:${agentName}",` +
       `"coordinator":"${agentName}","objective":"Objective",` +
-      `"stop_condition":"Whole plan exhausted with evidence","plan_level":"root_plan",` +
-      `"continuation_policy":"long_horizon","plan_refs":["docs/PLAN.md"],"cadence_seconds":300}'\`\n\n` +
-      '**Create short child plan:**\n' +
-      `\`${curl} -s -X POST -H "${h}" -H "Content-Type: application/json" ` +
-      `${baseUrl}/v1/workspace-goals -d '{"network":"${workspaceId}",` +
-      `"channel":"${channelName}","source":"openagents:${agentName}",` +
-      `"coordinator":"${agentName}","parent_goal_id":"PARENT_GOAL_ID",` +
-      `"plan_level":"short_plan","objective":"Next short plan",` +
-      `"stop_condition":"Short plan evidence accepted","cadence_seconds":300}'\`\n\n` +
-      '**List active workspace plans:**\n' +
+      `"stop_condition":"Verifiable done state","cadence_seconds":300}'\`\n\n` +
+      '**List active workspace goals:**\n' +
       `\`${curl} -s -H "${h}" "${baseUrl}/v1/workspace-goals?network=${workspaceId}&channel=${channelName}&coordinator=${agentName}&active=true"\`\n\n` +
-      '**Update workspace plan:**\n' +
+      '**Update workspace goal:**\n' +
       `\`${curl} -s -X PATCH -H "${h}" -H "Content-Type: application/json" ` +
       `${baseUrl}/v1/workspace-goals/{goal_id} -d '{"network":"${workspaceId}",` +
       `"source":"openagents:${agentName}","status":"active",` +
@@ -549,7 +504,9 @@ function buildApiSkillsPrompt({ endpoint, workspaceId, token, agentName, channel
   if (!isPlan && !disabled.has('timers')) {
     sections.push(
       '\n### Timers\n\n' +
-      'Set a timer that will post a reminder message after a delay. Timers are reminders, not the planning engine; use workspace plans for long-horizon continuity.\n\n' +
+      'Set a timer that will send you a message after a delay, waking you up ' +
+      'to continue work. Use this instead of `sleep` — timers let you release ' +
+      'the session and get called back later.\n\n' +
       'Use cases: check back on a deploy, retry after a rate limit, remind ' +
       'yourself to follow up.\n\n' +
       '**Create a timer:**\n' +
@@ -686,9 +643,7 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
   }
   if (!disabled.has('todos')) {
     lines.push('- Shared tasks: GET /v1/workspace-tasks?network=...&channel=...&active=true');
-    lines.push('- Task fields: lane_type/write_scope/resource_locks/conflicts_with/commit_policy.');
-    lines.push('- Scheduler: POST /v1/workspace-tasks/schedule.');
-    lines.push('- Workspace plans: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true');
+    lines.push('- Workspace goals: GET /v1/workspace-goals?network=...&channel=...&coordinator=...&active=true');
     lines.push('- Personal todos: GET /v1/todos?network=...&channel=...');
   }
   if (!disabled.has('timers')) {
@@ -707,12 +662,11 @@ function buildCompactApiSkillsPrompt({ endpoint, workspaceId, token, agentName, 
     if (!disabled.has('files')) lines.push('- Upload file: POST /v1/files/base64 with filename, content_base64, content_type, network, source, channel_name.');
     if (!disabled.has('browser')) lines.push('- Browser actions: POST /v1/browser/tabs, /tabs/{id}/navigate, /click, /type; DELETE /tabs/{id}.');
     if (!disabled.has('todos')) {
-      lines.push('- Shared tasks: POST/GET /v1/workspace-tasks; POST /schedule; POST /{id}/claim; PATCH /{id}.');
-      lines.push('- Parallel writers: set scheduling fields and commit only declared paths.');
-      lines.push('- Workspace plans: POST/GET/PATCH /v1/workspace-goals with plan_level, parent_goal_id, plan_refs, checkpoint, status.');
+      lines.push('- Shared tasks: POST/GET /v1/workspace-tasks, POST /v1/workspace-tasks/{id}/claim, PATCH /v1/workspace-tasks/{id}.');
+      lines.push('- Workspace goals: POST/GET /v1/workspace-goals; PATCH /v1/workspace-goals/{id} to pause/resume/block/complete or update checkpoint/progress.');
       lines.push('- Personal todos: PUT /v1/todos with todos[], network, channel, source.');
     }
-    if (!disabled.has('timers')) lines.push('- Create/cancel reminder timer: POST /v1/timers; DELETE /v1/timers/{id}.');
+    if (!disabled.has('timers')) lines.push('- Create/cancel timer: POST /v1/timers; DELETE /v1/timers/{id}.');
     if (!disabled.has('routines')) lines.push('- Create/cancel routine: POST /v1/routines; DELETE /v1/routines/{id}.');
   }
 
@@ -734,12 +688,12 @@ function buildGuardrails() {
     'as your text response.\n' +
     '\nIMPORTANT: For multi-agent work, use shared workspace tasks to assign, ' +
     'claim, and track ownership. Scheduling derives work functions from context ' +
-    'and maps them to agent descriptions/skills/status; use rolling-parallel, not batch barriers. ' +
+    'and maps them to agent descriptions/skills/status; it is not a fixed team template. ' +
     'Use separate tasks only when separate owners improve clarity or throughput. After you own a task, use your personal to-do list for your ' +
     'private execution plan.\n' +
     '\nIMPORTANT: Do NOT use built-in scheduling tools (CronCreate, CronDelete, ' +
-    'CronList, ScheduleWakeup). For reminder timers, routines, and recurring tasks, ' +
-    'use the workspace REST API (curl commands in your skill instructions). Use workspace plans, not timers, for long-horizon project continuity. ' +
+    'CronList, ScheduleWakeup). For timers, routines, and recurring tasks, ' +
+    'ALWAYS use the workspace REST API (curl commands in your skill instructions). ' +
     'Built-in scheduling is local-only and won\'t appear in the workspace.\n'
   );
 }
@@ -756,11 +710,10 @@ function buildClaudeSystemPrompt({ agentName, workspaceId, channelName, mode = '
     'Use workspace_get_history to read previous messages.\n' +
     'Use workspace_get_agents to see other agents.\n' +
     'Use workspace_create_task/list/claim/update for shared multi-agent work ownership.\n' +
-    'Use workspace_schedule_tasks for ready work.\n' +
-    'Use workspace_put_todos for private execution plans.\n' +
-    'Use workspace_create_timer only for reminders; plans carry long-horizon continuity.\n' +
-    'Use workspace_create_routine for recurring tasks.\n' +
-    'Use workspace_send_notification for important completion/blocker notices.\n' +
+    'Use workspace_put_todos to track your private execution plan. ALWAYS create a to-do list when given multiple tasks or multi-step work.\n' +
+    'Use workspace_create_timer to set a reminder that wakes you up later.\n' +
+    'Use workspace_create_routine to set up recurring scheduled tasks (e.g. daily reviews).\n' +
+    'Use workspace_send_notification to send a notification to the workspace inbox when you complete a task or have important results.\n' +
     'Use workspace_write_knowledge to create or update shared knowledge base entries that persist across conversations.\n' +
     'Use workspace_read_knowledge to read knowledge entries by ID or slug (from @knowledge:slug mentions).\n'
   );

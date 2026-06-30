@@ -772,11 +772,8 @@ class BaseAdapter {
     }
     if (!goal) return null;
     const channel = goal.channel_name || this.channelName || 'general';
-    const checkpoint = goal.checkpoint || 'none';
-    const level = goal.plan_level || 'root_plan';
-    const parent = goal.parent_goal_id || 'none';
-    const root = goal.root_goal_id || goal.id;
-    const policy = goal.continuation_policy || 'standalone';
+    const checkpoint = goal.checkpoint ? `\nCurrent checkpoint: ${goal.checkpoint}` : '';
+    const progress = goal.progress_log ? `\nProgress log: ${goal.progress_log}` : '';
     return {
       id: `goal:${goal.id}:${goal.run_count || Date.now()}`,
       messageId: `goal:${goal.id}:${goal.run_count || Date.now()}`,
@@ -785,11 +782,13 @@ class BaseAdapter {
       senderName: 'workspace-goal',
       messageType: 'goal',
       content: [
-        `Workspace plan checkpoint tick (${goal.id}).`,
-        `Level: ${level}; policy: ${policy}; parent: ${parent}; root: ${root}.`,
-        `Checkpoint: ${checkpoint}`,
+        `Workspace goal checkpoint tick (${goal.id}).`,
+        `Objective: ${goal.objective}`,
+        `Stop condition: ${goal.stop_condition}`,
+        checkpoint,
+        progress,
         '',
-        'Use /v1/agent-context and /v1/workspace-goals only as needed. Keep the turn short: release or replenish concrete work, write a compact checkpoint, or return __no_response__ if already handled.',
+        'Continue coordinating this goal now. Inspect current workspace state, advance or delegate the next checkpoint, update the goal progress/checkpoint, and set status to done/blocked/paused/cancelled only when that state is true.',
       ].join('\n'),
       metadata: { workspace_goal_id: goal.id },
       _deliveryKind: 'goal',
@@ -1400,10 +1399,10 @@ class BaseAdapter {
     }
     if (kind === 'goal') {
       return [
-        'Delivery kind: compact workspace plan checkpoint. This is internal control state, not human chat.',
-        'Reconcile only current active goals/tasks/team/repo. Do not narrate old ticks or repeat already-handled plan updates.',
-        'If implementation lane width has collapsed, create/release a concrete non-conflicting task or record the exact blocker in a compact checkpoint.',
-        'PATCH /v1/workspace-goals/{id} only with concise checkpoint/progress_log/status. Return __no_response__ when no visible work is needed.',
+        'Delivery kind: workspace goal checkpoint. This is a durable coordinator run loop, not a human chat message.',
+        'Drive exactly the referenced objective toward its stop condition. Reconcile current tasks, messages, repo state, and prior checkpoint before acting.',
+        'If work remains, advance/delegate the next checkpoint and PATCH /v1/workspace-goals/{id} with checkpoint/progress_log and active status.',
+        'Only mark the goal done, blocked, paused, or cancelled when that state is true and you include evidence.',
       ].join('\n');
     }
     return '';

@@ -69,11 +69,6 @@ export interface WorkspaceAgentTask {
   channelName?: string | null;
   waitingOnDependency?: boolean;
   dependsOn?: string[];
-  laneType?: string;
-  writeScope?: string[];
-  resourceLocks?: string[];
-  conflictsWith?: string[];
-  commitPolicy?: Record<string, unknown>;
   dependencies?: WorkspaceAgentTaskDependency[];
   result?: string | null;
   updatedAt?: string | null;
@@ -380,11 +375,6 @@ export interface NetworkAgent {
     channel_name?: string | null;
     waiting_on_dependency?: boolean;
     depends_on?: string[];
-    lane_type?: string;
-    write_scope?: string[];
-    resource_locks?: string[];
-    conflicts_with?: string[];
-    commit_policy?: Record<string, unknown>;
     dependencies?: Array<{
       id: string;
       title: string;
@@ -510,11 +500,6 @@ function normalizeAgentTask(task: any): WorkspaceAgentTask | null {
     channelName: task.channel_name ?? task.channelName ?? null,
     waitingOnDependency: task.waiting_on_dependency ?? task.waitingOnDependency ?? false,
     dependsOn: task.depends_on ?? task.dependsOn ?? [],
-    laneType: task.lane_type ?? task.laneType ?? 'unspecified',
-    writeScope: task.write_scope ?? task.writeScope ?? [],
-    resourceLocks: task.resource_locks ?? task.resourceLocks ?? [],
-    conflictsWith: task.conflicts_with ?? task.conflictsWith ?? [],
-    commitPolicy: task.commit_policy ?? task.commitPolicy ?? {},
     dependencies: (task.dependencies || []).map((dependency: any) => ({
       id: dependency.id,
       title: dependency.title,

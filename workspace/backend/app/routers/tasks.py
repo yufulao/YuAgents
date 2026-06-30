@@ -8,7 +8,7 @@ shared assignment/claim/result state.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
@@ -26,25 +26,6 @@ router = APIRouter(prefix="/v1", tags=["Workspace Tasks"])
 
 TASK_STATUSES = {"todo", "in_progress", "in_review", "done", "cancelled"}
 TASK_PRIORITIES = {"low", "normal", "high", "urgent"}
-TASK_LANE_TYPES = {
-    "unspecified",
-    "coordination",
-    "read",
-    "read_only",
-    "write",
-    "implementation",
-    "verification",
-    "vq",
-    "review",
-    "test",
-    "docs",
-    "release",
-    "handoff",
-}
-IMPLEMENTATION_LANE_TYPES = {"write", "implementation"}
-SUPPORT_LANE_TYPES = {"read", "read_only", "test", "docs", "release"}
-REVIEW_LANE_TYPES = {"verification", "vq", "review"}
-COMMIT_GATE_LOCK_PREFIXES = ("repo:",)
 
 
 class CreateWorkspaceTaskRequest(BaseModel):
@@ -56,11 +37,6 @@ class CreateWorkspaceTaskRequest(BaseModel):
     priority: str = "normal"
     status: str = "todo"
     depends_on: List[str] = Field(default_factory=list)
-    lane_type: str = "unspecified"
-    write_scope: List[str] = Field(default_factory=list)
-    resource_locks: List[str] = Field(default_factory=list)
-    conflicts_with: List[str] = Field(default_factory=list)
-    commit_policy: Dict[str, Any] = Field(default_factory=dict)
     parent_task_id: Optional[str] = None
     source: Optional[str] = None
 
@@ -80,19 +56,7 @@ class UpdateWorkspaceTaskRequest(BaseModel):
     description: Optional[str] = None
     result: Optional[str] = None
     depends_on: Optional[List[str]] = None
-    lane_type: Optional[str] = None
-    write_scope: Optional[List[str]] = None
-    resource_locks: Optional[List[str]] = None
-    conflicts_with: Optional[List[str]] = None
-    commit_policy: Optional[Dict[str, Any]] = None
     accepted_by: Optional[str] = None
-
-
-class ScheduleWorkspaceTasksRequest(BaseModel):
-    network: str
-    channel: Optional[str] = None
-    source: str = "openagents:system"
-    limit: int = Field(default=10, ge=1, le=50)
 
 
 def _utcnow() -> datetime:
@@ -125,74 +89,6 @@ def _normalize_agent_name(value: Optional[str]) -> Optional[str]:
     return name or None
 
 
-def _normalize_string_list(values: Optional[List[str]]) -> List[str]:
-    if not values:
-        return []
-    normalized: List[str] = []
-    seen = set()
-    for value in values:
-        if not isinstance(value, str):
-            continue
-        item = value.strip()
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        normalized.append(item)
-    return normalized
-
-
-def _is_commit_gate_lock(lock: str) -> bool:
-    normalized = (lock or "").strip().lower()
-    return any(normalized.startswith(prefix) for prefix in COMMIT_GATE_LOCK_PREFIXES)
-
-
-def _task_lock_set(task: WorkspaceTask) -> set[str]:
-    return {
-        lock
-        for lock in _normalize_string_list(task.resource_locks or [])
-        if not _is_commit_gate_lock(lock)
-    }
-
-
-def _task_conflict_summary(task: WorkspaceTask, active_tasks: List[WorkspaceTask]) -> dict:
-    explicit_conflicts = set(_normalize_string_list(task.conflicts_with or []))
-    locks = _task_lock_set(task)
-    conflicts = []
-    for other in active_tasks:
-        if other.id == task.id:
-            continue
-        if other.status not in {"todo", "in_progress", "in_review"}:
-            continue
-        shared_locks = sorted(locks & _task_lock_set(other))
-        explicit = other.id in explicit_conflicts or task.id in set(_normalize_string_list(other.conflicts_with or []))
-        if shared_locks or explicit:
-            conflicts.append({
-                "task_id": other.id,
-                "title": other.title,
-                "status": other.status,
-                "owner": other.claimed_by or other.assignee,
-                "shared_locks": shared_locks,
-                "explicit": explicit,
-            })
-    return {
-        "conflicts": conflicts,
-        "parallel_safe": not conflicts,
-    }
-
-
-def _blocking_active_task(db: Session, task: WorkspaceTask) -> Optional[dict]:
-    active_tasks = db.execute(
-        select(WorkspaceTask).where(
-            WorkspaceTask.workspace_id == task.workspace_id,
-            WorkspaceTask.status.in_(["in_progress", "in_review"]),
-            WorkspaceTask.id != task.id,
-        )
-    ).scalars().all()
-    summary = _task_conflict_summary(task, active_tasks)
-    conflicts = summary.get("conflicts") or []
-    return conflicts[0] if conflicts else None
-
-
 def _resolve_task_event_source(task: WorkspaceTask, requested_source: Optional[str]) -> str:
     if not _is_unknown_source(requested_source):
         return requested_source.strip()
@@ -220,11 +116,6 @@ def _serialize_task(task: WorkspaceTask) -> dict:
         "created_by": task.created_by,
         "result": task.result,
         "depends_on": task.depends_on or [],
-        "lane_type": task.lane_type or "unspecified",
-        "write_scope": task.write_scope or [],
-        "resource_locks": task.resource_locks or [],
-        "conflicts_with": task.conflicts_with or [],
-        "commit_policy": task.commit_policy or {},
         "accepted_by": task.accepted_by,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
@@ -298,7 +189,7 @@ async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: 
     channel = task.channel_name or "default"
     assignee = _normalize_agent_name(task.assignee)
     _ensure_assignee_channel_participant(db, str(workspace.id), channel, assignee)
-    mention = f"@{assignee} " if assignee and action in {"created", "updated", "scheduled"} else ""
+    mention = f"@{assignee} " if assignee and action in {"created", "updated"} else ""
     status = task.status or "todo"
     content = f"{mention}Workspace task {action}: [{status}] {task.title}"
     if task.result and action in {"updated", "completed"}:
@@ -314,155 +205,10 @@ async def _emit_task_event(db: Session, workspace, task: WorkspaceTask, action: 
         },
         metadata={
             "workspace_task_id": task.id,
-            "target_agents": [assignee] if assignee and action in {"created", "updated", "scheduled"} else [],
+            "target_agents": [assignee] if assignee and action in {"created", "updated"} else [],
         },
     )
     await _emit_event(event, workspace, db, token=token)
-
-
-def _task_dependencies_done(task: WorkspaceTask, task_by_id: dict[str, WorkspaceTask]) -> bool:
-    for dep_id in _normalize_string_list(task.depends_on or []):
-        dep = task_by_id.get(dep_id)
-        if not dep or dep.status != "done":
-            return False
-    return True
-
-
-def _task_conflicts_with_any(task: WorkspaceTask, active_tasks: List[WorkspaceTask]) -> bool:
-    return bool(_task_conflict_summary(task, active_tasks).get("conflicts"))
-
-
-def _free_channel_agents(db: Session, workspace_id: str, channel_name: str) -> List[str]:
-    channel = db.execute(
-        select(Channel).where(
-            Channel.workspace_id == workspace_id,
-            Channel.name == channel_name,
-            Channel.status == "active",
-        )
-    ).scalar_one_or_none()
-    if not channel:
-        return []
-    channel_agents = [
-        row[0]
-        for row in db.execute(
-            select(ChannelMember.agent_name).where(ChannelMember.channel_id == channel.id)
-        ).all()
-    ]
-    if not channel_agents:
-        return []
-    members = db.execute(
-        select(WorkspaceMember).where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.agent_name.in_(channel_agents),
-            WorkspaceMember.status == "online",
-        )
-    ).scalars().all()
-    busy_rows = db.execute(
-        select(WorkspaceTask).where(
-            WorkspaceTask.workspace_id == workspace_id,
-            WorkspaceTask.channel_name == channel_name,
-            WorkspaceTask.status.in_(["todo", "in_progress", "in_review"]),
-            or_(WorkspaceTask.assignee.is_not(None), WorkspaceTask.claimed_by.is_not(None)),
-        )
-    ).scalars().all()
-    busy_agents = {
-        agent
-        for task in busy_rows
-        for agent in (task.assignee, task.claimed_by)
-        if agent
-    }
-    free = [m.agent_name for m in members if m.agent_name not in busy_agents]
-    master = channel.master_agent
-    if master and len(free) > 1:
-        non_master = [agent for agent in free if agent != master]
-        if non_master:
-            free = non_master + [master]
-    return free
-
-
-def _lane_rank(task: WorkspaceTask) -> int:
-    lane = (task.lane_type or "unspecified").lower()
-    if lane in IMPLEMENTATION_LANE_TYPES:
-        return 0
-    if lane in SUPPORT_LANE_TYPES:
-        return 1
-    if lane in REVIEW_LANE_TYPES:
-        return 2
-    if lane in {"coordination", "handoff"}:
-        return 3
-    return 4
-
-
-def _priority_rank(task: WorkspaceTask) -> tuple[int, int, datetime, str]:
-    priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
-    return (
-        priority_order.get(task.priority or "normal", 2),
-        _lane_rank(task),
-        task.created_at or _utcnow(),
-        task.id,
-    )
-
-
-async def _schedule_ready_tasks(
-    db: Session,
-    workspace,
-    channel_name: Optional[str],
-    source: str,
-    token: Optional[str],
-    *,
-    limit: int = 10,
-) -> List[WorkspaceTask]:
-    """Assign ready unowned tasks to free channel agents and emit wake events."""
-    if not channel_name:
-        return []
-    workspace_id = str(workspace.id)
-    free_agents = _free_channel_agents(db, workspace_id, channel_name)
-    if not free_agents:
-        return []
-
-    tasks = db.execute(
-        select(WorkspaceTask).where(
-            WorkspaceTask.workspace_id == workspace_id,
-            WorkspaceTask.channel_name == channel_name,
-            WorkspaceTask.status.in_(["todo", "in_progress", "in_review", "done"]),
-        )
-    ).scalars().all()
-    task_by_id = {task.id: task for task in tasks}
-    active_running = [
-        task
-        for task in tasks
-        if task.status in {"in_progress", "in_review"}
-    ]
-    candidates = sorted(
-        [
-            task
-            for task in tasks
-            if task.status == "todo"
-            and not task.assignee
-            and not task.claimed_by
-            and _task_dependencies_done(task, task_by_id)
-        ],
-        key=_priority_rank,
-    )
-
-    scheduled: List[WorkspaceTask] = []
-    selected_active = list(active_running)
-    now = _utcnow()
-    for task in candidates:
-        if len(scheduled) >= limit or not free_agents:
-            break
-        if _task_conflicts_with_any(task, selected_active):
-            continue
-        assignee = free_agents.pop(0)
-        task.assignee = assignee
-        task.updated_at = now
-        scheduled.append(task)
-        selected_active.append(task)
-
-    for task in scheduled:
-        db.flush()
-        await _emit_task_event(db, workspace, task, "scheduled", source, token)
-    return scheduled
 
 
 @router.post("/workspace-tasks")
@@ -481,8 +227,6 @@ async def create_workspace_task(
         return json_response(ResponseCode.BAD_REQUEST, "Invalid task status")
     if body.priority not in TASK_PRIORITIES:
         return json_response(ResponseCode.BAD_REQUEST, "Invalid task priority")
-    if body.lane_type not in TASK_LANE_TYPES:
-        return json_response(ResponseCode.BAD_REQUEST, "Invalid task lane_type")
     if _is_unknown_source(body.source):
         return json_response(ResponseCode.BAD_REQUEST, "source is required")
     channel_name = _resolve_active_channel_name(db, str(workspace.id), body.channel)
@@ -504,12 +248,7 @@ async def create_workspace_task(
         priority=body.priority,
         assignee=assignee,
         created_by=created_by,
-        depends_on=_normalize_string_list(body.depends_on),
-        lane_type=body.lane_type,
-        write_scope=_normalize_string_list(body.write_scope),
-        resource_locks=_normalize_string_list(body.resource_locks),
-        conflicts_with=_normalize_string_list(body.conflicts_with),
-        commit_policy=body.commit_policy or {},
+        depends_on=body.depends_on or [],
         updated_at=now,
     )
     if task.status == "done":
@@ -517,7 +256,6 @@ async def create_workspace_task(
     db.add(task)
     db.flush()
     await _emit_task_event(db, workspace, task, "created", created_by, x_workspace_token)
-    await _schedule_ready_tasks(db, workspace, channel_name, created_by, x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})
 
@@ -556,47 +294,7 @@ def list_workspace_tasks(
     rows = db.execute(
         query.order_by(WorkspaceTask.created_at.asc(), WorkspaceTask.id.asc()).limit(limit)
     ).scalars().all()
-    serialized = []
-    active_tasks = rows if active else db.execute(
-        select(WorkspaceTask).where(
-            WorkspaceTask.workspace_id == str(workspace.id),
-            WorkspaceTask.status.in_(["todo", "in_progress", "in_review"]),
-        )
-    ).scalars().all()
-    for task in rows:
-        item = _serialize_task(task)
-        item["scheduling"] = _task_conflict_summary(task, active_tasks)
-        serialized.append(item)
-    return success_response({"tasks": serialized})
-
-
-@router.post("/workspace-tasks/schedule")
-async def schedule_workspace_tasks(
-    body: ScheduleWorkspaceTasksRequest,
-    db: Session = Depends(get_db),
-    x_workspace_token: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None),
-):
-    workspace = _resolve_workspace(db, body.network)
-    if not workspace:
-        return json_response(ResponseCode.NOT_FOUND, "Network not found")
-    if not _verify_workspace_access(workspace, x_workspace_token, authorization):
-        return json_response(ResponseCode.UNAUTHORIZED, "Invalid credentials")
-    if _is_unknown_source(body.source):
-        return json_response(ResponseCode.BAD_REQUEST, "source is required")
-    channel_name = _resolve_active_channel_name(db, str(workspace.id), body.channel)
-    if not channel_name:
-        return json_response(ResponseCode.BAD_REQUEST, "channel is required and must reference an active channel")
-    scheduled = await _schedule_ready_tasks(
-        db,
-        workspace,
-        channel_name,
-        body.source.strip(),
-        x_workspace_token,
-        limit=body.limit,
-    )
-    db.commit()
-    return success_response({"scheduled": [_serialize_task(task) for task in scheduled]})
+    return success_response({"tasks": [_serialize_task(t) for t in rows]})
 
 
 @router.post("/workspace-tasks/{task_id}/claim")
@@ -625,13 +323,6 @@ async def claim_workspace_task(
         return json_response(ResponseCode.CONFLICT, f"Task already claimed by {task.claimed_by}")
     if task.claimed_by == agent_name and task.status != "todo":
         return success_response({"task": _serialize_task(task)})
-    blocker = _blocking_active_task(db, task)
-    if blocker:
-        shared = ", ".join(blocker.get("shared_locks") or [])
-        detail = f"Task conflicts with active task {blocker['task_id']}"
-        if shared:
-            detail += f" on resource_locks: {shared}"
-        return json_response(ResponseCode.CONFLICT, detail)
 
     now = _utcnow()
     task.claimed_by = agent_name
@@ -684,19 +375,7 @@ async def update_workspace_task(
     if body.result is not None:
         task.result = body.result
     if body.depends_on is not None:
-        task.depends_on = _normalize_string_list(body.depends_on)
-    if body.lane_type is not None:
-        if body.lane_type not in TASK_LANE_TYPES:
-            return json_response(ResponseCode.BAD_REQUEST, "Invalid task lane_type")
-        task.lane_type = body.lane_type
-    if body.write_scope is not None:
-        task.write_scope = _normalize_string_list(body.write_scope)
-    if body.resource_locks is not None:
-        task.resource_locks = _normalize_string_list(body.resource_locks)
-    if body.conflicts_with is not None:
-        task.conflicts_with = _normalize_string_list(body.conflicts_with)
-    if body.commit_policy is not None:
-        task.commit_policy = body.commit_policy or {}
+        task.depends_on = body.depends_on
     if body.accepted_by is not None:
         task.accepted_by = body.accepted_by
     event_source = _resolve_task_event_source(task, body.source)
@@ -708,6 +387,5 @@ async def update_workspace_task(
     action = "completed" if task.status == "done" else "updated"
     db.flush()
     await _emit_task_event(db, workspace, task, action, event_source, x_workspace_token)
-    await _schedule_ready_tasks(db, workspace, task.channel_name, event_source, x_workspace_token)
     db.commit()
     return success_response({"task": _serialize_task(task)})

@@ -53,24 +53,12 @@ describe('workspace prompt budget', () => {
     const skill = buildRuntimeRuleSkillMd();
 
     assert.ok(prompt.includes('docs/*.md'));
-    assert.ok(prompt.includes('Scheduling is rolling-parallel'));
-    assert.ok(prompt.includes('rolling-parallel'));
-    assert.ok(prompt.includes('do not batch-barrier'));
-    assert.ok(prompt.includes('Write frontier first'));
-    assert.ok(prompt.includes('same-scope close only'));
-    assert.ok(prompt.includes('repo:* is commit gate only'));
-    assert.ok(prompt.includes('scope-aware'));
-    assert.ok(prompt.includes('resource_locks'));
+    assert.ok(prompt.includes('Scheduling is context-driven'));
     assert.ok(prompt.includes('Ambient is passive'));
     assert.ok(prompt.includes('Non-leads report evidence'));
-    assert.ok(prompt.includes('Plans: root/stage'));
-    assert.ok(prompt.includes('Never close last root'));
-    assert.ok(prompt.includes('GLOBAL_WORK_EXHAUSTED'));
     assert.ok(skill.includes('name: OpenAgents Runtime Rules'));
     assert.ok(skill.includes('/v1/agent-context'));
     assert.ok(skill.includes('shared task APIs'));
-    assert.ok(skill.includes('active plans'));
-    assert.ok(skill.includes('rolling-parallel'));
   });
 
   it('injects runtime rules into generated workspace skills', () => {
@@ -122,10 +110,6 @@ describe('workspace prompt budget', () => {
         assignee: '博丽灵梦',
         claimed_by: '博丽灵梦',
         description: 'QA verify mobile layout.',
-        lane_type: 'write',
-        write_scope: ['path:Src/UI'],
-        resource_locks: ['path:Src/UI'],
-        scheduling: { parallel_safe: false, conflicts: [{ task_id: 'task-2' }] },
       }],
       active_goals: [{
         id: 'goal-1',
@@ -134,15 +118,6 @@ describe('workspace prompt budget', () => {
         status: 'active',
         checkpoint: '等待 QA 证据',
       }],
-      scheduling_pressure: {
-        reason: 'UNDERUTILIZED_WRITERS',
-        free_writer_agents: ['八云紫'],
-        active_write_lanes: 0,
-        ready_unassigned_write_lanes: 0,
-        active_non_write_lanes: 1,
-        commit_gate_locks: ['repo:main'],
-        action: 'Create scoped write tasks.',
-      },
       runtime_rules: ['Do not flatten roles.'],
     });
 
@@ -152,16 +127,9 @@ describe('workspace prompt budget', () => {
     assert.ok(prompt.includes('Passive Ambient Messages'));
     assert.ok(prompt.includes('Active Shared Tasks'));
     assert.ok(prompt.includes('task-1: [in_progress] 移动端复测'));
-    assert.ok(prompt.includes('lane=write'));
-    assert.ok(prompt.includes('locks=path:Src/UI'));
-    assert.ok(prompt.includes('scheduling=CONFLICT'));
-    assert.ok(prompt.includes('Active Workspace Plans'));
-    assert.ok(prompt.includes('goal-1: [active/root_plan] 持续统筹 L1 批次'));
+    assert.ok(prompt.includes('Active Coordinator Goals'));
+    assert.ok(prompt.includes('goal-1: [active] 持续统筹 L1 批次'));
     assert.ok(prompt.includes('所有子任务 done 或明确 blocked'));
-    assert.ok(prompt.includes('last root needs successor'));
-    assert.ok(prompt.includes('Scheduling Pressure'));
-    assert.ok(prompt.includes('UNDERUTILIZED_WRITERS'));
-    assert.ok(prompt.includes('commit_gates=repo:main'));
     assert.ok(prompt.includes('Do not flatten roles.'));
   });
 
