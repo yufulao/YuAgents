@@ -643,6 +643,15 @@ class BaseAdapter {
           await this._ackMessage(msg);
           continue;
         }
+        if (msg.messageType === 'queue_edit') {
+          if (msgId) this._processedIds.add(msgId);
+          const channel = msg.sessionId || this.channelName || 'general';
+          const queueId = msg.metadata?.queue_id || String(msg.content || '').split(/\r?\n/, 1)[0].replace('__queue_edit:', '');
+          const newContent = msg.metadata?.queued_message ?? msg.metadata?.content ?? String(msg.content || '').replace(/^__queue_edit:[^\r\n]*(?:\r?\n)?/, '');
+          if (queueId && typeof newContent === 'string') await this._editQueuedMessage(channel, queueId, newContent);
+          await this._ackMessage(msg);
+          continue;
+        }
         incoming.push(msg);
       }
 
@@ -739,7 +748,7 @@ class BaseAdapter {
       if ((msg.senderType || '') !== 'agent') {
         try {
           await this.sendStatus(channel, 'message queued — will process after current task', {
-            queued_message: (msg.content || '').slice(0, 200),
+            queued_message: msg.content || '',
             queue_id: queueId,
           });
         } catch {}
@@ -820,6 +829,21 @@ class BaseAdapter {
     this._clearMessageInFlight(cancelled);
     await this._ackMessage(cancelled);
     this._log(`Cancelled queued message ${queueId} in ${channel}`);
+    return true;
+  }
+
+  async _editQueuedMessage(channel, queueId, content) {
+    const queue = this._channelQueues[channel];
+    if (!queue) return false;
+    const queued = queue.find((m) => m._queueId === queueId);
+    if (!queued) return false;
+    queued.content = String(content || '');
+    await this.sendStatus(channel, `queued message edited ${queueId}`, {
+      queued_message: queued.content,
+      queue_id: queueId,
+      queue_status: 'edited',
+    });
+    this._log(`Edited queued message ${queueId} in ${channel}`);
     return true;
   }
 
@@ -1015,13 +1039,16 @@ class BaseAdapter {
     return this._statusDedupeMs;
   }
 
-  _statusDedupeKey(channel, content) {
+  _statusDedupeKey(channel, content, metadata = {}) {
     if (/workspace api request/i.test(content)) return `${channel || ''}\n<workspace-api-status>`;
+    if (metadata.queue_id && metadata.queue_status === 'edited') {
+      return `${channel || ''}\n<queue-edit:${metadata.queue_id}:${metadata.queued_message || ''}>`;
+    }
     return `${channel || ''}\n${content}`;
   }
 
   _shouldSuppressStatus(channel, content, metadata) {
-    const key = this._statusDedupeKey(channel, content);
+    const key = this._statusDedupeKey(channel, content, metadata);
     const now = Date.now();
     const windowMs = this._statusDedupeWindowMs(content);
     const previous = this._recentStatusPosts.get(key);

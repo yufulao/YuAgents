@@ -450,6 +450,41 @@ describe('Daemon', () => {
     assert.deepEqual(adapter._channelQueues.general, []);
   });
 
+  it('BaseAdapter edits queued durable deliveries and reports updated content', async () => {
+    const adapter = new BaseAdapter({
+      workspaceId: 'ws',
+      channelName: 'general',
+      token: 'token',
+      agentName: 'agent-a',
+      endpoint: 'http://127.0.0.1:1',
+    });
+    adapter._log = () => {};
+    const sent = [];
+    adapter.client.sendMessage = async (_workspaceId, _channel, _token, content, opts) => {
+      sent.push({ content, opts });
+      return { ok: true };
+    };
+    const queued = { messageId: 'event-1', _deliveryId: 'delivery-1', _queueId: 'q-1', content: 'old content' };
+    adapter._channelQueues.general = [queued];
+
+    const edited = await adapter._editQueuedMessage('general', 'q-1', 'new content');
+
+    assert.equal(edited, true);
+    assert.equal(adapter._channelQueues.general[0].content, 'new content');
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].content, /queued message edited q-1/);
+    assert.equal(sent[0].opts.metadata.queue_id, 'q-1');
+    assert.equal(sent[0].opts.metadata.queue_status, 'edited');
+    assert.equal(sent[0].opts.metadata.queued_message, 'new content');
+
+    const editedAgain = await adapter._editQueuedMessage('general', 'q-1', 'newer content');
+
+    assert.equal(editedAgain, true);
+    assert.equal(adapter._channelQueues.general[0].content, 'newer content');
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].opts.metadata.queued_message, 'newer content');
+  });
+
   it('BaseAdapter processes old queued routed agent deliveries', async () => {
     const adapter = new BaseAdapter({
       workspaceId: 'ws',

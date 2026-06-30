@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { Circle, Loader2, Timer, MessageSquareMore, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { useWorkspace } from '@/lib/workspace-context';
 import { workspaceApi } from '@/lib/api';
 import type { TimerItem, TodoItem, WorkspaceMessage } from '@/lib/types';
@@ -64,6 +73,11 @@ export function ThreadStatusBar({
   const [timers, setTimers] = useState<TimerItem[]>([]);
   const [cancelledTodoIds, setCancelledTodoIds] = useState<Set<string>>(new Set());
   const [cancelledQueueIds, setCancelledQueueIds] = useState<Set<string>>(new Set());
+  const [editedQueueContent, setEditedQueueContent] = useState<Record<string, string>>({});
+  const [selectedQueue, setSelectedQueue] = useState<QueuedMessage | null>(null);
+  const [queueDraft, setQueueDraft] = useState('');
+  const [queueSaving, setQueueSaving] = useState(false);
+  const [queueError, setQueueError] = useState('');
 
   const todoRefreshSignal = useMemo(() => {
     const relevant = messages.filter((m) =>
@@ -149,10 +163,10 @@ export function ThreadStatusBar({
       if (seenContent.has(contentKey)) continue;
       seen.add(qid);
       seenContent.add(contentKey);
-      queued.push({ queueId: qid, content });
+      queued.push({ queueId: qid, content: editedQueueContent[qid] ?? content });
     }
     return queued.reverse();
-  }, [messages, cancelledQueueIds]);
+  }, [messages, cancelledQueueIds, editedQueueContent]);
 
   const pendingCount = channelTodos.filter((t) => t.status === 'pending').length;
   const inProgressCount = channelTodos.filter((t) => t.status === 'in_progress').length;
@@ -193,6 +207,32 @@ export function ThreadStatusBar({
     } catch {}
     refreshTodos();
   }, [channelName, refreshTodos]);
+
+  const handleOpenQueued = useCallback((queue: QueuedMessage) => {
+    setSelectedQueue(queue);
+    setQueueDraft(queue.content);
+    setQueueError('');
+  }, []);
+
+  const handleSaveQueued = useCallback(async () => {
+    if (!selectedQueue) return;
+    const content = queueDraft.trim();
+    if (!content) {
+      setQueueError('队列消息不能为空');
+      return;
+    }
+    setQueueSaving(true);
+    setQueueError('');
+    try {
+      await workspaceApi.updateQueuedMessage(channelName, selectedQueue.queueId, content);
+      setEditedQueueContent((prev) => ({ ...prev, [selectedQueue.queueId]: content }));
+      setSelectedQueue(null);
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : '保存队列消息失败');
+    } finally {
+      setQueueSaving(false);
+    }
+  }, [channelName, queueDraft, selectedQueue]);
 
   const hasContent = pendingCount > 0 || inProgressCount > 0 || activeTimers.length > 0 || queuedMessages.length > 0;
   if (!hasContent) {
@@ -346,17 +386,29 @@ export function ThreadStatusBar({
       {queuedMessages.map((q) => (
         <div
           key={q.queueId}
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenQueued(q)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleOpenQueued(q);
+            }
+          }}
           className={cn(
-            'grid w-full max-w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-blue-500 dark:text-blue-400',
-            isSidebar && 'transition-colors hover:bg-blue-500/10',
+            'grid w-full max-w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-left text-blue-500 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-blue-400',
           )}
+          title="查看和编辑队列消息"
         >
           <MessageSquareMore className="mt-0.5 size-3 shrink-0" />
           <span className="min-w-0 break-words leading-snug [overflow-wrap:anywhere]">
             Queued: {q.content.length > 60 ? q.content.slice(0, 60) + '…' : q.content}
           </span>
           <button
-            onClick={() => handleCancelQueued(q.queueId)}
+            onClick={(event) => {
+              event.stopPropagation();
+              handleCancelQueued(q.queueId);
+            }}
             className={cancelButtonClass}
             title="删除队列消息"
             aria-label="删除队列消息"
@@ -365,6 +417,45 @@ export function ThreadStatusBar({
           </button>
         </div>
       ))}
+      <Dialog open={!!selectedQueue} onOpenChange={(open) => !open && setSelectedQueue(null)}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquareMore className="size-4 text-blue-500" />
+              队列消息详情
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-[11px] text-muted-foreground">Queue ID: {selectedQueue?.queueId}</div>
+            <Textarea
+              value={queueDraft}
+              onChange={(event) => setQueueDraft(event.target.value)}
+              className="min-h-[180px] resize-y text-sm"
+              aria-label="队列消息内容"
+            />
+            {queueError && <div className="text-xs text-destructive">{queueError}</div>}
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setSelectedQueue(null)} disabled={queueSaving}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!selectedQueue) return;
+                handleCancelQueued(selectedQueue.queueId);
+                setSelectedQueue(null);
+              }}
+              disabled={queueSaving || !selectedQueue}
+            >
+              删除
+            </Button>
+            <Button onClick={handleSaveQueued} disabled={queueSaving || !selectedQueue || !queueDraft.trim()}>
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

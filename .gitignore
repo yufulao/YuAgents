@@ -235,6 +235,7 @@ docs/projects
 .mcp.json
 /*.png
 *.db
+*.db-journal
 *.sqlite
 .next/
 .playwright-mcp/

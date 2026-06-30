@@ -932,6 +932,24 @@ class WorkspaceApi {
     });
   }
 
+  async updateQueuedMessage(channelName: string, queueId: string, content: string): Promise<void> {
+    await this.sendEvent({
+      type: 'workspace.message.posted',
+      source: 'human:user',
+      target: `channel/${channelName}`,
+      payload: {
+        content: `__queue_edit:${queueId}\n${content}`,
+        message_type: 'queue_edit',
+        queue_id: queueId,
+        queued_message: content,
+      },
+      metadata: {
+        queue_id: queueId,
+        queued_message: content,
+      },
+    });
+  }
+
   async listRoutines(): Promise<{ routines: import('./types').RoutineItem[] }> {
     const params = new URLSearchParams({ network: this.workspaceId });
     const raw = await this.request<{ routines: Record<string, unknown>[] }>(`/v1/routines?${params}`);
