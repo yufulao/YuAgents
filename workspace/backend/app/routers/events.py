@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, case, cast, func, or_, select, Text
+from sqlalchemy import and_, case, cast, or_, select, Text
 from sqlalchemy.orm import Session
 
 from app import cache
@@ -959,43 +959,43 @@ def latest_per_channel(
     if not _verify_workspace_access(workspace, x_workspace_token, authorization):
         return json_response(ResponseCode.UNAUTHORIZED, "Invalid workspace credentials")
 
-    channel_targets = [
-        f"channel/{name}"
-        for name in visible_channel_names(
-            db,
-            workspace,
-            member=member,
-            session_id=session_id,
-            human_email=human_email_from_authorization(authorization),
-            include_public=member is None,
-        )
-    ]
-    if not channel_targets:
-        return success_response({"channels": {}})
-
-    # Window function: ROW_NUMBER() OVER (PARTITION BY target ORDER BY timestamp DESC)
-    row_num = func.row_number().over(
-        partition_by=EventRecord.target,
-        order_by=EventRecord.timestamp.desc(),
-    ).label("rn")
-
-    inner = (
-        select(EventRecord, row_num)
-        .where(
-            EventRecord.network_id == workspace.id,
-            EventRecord.target.startswith("channel/"),
-            EventRecord.target.in_(channel_targets),
-        )
+    visible_names = visible_channel_names(
+        db,
+        workspace,
+        member=member,
+        session_id=session_id,
+        human_email=human_email_from_authorization(authorization),
+        include_public=member is None,
     )
+    if not visible_names:
+        return success_response({"channels": {}})
+    channel_rows = db.execute(
+        select(Channel.name, Channel.last_event_at).where(
+            Channel.workspace_id == workspace.id,
+            Channel.status != "deleted",
+            Channel.name.in_(visible_names),
+        )
+    ).all()
 
-    if type:
-        inner = inner.where(EventRecord.type.startswith(type))
-
-    inner = inner.subquery()
-
-    # Select only the first row per partition
-    query = select(inner).where(inner.c.rn == 1)
-    rows = db.execute(query).all()
+    rows = []
+    for channel_name, last_event_at in channel_rows:
+        target = f"channel/{channel_name}"
+        query = (
+            select(EventRecord)
+            .where(
+                EventRecord.network_id == workspace.id,
+                EventRecord.target == target,
+            )
+            .order_by(EventRecord.timestamp.desc(), EventRecord.id.desc())
+            .limit(1)
+        )
+        if type:
+            query = query.where(EventRecord.type.startswith(type))
+        if last_event_at:
+            query = query.where(EventRecord.timestamp <= last_event_at)
+        row = db.execute(query).scalar_one_or_none()
+        if row is not None:
+            rows.append(row)
 
     channels = {}
     for row in rows:
@@ -1006,7 +1006,7 @@ def latest_per_channel(
             "source": row.source,
             "target": row.target,
             "payload": row.payload,
-            "metadata": row.metadata,
+            "metadata": row.metadata_,
             "timestamp": row.timestamp,
             "visibility": row.visibility,
         }

@@ -97,15 +97,28 @@ def _waiting_todos_by_agent(db: Session, workspace_id: str) -> set[str]:
 
 
 def active_task_activity_by_agent(db: Session, workspace_id: str) -> dict[str, AgentTaskActivity]:
-    tasks = db.execute(
-        select(WorkspaceTask).where(WorkspaceTask.workspace_id == str(workspace_id))
-    ).scalars().all()
-    task_by_id = {str(task.id): task for task in tasks}
     active_tasks = [
-        task for task in tasks
-        if task.status in ACTIVE_TASK_STATUSES and (task.claimed_by or task.assignee)
+        task for task in db.execute(
+            select(WorkspaceTask).where(
+                WorkspaceTask.workspace_id == str(workspace_id),
+                WorkspaceTask.status.in_(ACTIVE_TASK_STATUSES),
+            )
+        ).scalars().all()
+        if task.claimed_by or task.assignee
     ]
     active_tasks.sort(key=_sort_key, reverse=True)
+
+    dep_ids: set[str] = set()
+    for task in active_tasks:
+        dep_ids.update(_parse_depends_on(task.depends_on))
+    dependencies = db.execute(
+        select(WorkspaceTask).where(
+            WorkspaceTask.workspace_id == str(workspace_id),
+            WorkspaceTask.id.in_(dep_ids),
+        )
+    ).scalars().all() if dep_ids else []
+    task_by_id = {str(task.id): task for task in [*active_tasks, *dependencies]}
+
     waiting_todos = _waiting_todos_by_agent(db, workspace_id)
     now = datetime.utcnow()
 

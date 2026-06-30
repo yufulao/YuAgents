@@ -428,9 +428,6 @@ try {
 } finally {
   Stop-ChildProcess $Backend
   Stop-ChildProcess $Frontend
-  Stop-LocalWebProcesses
-  Stop-ListeningPort $LocalBackendPort
-  Stop-ListeningPort $LocalFrontendPort
   Close-LocalWebJob
   Remove-Item -LiteralPath $BackendCmd, $FrontendCmd -Force -ErrorAction SilentlyContinue
 }

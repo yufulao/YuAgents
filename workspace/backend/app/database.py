@@ -7,7 +7,7 @@ Uses SQLAlchemy with any PostgreSQL database (not Supabase-specific).
 
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.pool import NullPool, QueuePool
 
@@ -64,7 +64,12 @@ _pool_kwargs = (
 # keepalives_interval=10: probe every 10s
 # keepalives_count=3: drop the conn after 3 failed probes
 _connect_args = {}
-if not _is_sqlite:
+if _is_sqlite:
+    _connect_args.update({
+        "check_same_thread": False,
+        "timeout": 30,
+    })
+else:
     _connect_args.update({
         "keepalives": 1,
         "keepalives_idle": 30,
@@ -84,6 +89,19 @@ if _is_pgbouncer:
     _engine_kwargs["execution_options"] = {"no_cache": True}
 
 engine = create_engine(config.DATABASE_URL, **_engine_kwargs)
+
+
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

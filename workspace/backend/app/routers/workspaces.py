@@ -188,6 +188,41 @@ def _merge_enabled_skills(member_skills: dict | None, cfg_skills: dict | None) -
     return merged or None
 
 
+def _is_data_url(value: object) -> bool:
+    return isinstance(value, str) and value.startswith("data:")
+
+
+def _compact_profile(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    compact = dict(value)
+    if _is_data_url(compact.get("avatarUrl")):
+        compact["avatarUrl"] = None
+    return compact
+
+
+def _compact_settings(settings: dict | None) -> dict:
+    compact = dict(settings or {})
+    profiles = compact.get("local_user_profiles")
+    if isinstance(profiles, dict):
+        compact["local_user_profiles"] = {
+            key: _compact_profile(value)
+            for key, value in profiles.items()
+        }
+    if "last_local_user_profile" in compact:
+        compact["last_local_user_profile"] = _compact_profile(compact["last_local_user_profile"])
+    return compact
+
+
+def _compact_avatar_payload(avatar: dict | None) -> dict | None:
+    if not isinstance(avatar, dict):
+        return avatar
+    compact = dict(avatar)
+    if compact.get("type") == "upload" and _is_data_url(compact.get("value")):
+        compact["value"] = ""
+    return compact
+
+
 def _format_member_agent(
     m: WorkspaceMember,
     now: datetime,
@@ -211,6 +246,7 @@ def _format_member_agent(
     if task_activity and (not activity_summary or metadata_state in {"", "idle", "online", "offline", "stopped"}):
         activity_summary = task_activity_summary(task_activity)
         current_channel = current_channel or task_activity.task.channel_name
+    avatar_url = avatar.get("value") if avatar.get("type") == "upload" else None
     return {
         "id": cfg.id if cfg else f"{m.workspace_id}:{m.agent_name}",
         "handle": m.agent_name,
@@ -227,8 +263,8 @@ def _format_member_agent(
         "isConnected": projected["is_connected"],
         "hasActiveWork": projected["has_active_work"],
         "description": m.description,
-        "avatar": avatar,
-        "avatarUrl": avatar.get("value") if avatar.get("type") == "upload" else None,
+        "avatar": _compact_avatar_payload(avatar),
+        "avatarUrl": avatar_url,
         "serverHost": m.server_host,
         "workingDir": cfg.working_dir if cfg and cfg.working_dir is not None else m.working_dir,
         "enabledSkills": _merge_enabled_skills(
@@ -250,15 +286,66 @@ def _format_member_agent(
     }
 
 
+def _format_member_summary(
+    m: WorkspaceMember,
+    now: datetime,
+    cfg: AgentConfig | None = None,
+    task_activity: AgentTaskActivity | None = None,
+) -> dict:
+    projected = project_agent_status(
+        m,
+        now,
+        AGENT_TIMEOUT,
+        cfg,
+        active_task=task_activity is not None,
+        waiting_on_dependency=task_activity.waiting_on_dependency if task_activity else False,
+    )
+    return {
+        "id": cfg.id if cfg else f"{m.workspace_id}:{m.agent_name}",
+        "handle": m.agent_name,
+        "agentName": m.agent_name,
+        "displayName": cfg.display_name if cfg else m.agent_name,
+        "role": m.role,
+        "agentType": cfg.agent_type if cfg else m.agent_type,
+        "status": projected["display_status"],
+        "lifecycleState": projected["activity_state"],
+        "presenceStatus": projected["presence_status"],
+        "activityState": projected["activity_state"],
+        "workloadState": projected["workload_state"],
+        "displayStatus": projected["display_status"],
+        "isConnected": projected["is_connected"],
+        "hasActiveWork": projected["has_active_work"],
+        "description": m.description,
+        "avatar": _default_avatar(cfg.display_name if cfg else m.agent_name),
+        "avatarUrl": None,
+        "serverHost": m.server_host,
+        "workingDir": cfg.working_dir if cfg and cfg.working_dir is not None else m.working_dir,
+        "enabledSkills": None,
+        "modelProvider": None,
+        "model": None,
+        "modelName": None,
+        "mode": None,
+        "quality": None,
+        "credentialRef": None,
+        "activitySummary": None,
+        "currentChannel": None,
+        "activeTask": None,
+        "managedMetadata": None,
+        "lastHeartbeatAt": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
+        "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
+    }
+
+
 def _format_workspace(
     ws: Workspace,
     members: list,
     now: datetime,
     task_activity_by_agent: dict[str, AgentTaskActivity] | None = None,
+    summary: bool = False,
 ) -> dict:
     task_activity_by_agent = task_activity_by_agent or {}
     agents = [
-        _format_member_agent(
+        (_format_member_summary if summary else _format_member_agent)(
             m,
             now,
             getattr(m, "_agent_config", None),
@@ -267,7 +354,7 @@ def _format_workspace(
         for m in members
     ]
 
-    settings = ws.settings or {}
+    settings = _compact_settings(ws.settings or {})
     return {
         "workspaceId": str(ws.id),
         "slug": ws.slug,
@@ -462,7 +549,8 @@ def list_workspaces(
             ws,
             ws.members,
             now,
-            active_task_activity_by_agent(db, str(ws.id)),
+            {},
+            summary=True,
         )
         for ws in workspaces
     ]
@@ -535,7 +623,8 @@ def resolve_workspace(
         workspace,
         members,
         now,
-        active_task_activity_by_agent(db, str(workspace.id)),
+        {},
+        summary=True,
     ))
 
 

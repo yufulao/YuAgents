@@ -50,6 +50,19 @@ router = APIRouter(prefix="/v1", tags=["Network"])
 AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
 
 
+def _is_data_url(value: object) -> bool:
+    return isinstance(value, str) and value.startswith("data:")
+
+
+def _compact_avatar_payload(avatar: dict | None) -> dict | None:
+    if not isinstance(avatar, dict):
+        return avatar
+    compact = dict(avatar)
+    if compact.get("type") == "upload" and _is_data_url(compact.get("value")):
+        compact["value"] = ""
+    return compact
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -442,7 +455,7 @@ def discover(
             "is_connected": projected["is_connected"],
             "has_active_work": projected["has_active_work"],
             "agent_type": cfg.agent_type if cfg else m.agent_type,
-            "avatar": cfg.avatar if cfg else {"type": "pixel", "value": m.agent_name},
+            "avatar": _compact_avatar_payload(cfg.avatar) if cfg else {"type": "pixel", "value": m.agent_name},
             "avatar_url": (cfg.avatar or {}).get("value") if cfg and (cfg.avatar or {}).get("type") == "upload" else None,
             "server_host": m.server_host,
             "working_dir": cfg.working_dir if cfg and cfg.working_dir is not None else m.working_dir,
