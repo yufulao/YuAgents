@@ -397,15 +397,28 @@ try {
   Write-Host "Press Ctrl+C to stop backend and frontend."
   Start-Process $LocalFrontendUrl
 
+  $backendFailures = 0
+  $frontendFailures = 0
+  $maxHealthFailures = 6
   while ($true) {
     $backendHealthy = Test-Url "$LocalBackendUrl/v1/agent-catalog" 3
     $frontendHealthy = Test-Url $LocalFrontendUrl 3
-    if (-not $backendHealthy) {
+    if ($backendHealthy) {
+      $backendFailures = 0
+    } else {
+      $backendFailures += 1
+    }
+    if ($frontendHealthy) {
+      $frontendFailures = 0
+    } else {
+      $frontendFailures += 1
+    }
+    if ($backendFailures -ge $maxHealthFailures) {
       Show-LogTail $BackendErr
       Show-LogTail $BackendLog
       throw "Backend API stopped responding. Check $BackendLog and $BackendErr."
     }
-    if (-not $frontendHealthy) {
+    if ($frontendFailures -ge $maxHealthFailures) {
       Show-LogTail $FrontendErr
       Show-LogTail $FrontendLog
       throw "Frontend Web page stopped responding. Check $FrontendLog and $FrontendErr."
