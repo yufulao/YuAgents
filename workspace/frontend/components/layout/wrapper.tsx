@@ -236,6 +236,7 @@ export function Wrapper() {
             <div className="relative flex-1 min-w-0">
               <MonitorGrid />
               {isAgentPanelOpen && <AgentProfilePanel />}
+              {isQueuePanelOpen && <QueueDetailPanel />}
             </div>
           ) : (
             <>

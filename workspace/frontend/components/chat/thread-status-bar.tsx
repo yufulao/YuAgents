@@ -375,40 +375,46 @@ export function ThreadStatusBar({
       )}
 
       {/* Queued messages */}
-      {queuedMessages.map((q) => (
-        <div
-          key={q.queueId}
-          role="button"
-          tabIndex={0}
-          onClick={() => handleOpenQueued(q)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              handleOpenQueued(q);
-            }
-          }}
-          className={cn(
-            'grid w-full max-w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-left text-blue-500 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-blue-400',
-          )}
-          title="查看和编辑队列消息"
-        >
-          <MessageSquareMore className="mt-0.5 size-3 shrink-0" />
-          <span className="min-w-0 break-words leading-snug [overflow-wrap:anywhere]">
-            Queued: {q.content.length > 60 ? q.content.slice(0, 60) + '…' : q.content}
-          </span>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              handleCancelQueued(q.queueId);
+      {queuedMessages.map((q) => {
+        const isSelected = selectedQueueItem?.channelName === channelName && selectedQueueItem.queueId === q.queueId;
+
+        return (
+          <div
+            key={q.queueId}
+            role="button"
+            aria-pressed={isSelected}
+            tabIndex={0}
+            onClick={() => handleOpenQueued(q)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleOpenQueued(q);
+              }
             }}
-            className={cancelButtonClass}
-            title="删除队列消息"
-            aria-label="删除队列消息"
+            className={cn(
+              'grid w-full max-w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-left text-blue-500 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-blue-400',
+              isSelected && 'border-blue-500/70 bg-blue-500/15 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.25)]',
+            )}
+            title="查看和编辑队列消息"
           >
-            <X className="size-3" />
-          </button>
-        </div>
-      ))}
+            <MessageSquareMore className="mt-0.5 size-3 shrink-0" />
+            <span className="min-w-0 break-words leading-snug [overflow-wrap:anywhere]">
+              Queued: {q.content.length > 60 ? q.content.slice(0, 60) + '…' : q.content}
+            </span>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                handleCancelQueued(q.queueId);
+              }}
+              className={cancelButtonClass}
+              title="删除队列消息"
+              aria-label="删除队列消息"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
