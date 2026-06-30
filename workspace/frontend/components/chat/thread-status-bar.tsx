@@ -42,6 +42,9 @@ function truncateTodo(content: string, max = 72): string {
   return normalized.length > max ? `${normalized.slice(0, max)}…` : normalized;
 }
 
+const cancelButtonClass =
+  'inline-flex size-5 shrink-0 items-center justify-center rounded border border-zinc-300 bg-background text-muted-foreground shadow-sm transition-colors hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive dark:border-zinc-700';
+
 export function ThreadStatusBar({
   channelName,
   messages = [],
@@ -238,8 +241,9 @@ export function ThreadStatusBar({
                   <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Agent todos</span>
                   <button
                     onClick={handleCancelTodos}
-                    className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-zinc-200 hover:text-foreground dark:hover:bg-zinc-700"
-                    title="Cancel all tasks"
+                    className={cancelButtonClass}
+                    title="取消全部任务"
+                    aria-label="取消全部任务"
                   >
                     <X className="size-3" />
                   </button>
@@ -274,8 +278,9 @@ export function ThreadStatusBar({
                 )}
                 <button
                   onClick={handleCancelTodos}
-                  className="ml-0.5 p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                  title="Cancel all tasks"
+                  className={cn(cancelButtonClass, 'ml-0.5')}
+                  title="取消全部任务"
+                  aria-label="取消全部任务"
                 >
                   <X className="size-3" />
                 </button>
@@ -283,7 +288,13 @@ export function ThreadStatusBar({
             )
           )}
           {activeTimers.map((t) => (
-            <span key={t.id} className="flex min-w-0 items-center gap-1">
+            <span
+              key={t.id}
+              className={cn(
+                'flex min-w-0 items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/5 px-1.5 py-1',
+                isSidebar ? 'w-full' : 'max-w-full',
+              )}
+            >
               <Timer className="size-3 text-amber-500" />
               <span className="min-w-0 truncate">
                 {t.targetAgent ? `@${t.targetAgent} ` : ''}
@@ -295,8 +306,9 @@ export function ThreadStatusBar({
               )}
               <button
                 onClick={() => handleCancelTimer(t.id)}
-                className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                title="Cancel timer"
+                className={cancelButtonClass}
+                title="删除 timer"
+                aria-label="删除 timer"
               >
                 <X className="size-3" />
               </button>
@@ -310,8 +322,8 @@ export function ThreadStatusBar({
         <div
           key={q.queueId}
           className={cn(
-            'flex min-w-0 items-start gap-1.5 text-blue-500 dark:text-blue-400',
-            isSidebar && 'rounded-md px-1 py-1 transition-colors hover:bg-muted/60',
+            'flex min-w-0 items-start gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-1.5 py-1 text-blue-500 dark:text-blue-400',
+            isSidebar && 'transition-colors hover:bg-blue-500/10',
           )}
         >
           <MessageSquareMore className="size-3 shrink-0" />
@@ -320,8 +332,9 @@ export function ThreadStatusBar({
           </span>
           <button
             onClick={() => handleCancelQueued(q.queueId)}
-            className="shrink-0 p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-            title="Cancel queued message"
+            className={cancelButtonClass}
+            title="删除队列消息"
+            aria-label="删除队列消息"
           >
             <X className="size-3" />
           </button>
