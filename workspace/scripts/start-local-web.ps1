@@ -401,29 +401,35 @@ try {
 
   $backendFailures = 0
   $frontendFailures = 0
+  $backendUnhealthyReported = $false
+  $frontendUnhealthyReported = $false
   $maxHealthFailures = 6
   while ($true) {
     $backendHealthy = Test-Url "$LocalBackendUrl/v1/agent-catalog" 3
     $frontendHealthy = Test-Url $LocalFrontendUrl 3
     if ($backendHealthy) {
       $backendFailures = 0
+      $backendUnhealthyReported = $false
     } else {
       $backendFailures += 1
     }
     if ($frontendHealthy) {
       $frontendFailures = 0
+      $frontendUnhealthyReported = $false
     } else {
       $frontendFailures += 1
     }
-    if ($backendFailures -ge $maxHealthFailures) {
+    if ($backendFailures -ge $maxHealthFailures -and -not $backendUnhealthyReported) {
       Show-LogTail $BackendErr
       Show-LogTail $BackendLog
-      throw "Backend API stopped responding. Check $BackendLog and $BackendErr."
+      Write-Warning "Backend API health checks are failing. Keeping local Web processes alive; check $BackendLog and $BackendErr."
+      $backendUnhealthyReported = $true
     }
-    if ($frontendFailures -ge $maxHealthFailures) {
+    if ($frontendFailures -ge $maxHealthFailures -and -not $frontendUnhealthyReported) {
       Show-LogTail $FrontendErr
       Show-LogTail $FrontendLog
-      throw "Frontend Web page stopped responding. Check $FrontendLog and $FrontendErr."
+      Write-Warning "Frontend Web page health checks are failing. Keeping local Web processes alive; check $FrontendLog and $FrontendErr."
+      $frontendUnhealthyReported = $true
     }
     Start-Sleep -Seconds 5
   }
