@@ -47,7 +47,7 @@ Write-Host "Starting remote-mode backend on :$BackendPort"
 $backendArgs = @(
   "-NoProfile",
   "-Command",
-  "cd '$BackendDir'; `$env:DATABASE_URL='sqlite:///$($DbPath.Replace('\','/'))'; `$env:CORS_ORIGINS='http://localhost:$FrontendPort'; `$env:WORKSPACE_CREATION_ENABLED='false'; `$env:WORKSPACE_DIRECTORY_ENABLED='false'; python -m uvicorn app.main:app --host 127.0.0.1 --port $BackendPort"
+  "cd '$BackendDir'; `$env:DATABASE_URL='sqlite:///$($DbPath.Replace('\','/'))'; `$env:CORS_ORIGINS='http://localhost:$FrontendPort'; `$env:WORKSPACE_CREATION_ENABLED='false'; `$env:WORKSPACE_DIRECTORY_ENABLED='false'; python local_server.py --host 127.0.0.1 --port $BackendPort"
 )
 $backend = Start-Process -FilePath "powershell" -ArgumentList $backendArgs -PassThru -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErrLog -WindowStyle Hidden
 

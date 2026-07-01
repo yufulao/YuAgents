@@ -297,8 +297,10 @@ function Stop-LocalWebProcesses {
       $lower = $cmd.ToLowerInvariant()
       (
         $lower.Contains($backendMatch) -and
-        $lower.Contains("uvicorn") -and
-        $lower.Contains("app.main:app")
+        (
+          ($lower.Contains("uvicorn") -and $lower.Contains("app.main:app")) -or
+          $lower.Contains("local_server.py")
+        )
       ) -or (
         $lower.Contains($frontendMatch) -and
         ($lower.Contains("npm run dev") -or $lower.Contains("next dev") -or $lower.Contains("next\dist\bin\next"))
@@ -359,7 +361,7 @@ try {
     "set `"CORS_ORIGINS=*`"",
     "set `"WORKSPACE_CREATION_ENABLED=true`"",
     "set `"WORKSPACE_DIRECTORY_ENABLED=true`"",
-    "`"$BackendPython`" -m uvicorn app.main:app --host $LocalBackendBind --port $LocalBackendPort"
+    "`"$BackendPython`" local_server.py --host $LocalBackendBind --port $LocalBackendPort"
   ) | Set-Content -Encoding ASCII -Path $BackendCmd
 
   Write-Host "Starting backend on $LocalBackendUrl"
