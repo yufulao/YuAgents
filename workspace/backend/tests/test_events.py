@@ -217,6 +217,74 @@ class TestSendEvent:
         assert "target_agents" in data["metadata"]
         assert "agent-alpha" in data["metadata"]["target_agents"]
 
+    def test_human_payload_mentions_route_to_all_mentioned_agents(self, client, workspace, db):
+        """Client-provided mentions are the authoritative multi-target list."""
+        channel_name = workspace["channel"]["name"]
+        for name in ["agent-beta", "agent-gamma"]:
+            join = client.post("/v1/join", json={
+                "agent_name": name,
+                "token": workspace["token"],
+                "network": workspace["id"],
+            })
+            assert join.status_code == 200
+            channel_join = client.post("/v1/events", json={
+                "type": "network.channel.join",
+                "source": "human:user1",
+                "target": f"channel/{channel_name}",
+                "payload": {"channel": channel_name, "agent_name": name},
+                "network": workspace["id"],
+            }, headers={"X-Workspace-Token": workspace["token"]})
+            assert channel_join.status_code == 200
+
+        resp = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {
+                "content": "认识一下，然后@agent-alpha，@agent-beta 和 @agent-gamma",
+                "mentions": ["agent-alpha", "agent-beta", "agent-gamma"],
+            },
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["metadata"]["target_agents"] == ["agent-alpha", "agent-beta", "agent-gamma"]
+        deliveries = db.query(AgentDelivery).filter_by(event_id=data["id"], delivery_kind="attention").all()
+        assert {d.agent_name for d in deliveries} == {"agent-alpha", "agent-beta", "agent-gamma"}
+
+    def test_human_text_mentions_allow_cjk_punctuation_boundaries(self, client, workspace):
+        """Fallback parsing catches @mentions adjacent to Chinese text or punctuation."""
+        channel_name = workspace["channel"]["name"]
+        for name in ["八云紫", "八云蓝", "博丽灵梦", "雾雨魔理沙"]:
+            join = client.post("/v1/join", json={
+                "agent_name": name,
+                "token": workspace["token"],
+                "network": workspace["id"],
+            })
+            assert join.status_code == 200
+            channel_join = client.post("/v1/events", json={
+                "type": "network.channel.join",
+                "source": "human:user1",
+                "target": f"channel/{channel_name}",
+                "payload": {"channel": channel_name, "agent_name": name},
+                "network": workspace["id"],
+            }, headers={"X-Workspace-Token": workspace["token"]})
+            assert channel_join.status_code == 200
+
+        resp = client.post("/v1/events", json={
+            "type": "workspace.message.posted",
+            "source": "human:user1",
+            "target": f"channel/{channel_name}",
+            "payload": {
+                "content": "大家相互了解一下，然后@八云紫 是老大，@八云蓝 做审查，@博丽灵梦 和 @雾雨魔理沙 落地实现",
+            },
+            "network": workspace["id"],
+        }, headers={"X-Workspace-Token": workspace["token"]})
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["metadata"]["target_agents"] == ["八云紫", "八云蓝", "博丽灵梦", "雾雨魔理沙"]
 
     def test_agent_message_master_no_targeting_in_single_agent_channel(self, client, workspace):
         """Master agent messages in single-agent channels have empty target_agents.

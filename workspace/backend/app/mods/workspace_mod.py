@@ -509,11 +509,41 @@ def _extract_mentions(content: str, known_agents: List[str]) -> List[str]:
     """Parse @agent-name mentions from message text, validated against known agents."""
     if not content or not known_agents:
         return []
-    found = []
+    matches = []
     for agent in sorted(known_agents, key=len, reverse=True):
-        pattern = rf"(?<!\S)@{re.escape(agent)}(?=$|\s|[.,!?;:，。！？；：、)\]）】])"
-        if re.search(pattern, content):
-            found.append(agent)
+        pattern = rf"(?<![A-Za-z0-9_])@{re.escape(agent)}(?=$|\s|[.,!?;:，。！？；：、)\]）】])"
+        match = re.search(pattern, content)
+        if match:
+            matches.append((match.start(), -len(agent), agent))
+    found = []
+    seen = set()
+    for _, _, agent in sorted(matches):
+        if agent in seen:
+            continue
+        found.append(agent)
+        seen.add(agent)
+    return found
+
+
+def _payload_mentions(payload: dict, known_agents: List[str]) -> List[str]:
+    """Return validated mentions supplied by clients, preserving sender order."""
+    if not isinstance(payload, dict):
+        return []
+    mentions = payload.get("mentions")
+    if not isinstance(mentions, list):
+        return []
+    known = set(known_agents)
+    found = []
+    seen = set()
+    for mention in mentions:
+        if not isinstance(mention, str):
+            continue
+        name = mention.strip()
+        if name.startswith("@"):
+            name = name[1:].strip()
+        if name in known and name not in seen:
+            found.append(name)
+            seen.add(name)
     return found
 
 
@@ -1153,7 +1183,7 @@ async def _handle_message_posted(event: Event, ctx: PipelineContext) -> Optional
         ]
     else:
         mention_candidates = participant_names
-    mentions = _extract_mentions(content, mention_candidates)
+    mentions = _payload_mentions(payload, mention_candidates) or _extract_mentions(content, mention_candidates)
 
     if mentions:
         # Explicit multi-mention fan-out is deterministic and parallel:
