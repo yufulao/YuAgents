@@ -24,6 +24,7 @@ const { buildCodexSystemPrompt } = require('./workspace-prompt');
 
 const IS_WINDOWS = process.platform === 'win32';
 const MAX_HISTORY_ENTRIES = 50;
+const DEFAULT_CODEX_TURN_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 
 function cleanEnvValue(value) {
   if (value === null || value === undefined) return '';
@@ -38,6 +39,12 @@ function dropEmptyCodexEnv(env) {
       delete env[key];
     }
   }
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(cleanEnvValue(value), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed > 0 ? parsed : 0;
 }
 
 class CodexAdapter extends BaseAdapter {
@@ -57,6 +64,7 @@ class CodexAdapter extends BaseAdapter {
     this._serviceTier = cleanEnvValue(env.CODEX_SERVICE_TIER) || cleanEnvValue(env.OPENAI_SERVICE_TIER);
     this._streamAgentThinking = !/^(0|false|no)$/i.test(cleanEnvValue(env.OPENAGENTS_STREAM_AGENT_THINKING));
     this._emitCommandStatus = !/^(0|false|no)$/i.test(cleanEnvValue(env.OPENAGENTS_EMIT_COMMAND_STATUS));
+    this._turnTimeoutMs = parsePositiveInteger(env.OPENAGENTS_CODEX_TURN_TIMEOUT_MS, DEFAULT_CODEX_TURN_TIMEOUT_MS);
 
     // Per-channel thread tracking (like Claude's session IDs)
     this._channelThreads = {};
@@ -461,18 +469,28 @@ class CodexAdapter extends BaseAdapter {
         if (result.interrupted) {
           return;
         }
+        if (result.timedOut) {
+          throw new Error(this._codexFailureMessage(result));
+        }
+        if (result.exitCode !== 0) {
+          if (threadId && attempt === 0) {
+            // Stale thread or transient resumed-turn failure — clear and retry fresh.
+            // Do this before considering partial streamed text. Codex can emit an
+            // intermediate agent_message and then fail while tools/network are still
+            // running; treating that partial text as success leaves tasks wedged.
+            this._log(`Codex turn failed for ${msgChannel}; clearing thread and retrying fresh`);
+            delete this._channelThreads[msgChannel];
+            this._saveSessions();
+            continue;
+          }
+          throw new Error(this._codexFailureMessage(result));
+        }
         if (this._isNoResponseText(result.responseText)) {
           return;
         }
         if (result.responseText) {
           await this.sendResponse(msgChannel, result.responseText);
           return;
-        } else if (result.exitCode !== 0 && threadId && attempt === 0) {
-          // Stale thread — clear and retry fresh
-          this._log(`Stale thread detected for ${msgChannel}, clearing and retrying`);
-          delete this._channelThreads[msgChannel];
-          this._saveSessions();
-          continue;
         } else if (deliveryPrompt.startsWith('Delivery kind: ambient')) {
           return;
         } else {
@@ -481,10 +499,24 @@ class CodexAdapter extends BaseAdapter {
         }
       } catch (e) {
         this._log(`Error in subprocess: ${e.message}`);
-        await this.sendError(msgChannel, `Error: ${e.message}`);
-        return;
+        throw e;
       }
     }
+  }
+
+  _codexFailureMessage(result = {}) {
+    if (result.timedOut) {
+      const minutes = this._turnTimeoutMs ? Math.round(this._turnTimeoutMs / 60000) : 0;
+      return minutes > 0
+        ? `Codex turn timed out after ${minutes} min`
+        : 'Codex turn timed out';
+    }
+    const details = [];
+    if (Array.isArray(result.turnErrors)) details.push(...result.turnErrors);
+    if (result.stderr) details.push(result.stderr);
+    const detail = this._redactSensitiveText(details.join('\n').trim()).replace(/\s+/g, ' ').trim();
+    const suffix = detail ? `: ${detail.slice(0, 300)}` : '';
+    return `Codex CLI exited with code ${result.exitCode ?? 'unknown'}${suffix}`;
   }
 
   _buildCodexExecCommand(msgChannel, attempt = 0) {
@@ -538,10 +570,22 @@ class CodexAdapter extends BaseAdapter {
       let hasToolUseSinceLastText = false;
       let lineBuffer = '';
       let stderrBuf = '';
+      const turnErrors = [];
       let _pendingLines = Promise.resolve();
+      let timeout = null;
 
       if (proc.stderr) {
         proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString('utf-8'); });
+      }
+
+      if (this._turnTimeoutMs > 0) {
+        timeout = setTimeout(() => {
+          if (proc.exitCode !== null) return;
+          proc._openagentsTimedOut = true;
+          proc._openagentsStopReason = `codex turn timeout ${this._turnTimeoutMs}ms`;
+          this._log(`Codex CLI timed out in ${msgChannel} after ${Math.round(this._turnTimeoutMs / 60000)} min`);
+          this._stopProcess(proc).catch(() => {});
+        }, this._turnTimeoutMs);
       }
 
       if (proc.stdin) {
@@ -606,6 +650,7 @@ class CodexAdapter extends BaseAdapter {
         } else if (eventType === 'turn.failed') {
           const error = event.error || {};
           const errMsg = error.message || JSON.stringify(error);
+          if (errMsg) turnErrors.push(String(errMsg));
           this._log(`Turn failed: ${errMsg}`);
         }
       };
@@ -620,6 +665,7 @@ class CodexAdapter extends BaseAdapter {
       });
 
       proc.on('exit', async (code) => {
+        if (timeout) clearTimeout(timeout);
         // Wait for all in-flight processLine calls
         try { await _pendingLines; } catch {}
 
@@ -644,11 +690,14 @@ class CodexAdapter extends BaseAdapter {
           responseText: responseTexts.join('\n').trim(),
           exitCode: code,
           stderr: stderrBuf,
+          turnErrors,
           interrupted,
+          timedOut: proc._openagentsTimedOut === true,
         });
       });
 
       proc.on('error', (err) => {
+        if (timeout) clearTimeout(timeout);
         delete this._channelProcesses[msgChannel];
         reject(err);
       });

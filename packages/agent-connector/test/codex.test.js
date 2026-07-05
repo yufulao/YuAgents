@@ -133,4 +133,68 @@ describe('CodexAdapter', () => {
     assert.equal(sentOptions.details[0].label, '命令');
     assert.equal(sentOptions.details[0].value, 'npm test');
   });
+
+  it('retries a failed resumed turn instead of sending partial streamed text', async () => {
+    const adapter = makeAdapter();
+    adapter._channelThreads['session-test'] = '11111111-2222-3333-4444-555555555555';
+    adapter._buildSystemContext = () => 'system';
+    adapter._saveSessions = () => {};
+    const sent = [];
+    adapter.sendResponse = async (_channel, content) => { sent.push(content); };
+    const commands = [];
+    adapter._spawnCodex = async (cmd) => {
+      commands.push(cmd);
+      if (commands.length === 1) {
+        return {
+          responseText: 'partial progress before the transport failed',
+          exitCode: 1,
+          turnErrors: ['stream disconnected before completion'],
+          stderr: '',
+        };
+      }
+      return { responseText: 'final result', exitCode: 0, stderr: '' };
+    };
+
+    await adapter._handleViaSubprocess('please work', 'session-test');
+
+    assert.equal(commands.length, 2);
+    assert.equal(commands[0].includes('resume'), true);
+    assert.equal(commands[1].includes('resume'), false);
+    assert.deepEqual(sent, ['final result']);
+  });
+
+  it('throws on a failed fresh turn so the delivery is not acked as success', async () => {
+    const adapter = makeAdapter();
+    adapter._buildSystemContext = () => 'system';
+    const sent = [];
+    adapter.sendResponse = async (_channel, content) => { sent.push(content); };
+    adapter._spawnCodex = async () => ({
+      responseText: 'partial progress before the transport failed',
+      exitCode: 1,
+      turnErrors: ['stream disconnected before completion'],
+      stderr: 'Reading prompt from stdin...',
+    });
+
+    await assert.rejects(
+      () => adapter._handleViaSubprocess('please work', 'session-test'),
+      /Codex CLI exited with code 1: stream disconnected before completion/,
+    );
+    assert.deepEqual(sent, []);
+  });
+
+  it('surfaces Codex turn timeouts as failures', async () => {
+    const adapter = makeAdapter({ OPENAGENTS_CODEX_TURN_TIMEOUT_MS: '60000' });
+    adapter._buildSystemContext = () => 'system';
+    adapter._spawnCodex = async () => ({
+      responseText: '',
+      exitCode: 1,
+      stderr: '',
+      timedOut: true,
+    });
+
+    await assert.rejects(
+      () => adapter._handleViaSubprocess('please work', 'session-test'),
+      /Codex turn timed out after 1 min/,
+    );
+  });
 });
