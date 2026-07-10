@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { AgentCatalogEntry, CodexLocalCatalog } from '@/lib/types';
 import { AgentIcon } from '@/components/icons/agent-icons';
 import { DEFAULT_AGENT_CATALOG, withDefaultAgentCatalog } from '@/lib/agent-catalog';
+import { getCodexReasoningOptions, getPreferredCodexReasoningLevel } from '@/lib/codex-reasoning';
 
 const AGENT_HANDLE_RE = /^[^\s@:/\\]{1,64}$/;
 const AGENT_HANDLE_HINT = '名称用于 @mention，支持中文；不要包含空格、@、冒号或斜杠。';
@@ -141,6 +142,11 @@ function LocalAgentForm({
     [codexCatalog, modelName],
   );
 
+  const codexReasoningOptions = useMemo(
+    () => getCodexReasoningOptions(selectedCodexModel, [codexCatalog?.config.model_reasoning_effort, quality]),
+    [codexCatalog?.config.model_reasoning_effort, quality, selectedCodexModel],
+  );
+
   const codexFastAvailable = Boolean(
     selectedEntry?.name === 'codex'
     && (
@@ -192,6 +198,15 @@ function LocalAgentForm({
       setCodexFastMode(false);
     }
   }, [codexFastAvailable]);
+
+  useEffect(() => {
+    if (selectedEntry?.name !== 'codex' || !selectedCodexModel) return;
+    setQuality((current) => getPreferredCodexReasoningLevel(
+      selectedCodexModel,
+      current,
+      codexCatalog?.config.model_reasoning_effort,
+    ));
+  }, [codexCatalog?.config.model_reasoning_effort, selectedCodexModel, selectedEntry?.name]);
 
   const handleCreateLocalConfig = async () => {
     if (!selectedEntry || !trimmedName) return;
@@ -403,7 +418,9 @@ function LocalAgentForm({
             onChange={(event) => setQuality(event.target.value)}
             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           >
-            {['low', 'medium', 'high', 'xhigh', 'max'].map((value) => (
+            {selectedEntry?.name === 'codex' ? codexReasoningOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            )) : ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => (
               <option key={value} value={value}>{value}</option>
             ))}
           </select>

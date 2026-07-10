@@ -58,7 +58,7 @@ AGENT_TIMEOUT = timedelta(seconds=config.AGENT_TIMEOUT_SECONDS)
 AGENT_NAME_RE = re.compile(r"^(?!.*[\s@:/\\])[^\s@:/\\]{1,64}$")
 VALID_AGENT_LIFECYCLE = {"active", "disabled"}
 VALID_AGENT_MODES = {"ask", "code", "autonomous", "plan", "execute"}
-VALID_AGENT_QUALITY = {"low", "medium", "high", "xhigh", "max"}
+AGENT_QUALITY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
 def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
@@ -897,7 +897,7 @@ def _validate_agent_config(body) -> Optional[str]:
         return f"Invalid lifecycle_status: {body.lifecycle_status}"
     if getattr(body, "mode", None) and body.mode not in VALID_AGENT_MODES:
         return f"Invalid mode: {body.mode}"
-    if getattr(body, "quality", None) and body.quality not in VALID_AGENT_QUALITY:
+    if getattr(body, "quality", None) and not AGENT_QUALITY_RE.match(body.quality):
         return f"Invalid quality: {body.quality}"
     return None
 
@@ -1245,7 +1245,7 @@ def update_member(
             return json_response(ResponseCode.BAD_REQUEST, f"Invalid mode: {body.mode}")
         cfg.mode = body.mode or "execute"
     if body.quality is not None:
-        if body.quality and body.quality not in VALID_AGENT_QUALITY:
+        if body.quality and not AGENT_QUALITY_RE.match(body.quality):
             return json_response(ResponseCode.BAD_REQUEST, f"Invalid quality: {body.quality}")
         cfg.quality = body.quality or None
     if body.lifecycle_status is not None:

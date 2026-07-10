@@ -198,6 +198,42 @@ def test_managed_agent_accepts_execute_mode_and_xhigh_quality(client, workspace)
     assert data["quality"] == "xhigh"
 
 
+def test_managed_agent_accepts_dynamic_codex_reasoning_level(client, workspace):
+    create = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={
+            "agent_name": "codex-dynamic-level",
+            "agent_type": "codex",
+            "quality": "reasoning-5.6",
+        },
+    )
+    assert create.status_code == 200
+    assert create.json()["data"]["quality"] == "reasoning-5.6"
+
+    update = client.patch(
+        f"/v1/workspaces/{workspace['id']}/agents/codex-dynamic-level",
+        headers=_auth(workspace),
+        json={"quality": "model_5.6-fast"},
+    )
+    assert update.status_code == 200
+    assert update.json()["data"]["quality"] == "model_5.6-fast"
+
+
+def test_managed_agent_rejects_unsafe_quality_token(client, workspace):
+    create = client.post(
+        f"/v1/workspaces/{workspace['id']}/agents",
+        headers=_auth(workspace),
+        json={
+            "agent_name": "codex-bad-quality",
+            "agent_type": "codex",
+            "quality": "bad value",
+        },
+    )
+    assert create.status_code == 400
+    assert "Invalid quality" in create.json()["message"]
+
+
 def test_control_managed_agent_starts_local_daemon_bridge(client, workspace, monkeypatch):
     client.post(
         f"/v1/workspaces/{workspace['id']}/agents",

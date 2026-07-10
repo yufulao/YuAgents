@@ -26,6 +26,7 @@ import { getAgentModelLabel, getInstalledSkillIds } from '@/lib/agent-display';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
 import type { CodexLocalCatalog } from '@/lib/types';
+import { getCodexReasoningOptions, getPreferredCodexReasoningLevel } from '@/lib/codex-reasoning';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -83,6 +84,11 @@ export function AgentProfilePanel() {
   const selectedCodexModel = useMemo(
     () => codexCatalog?.models.find((model) => model.slug === modelDraft),
     [codexCatalog, modelDraft],
+  );
+
+  const codexReasoningOptions = useMemo(
+    () => getCodexReasoningOptions(selectedCodexModel, [codexCatalog?.config.model_reasoning_effort, qualityDraft]),
+    [codexCatalog?.config.model_reasoning_effort, qualityDraft, selectedCodexModel],
   );
 
   const codexFastAvailable = Boolean(
@@ -151,6 +157,15 @@ export function AgentProfilePanel() {
       setCodexFastDraft(false);
     }
   }, [codexCatalog, codexFastAvailable]);
+
+  useEffect(() => {
+    if (agent?.agentType !== 'codex' || !selectedCodexModel) return;
+    setQualityDraft((current) => getPreferredCodexReasoningLevel(
+      selectedCodexModel,
+      current,
+      codexCatalog?.config.model_reasoning_effort,
+    ));
+  }, [agent?.agentType, codexCatalog?.config.model_reasoning_effort, selectedCodexModel]);
 
   const handleAvatarFile = (file: File | undefined) => {
     if (!file) return;
@@ -700,11 +715,17 @@ export function AgentProfilePanel() {
                     </div>
                   )}
                   <select className="h-8 w-full rounded border bg-background px-2 text-xs" value={qualityDraft} onChange={(event) => setQualityDraft(event.target.value)}>
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
-                    <option value="xhigh">xhigh</option>
-                    <option value="max">max</option>
+                    {agent.agentType === 'codex' ? codexReasoningOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    )) : (
+                      <>
+                        <option value="low">low</option>
+                        <option value="medium">medium</option>
+                        <option value="high">high</option>
+                        <option value="xhigh">xhigh</option>
+                        <option value="max">max</option>
+                      </>
+                    )}
                   </select>
                   <div className="flex justify-end gap-1.5">
                     <button onClick={() => setEditingConfig(false)} className="rounded border px-2 py-1 text-[10px]">取消</button>
