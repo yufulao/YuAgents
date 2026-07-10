@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   ChevronLeft,
@@ -25,6 +25,7 @@ import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { getAgentModelLabel, getInstalledSkillIds } from '@/lib/agent-display';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { workspaceApi } from '@/lib/api';
+import type { CodexLocalCatalog } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -58,9 +59,39 @@ export function AgentProfilePanel() {
   const [modelDraft, setModelDraft] = useState('');
   const [qualityDraft, setQualityDraft] = useState('medium');
   const [codexFastDraft, setCodexFastDraft] = useState(false);
+  const [codexCatalog, setCodexCatalog] = useState<CodexLocalCatalog | null>(null);
+  const [loadingCodexCatalog, setLoadingCodexCatalog] = useState(false);
+  const [codexCatalogError, setCodexCatalogError] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
   const [controlBusy, setControlBusy] = useState<{ agentName: string; action: 'start' | 'restart' | 'stop' } | null>(null);
   const configDraftAgentRef = useRef<string | null>(null);
+
+  const codexModelOptions = useMemo(() => {
+    const bySlug = new Map<string, string>();
+    for (const model of codexCatalog?.models || []) {
+      bySlug.set(model.slug, model.display_name || model.slug);
+    }
+    if (codexCatalog?.config.model) {
+      bySlug.set(codexCatalog.config.model, bySlug.get(codexCatalog.config.model) || codexCatalog.config.model);
+    }
+    if (modelDraft) {
+      bySlug.set(modelDraft, bySlug.get(modelDraft) || modelDraft);
+    }
+    return Array.from(bySlug, ([slug, label]) => ({ slug, label }));
+  }, [codexCatalog, modelDraft]);
+
+  const selectedCodexModel = useMemo(
+    () => codexCatalog?.models.find((model) => model.slug === modelDraft),
+    [codexCatalog, modelDraft],
+  );
+
+  const codexFastAvailable = Boolean(
+    agent?.agentType === 'codex'
+    && (
+      selectedCodexModel?.additional_speed_tiers?.includes('fast')
+      || selectedCodexModel?.service_tiers?.some((tier) => tier.id === 'fast')
+    ),
+  );
 
   useEffect(() => {
     if (!selectedAgentName) {
@@ -86,6 +117,40 @@ export function AgentProfilePanel() {
     setQualityDraft(agent.quality || 'medium');
     setCodexFastDraft(agent.managedMetadata?.codex_service_tier === 'fast');
   }, [agent, editingConfig, savingConfig]);
+
+  useEffect(() => {
+    if (agent?.agentType !== 'codex') {
+      setCodexCatalog(null);
+      setCodexCatalogError('');
+      setLoadingCodexCatalog(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCodexCatalog(true);
+    setCodexCatalogError('');
+    workspaceApi.getLocalCodexCatalog()
+      .then((data) => {
+        if (cancelled) return;
+        setCodexCatalog(data);
+        setModelDraft((current) => current || data.config.model || data.models[0]?.slug || '');
+        setQualityDraft((current) => current || data.config.model_reasoning_effort || 'medium');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCodexCatalog(null);
+        setCodexCatalogError(err instanceof Error ? err.message : '读取本机 Codex 模型失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCodexCatalog(false);
+      });
+    return () => { cancelled = true; };
+  }, [agent?.agentName, agent?.agentType]);
+
+  useEffect(() => {
+    if (codexCatalog && !codexFastAvailable) {
+      setCodexFastDraft(false);
+    }
+  }, [codexCatalog, codexFastAvailable]);
 
   const handleAvatarFile = (file: File | undefined) => {
     if (!file) return;
@@ -561,22 +626,78 @@ export function AgentProfilePanel() {
                     </div>
                   </div>
                   <input className="h-8 w-full rounded border bg-transparent px-2 font-mono text-xs" value={workingDirDraft} onChange={(event) => setWorkingDirDraft(event.target.value)} placeholder="工作目录" />
-                  <input className="h-8 w-full rounded border bg-transparent px-2 font-mono text-xs" value={modelDraft} onChange={(event) => setModelDraft(event.target.value)} placeholder="模型" />
+                  <div className="space-y-1">
+                    {agent.agentType === 'codex' ? (
+                      <select
+                        className="h-8 w-full rounded border bg-background px-2 font-mono text-xs"
+                        value={modelDraft}
+                        onChange={(event) => setModelDraft(event.target.value)}
+                        disabled={loadingCodexCatalog || codexModelOptions.length === 0}
+                      >
+                        {codexModelOptions.length === 0 ? (
+                          <option value="">未读取到模型缓存</option>
+                        ) : codexModelOptions.map((model) => (
+                          <option key={model.slug} value={model.slug}>
+                            {model.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        className="h-8 w-full rounded border bg-transparent px-2 font-mono text-xs"
+                        value={modelDraft}
+                        onChange={(event) => setModelDraft(event.target.value)}
+                        placeholder="模型"
+                      />
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      {agent.agentType === 'codex'
+                        ? loadingCodexCatalog
+                          ? '正在读取本机 Codex 模型列表...'
+                          : codexCatalogError || '默认读取本机 Codex 配置，也可以手动覆盖。'
+                        : '默认跟随本机 CLI 配置，也可以在这里记录模型名。'}
+                    </p>
+                  </div>
                   {agent.agentType === 'codex' && (
-                    <button
-                      type="button"
-                      onClick={() => setCodexFastDraft((value) => !value)}
-                      className={cn(
-                        'flex w-full items-center justify-between rounded border px-2 py-2 text-left',
-                        codexFastDraft ? 'border-primary/40 bg-primary/5' : 'hover:bg-muted',
-                      )}
-                    >
-                      <span className="flex items-center gap-1.5 text-xs font-medium">
-                        <Zap className="size-3.5 text-amber-500" />
-                        Codex Fast mode
-                      </span>
-                      <span className={cn('h-5 w-9 rounded-full border transition-colors', codexFastDraft ? 'border-primary bg-primary' : 'bg-muted')} />
-                    </button>
+                    <div className={cn(
+                      'space-y-2 rounded-lg border px-3 py-2.5',
+                      codexFastDraft ? 'border-primary/40 bg-primary/5' : 'border-input',
+                      !codexFastAvailable && 'opacity-60',
+                    )}>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                          <Zap className="size-3.5 text-amber-500" />
+                          Codex 速度档位
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          {codexFastAvailable ? '使用当前 Codex 模型的 fast speed tier。' : '当前模型没有本机可用的 fast tier。'}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+                        <button
+                          type="button"
+                          onClick={() => setCodexFastDraft(false)}
+                          className={cn(
+                            'h-8 rounded px-2 text-xs font-medium transition-colors',
+                            !codexFastDraft ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          默认
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!codexFastAvailable}
+                          onClick={() => setCodexFastDraft(true)}
+                          className={cn(
+                            'h-8 rounded px-2 text-xs font-medium transition-colors',
+                            codexFastDraft ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                            !codexFastAvailable && 'cursor-not-allowed opacity-50 hover:text-muted-foreground',
+                          )}
+                        >
+                          Fast
+                        </button>
+                      </div>
+                    </div>
                   )}
                   <select className="h-8 w-full rounded border bg-background px-2 text-xs" value={qualityDraft} onChange={(event) => setQualityDraft(event.target.value)}>
                     <option value="low">low</option>
